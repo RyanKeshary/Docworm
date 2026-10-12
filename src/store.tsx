@@ -1,0 +1,325 @@
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type { AppOptions } from './config';
+import { DEFAULT_OPTIONS } from './config';
+import type { AuditLog, CompletionReport, Notification, Proposal, ProposalComment, Task, User } from './types';
+import { SEED_AUDIT, SEED_COMMENTS, SEED_NOTIFICATIONS, SEED_PROPOSALS, SEED_TASKS, SEED_USERS } from './seed';
+import { isSupabaseConfigured, supabase } from './lib/supabase';
+import {
+  insertAudit, insertComment, insertNotification, loadWorkspace,
+  nextRefNumber, persistProposal, persistTask, upsertCompletion,
+  upsertProfile, upsertSettings, uploadAttachment,
+} from './lib/backend';
+
+export type CompletionMap = { [proposalId: string]: CompletionReport };
+
+interface DataState {
+  users: User[];
+  proposals: Proposal[];
+  tasks: Task[];
+  comments: ProposalComment[];
+  notifications: Notification[];
+  audit: AuditLog[];
+  completions: CompletionMap;
+  options: AppOptions;
+  letterhead: { collegeName: string; address: string; phone: string; email: string };
+  currentUserId: string;
+  currentUser: User;
+  backend: 'local' | 'supabase';
+  authLoading: boolean;
+  backendError: string;
+  isAuthenticated: boolean;
+  signIn: (email: string, password: string) => Promise<string | null>;
+  signOut: () => Promise<void>;
+  refresh: () => Promise<void>;
+  setCurrentUserId: (id: string) => void;
+  getNextRefNumber: (cellOrDept: string, category: string, year: string) => Promise<string>;
+  uploadFile: (file: File) => Promise<{ name: string; size: string; kind: string; storagePath: string }>;
+  saveProposals: (p: Proposal[]) => void;
+  saveTasks: (t: Task[]) => void;
+  saveComments: (c: ProposalComment[]) => void;
+  saveNotifications: (n: Notification[]) => void;
+  saveCompletions: (c: CompletionMap) => void;
+  saveOptions: (o: AppOptions) => void;
+  saveUsers: (u: User[]) => void;
+  saveLetterhead: (l: { collegeName: string; address: string; phone: string; email: string }) => void;
+  pushNotification: (n: Omit<Notification, 'id' | 'createdAt' | 'read'> & { read?: boolean }) => void;
+  pushAudit: (a: Omit<AuditLog, 'id' | 'createdAt'>) => void;
+  resetDemo: () => void;
+}
+
+const Ctx = createContext<DataState | null>(null);
+
+function load<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem('docworm:' + key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch { return fallback; }
+}
+function persist(key: string, val: unknown) {
+  try { localStorage.setItem('docworm:' + key, JSON.stringify(val)); } catch { /* noop */ }
+}
+
+export const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
+export function nowStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+const DEFAULT_LETTERHEAD = {
+  collegeName: 'Shree L.R. Tiwari College of Engineering',
+  address: 'Shree L.R. Tiwari College of Engineering, Mira Road (East), Thane 401107',
+  phone: '+91 22 2812 1234',
+  email: 'office@slrtce.in',
+};
+
+export function DataProvider({ children }: { children: React.ReactNode }) {
+  const backend: 'local' | 'supabase' = isSupabaseConfigured ? 'supabase' : 'local';
+  const [users, setUsers] = useState<User[]>(() => load('users', SEED_USERS));
+  const [proposals, setProposals] = useState<Proposal[]>(() => load('proposals', SEED_PROPOSALS));
+  const [tasks, setTasks] = useState<Task[]>(() => load('tasks', SEED_TASKS));
+  const [comments, setComments] = useState<ProposalComment[]>(() => load('comments', SEED_COMMENTS));
+  const [notifications, setNotifications] = useState<Notification[]>(() => load('notifications', SEED_NOTIFICATIONS));
+  const [audit, setAudit] = useState<AuditLog[]>(() => load('audit', SEED_AUDIT));
+  const [completions, setCompletions] = useState<CompletionMap>(() => load('completions', {} as CompletionMap));
+  const [options, setOptions] = useState<AppOptions>(() => load('options', DEFAULT_OPTIONS));
+  const [letterhead, setLetterhead] = useState(() => load('letterhead', DEFAULT_LETTERHEAD));
+  const [currentUserId, setCurrentUserIdState] = useState<string>(() => (backend === 'local' ? load('session', 'u-principal') : ''));
+  const [authLoading, setAuthLoading] = useState(backend === 'supabase');
+  const [backendError, setBackendError] = useState('');
+
+  // Last state confirmed in Supabase, used to persist only what changed.
+  const snap = useRef<{ proposals: Map<string, string>; tasks: Map<string, string> }>({
+    proposals: new Map(), tasks: new Map(),
+  });
+
+  const reportErr = (where: string, e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
+    setBackendError(`${where}: ${msg}`);
+  };
+
+  const applyWorkspace = (w: Awaited<ReturnType<typeof loadWorkspace>>) => {
+    setUsers(w.users.length ? w.users : users);
+    setProposals(w.proposals);
+    setTasks(w.tasks);
+    setComments(w.comments);
+    setNotifications(w.notifications);
+    setAudit(w.audit);
+    setCompletions(w.completions);
+    if (w.options && Object.keys(w.options).length) {
+      setOptions({ ...DEFAULT_OPTIONS, ...(w.options as unknown as AppOptions) });
+    }
+    if (w.letterhead && w.letterhead.collegeName) {
+      setLetterhead({
+        collegeName: w.letterhead.collegeName ?? DEFAULT_LETTERHEAD.collegeName,
+        address: w.letterhead.address ?? DEFAULT_LETTERHEAD.address,
+        phone: w.letterhead.phone ?? DEFAULT_LETTERHEAD.phone,
+        email: w.letterhead.email ?? DEFAULT_LETTERHEAD.email,
+      });
+    }
+    snap.current = {
+      proposals: new Map(w.proposals.map((p) => [p.id, JSON.stringify(p)])),
+      tasks: new Map(w.tasks.map((t) => [t.id, JSON.stringify(t)])),
+    };
+  };
+
+  const refresh = async () => {
+    if (backend !== 'supabase') return;
+    try {
+      const sb = supabase();
+      const { data } = await sb.auth.getSession();
+      if (!data.session) return;
+      applyWorkspace(await loadWorkspace(sb));
+    } catch (e) { reportErr('Refresh failed', e); }
+  };
+
+  // Initial session check for Supabase mode.
+  useEffect(() => {
+    if (backend !== 'supabase') return;
+    (async () => {
+      try {
+        const sb = supabase();
+        const { data } = await sb.auth.getSession();
+        if (data.session?.user) {
+          const w = await loadWorkspace(sb);
+          applyWorkspace(w);
+          setCurrentUserIdState(data.session.user.id);
+        }
+      } catch (e) { reportErr('Startup sync failed', e); }
+      finally { setAuthLoading(false); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Local mode persistence only. Supabase mode persists per change below.
+  useEffect(() => { if (backend === 'local') persist('users', users); }, [users, backend]);
+  useEffect(() => { if (backend === 'local') persist('proposals', proposals); }, [proposals, backend]);
+  useEffect(() => { if (backend === 'local') persist('tasks', tasks); }, [tasks, backend]);
+  useEffect(() => { if (backend === 'local') persist('comments', comments); }, [comments, backend]);
+  useEffect(() => { if (backend === 'local') persist('notifications', notifications); }, [notifications, backend]);
+  useEffect(() => { if (backend === 'local') persist('audit', audit); }, [audit, backend]);
+  useEffect(() => { if (backend === 'local') persist('completions', completions); }, [completions, backend]);
+  useEffect(() => { if (backend === 'local') persist('options', options); }, [options, backend]);
+  useEffect(() => { if (backend === 'local') persist('letterhead', letterhead); }, [letterhead, backend]);
+  useEffect(() => { if (backend === 'local') persist('session', currentUserId); }, [currentUserId, backend]);
+
+  const currentUser = useMemo(
+    () => users.find((u) => u.id === currentUserId) ?? users[0],
+    [users, currentUserId],
+  );
+
+  const signIn = async (email: string, password: string): Promise<string | null> => {
+    setBackendError('');
+    if (backend === 'local') {
+      const u = users.find((x) => x.email.toLowerCase() === email.trim().toLowerCase() && x.password === password);
+      if (!u) return 'Invalid email or password. Try a demo account below.';
+      setCurrentUserIdState(u.id);
+      return null;
+    }
+    try {
+      const sb = supabase();
+      const { data, error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
+      if (error) return error.message;
+      const uidNow = data.user.id;
+      const w = await loadWorkspace(sb);
+      applyWorkspace(w);
+      setCurrentUserIdState(uidNow);
+      const me = w.users.find((u) => u.id === uidNow);
+      if (!me) return 'Signed in, but no staff profile exists for this account. Ask the principal to create one.';
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : 'Sign in failed.';
+    }
+  };
+
+  const signOut = async () => {
+    if (backend === 'supabase') {
+      try { await supabase().auth.signOut(); } catch { /* noop */ }
+      setCurrentUserIdState('');
+    } else {
+      localStorage.removeItem('docworm:session');
+    }
+  };
+
+  const getNextRefNumber = async (cellOrDept: string, category: string, year: string): Promise<string> => {
+    const cat = category.replace(/[^A-Za-z]/g, '').slice(0, 12) || 'General';
+    if (backend === 'supabase') {
+      try {
+        const n = await nextRefNumber(supabase(), year);
+        return `SLRTCE/${cellOrDept}/${cat}/${year}-${String(n).padStart(3, '0')}`;
+      } catch (e) { reportErr('Ref number fallback to local count', e); }
+    }
+    const count = proposals.length + 1;
+    return `SLRTCE/${cellOrDept}/${cat}/${year}-${String(count).padStart(3, '0')}`;
+  };
+
+  const uploadFile = async (file: File) => {
+    if (backend !== 'supabase') {
+      return { name: file.name, size: '', kind: 'File', storagePath: '' };
+    }
+    return uploadAttachment(supabase(), currentUserId, file);
+  };
+
+  const saveProposals: DataState['saveProposals'] = (next) => {
+    setProposals(next);
+    if (backend !== 'supabase') return;
+    const sb = supabase();
+    next.forEach((p) => {
+      const prev = snap.current.proposals.get(p.id);
+      const now = JSON.stringify(p);
+      if (prev !== now) {
+        snap.current.proposals.set(p.id, now);
+        persistProposal(sb, p).catch((e) => reportErr(`Sync proposal ${p.refNo} failed`, e));
+      }
+    });
+  };
+
+  const saveTasks: DataState['saveTasks'] = (next) => {
+    setTasks(next);
+    if (backend !== 'supabase') return;
+    const sb = supabase();
+    next.forEach((t) => {
+      const prev = snap.current.tasks.get(t.id);
+      const now = JSON.stringify(t);
+      if (prev !== now) {
+        snap.current.tasks.set(t.id, now);
+        persistTask(sb, t).catch((e) => reportErr(`Sync task ${t.title} failed`, e));
+      }
+    });
+  };
+
+  const value: DataState = {
+    users, proposals, tasks, comments, notifications, audit, completions, options, letterhead,
+    currentUserId, currentUser, backend, authLoading, backendError,
+    isAuthenticated: backend === 'local' ? true : Boolean(currentUserId),
+    signIn, signOut, refresh,
+    setCurrentUserId: setCurrentUserIdState,
+    getNextRefNumber, uploadFile,
+    saveProposals,
+    saveTasks,
+    saveComments: (next) => {
+      if (backend === 'supabase') {
+        const known = new Set(comments.map((c) => c.id));
+        next.filter((c) => !known.has(c.id)).forEach((c) =>
+          insertComment(supabase(), c).catch((e) => reportErr('Sync comment failed', e)));
+      }
+      setComments(next);
+    },
+    saveNotifications: (next) => setNotifications(next),
+    saveCompletions: (next) => {
+      if (backend === 'supabase') {
+        Object.values(next).forEach((c) => {
+          if (JSON.stringify(completions[c.proposalId]) !== JSON.stringify(c)) {
+            upsertCompletion(supabase(), c).catch((e) => reportErr('Sync report failed', e));
+          }
+        });
+      }
+      setCompletions(next);
+    },
+    saveOptions: (next) => {
+      setOptions(next);
+      if (backend === 'supabase') {
+        upsertSettings(supabase(), next, letterhead).catch((e) => reportErr('Sync settings failed', e));
+      }
+    },
+    saveUsers: (next) => {
+      setUsers(next);
+      if (backend === 'supabase') {
+        next.forEach((u) => upsertProfile(supabase(), u).catch((e) => reportErr('Sync user failed', e)));
+      }
+    },
+    saveLetterhead: (next) => {
+      setLetterhead(next);
+      if (backend === 'supabase') {
+        upsertSettings(supabase(), options, next).catch((e) => reportErr('Sync letterhead failed', e));
+      }
+    },
+    pushNotification: (n) => {
+      const full: Notification = { ...n, id: uid(), createdAt: nowStr(), read: n.read ?? false };
+      setNotifications((prev) => [full, ...prev]);
+      if (backend === 'supabase') {
+        insertNotification(supabase(), full).catch((e) => reportErr('Sync notification failed', e));
+      }
+    },
+    pushAudit: (a) => {
+      const full: AuditLog = { ...a, id: uid(), createdAt: nowStr() };
+      setAudit((prev) => [full, ...prev]);
+      if (backend === 'supabase') {
+        insertAudit(supabase(), full).catch((e) => reportErr('Sync audit failed', e));
+      }
+    },
+    resetDemo: () => {
+      setUsers(SEED_USERS); setProposals(SEED_PROPOSALS); setTasks(SEED_TASKS);
+      setComments(SEED_COMMENTS); setNotifications(SEED_NOTIFICATIONS); setAudit(SEED_AUDIT);
+      setCompletions({}); setOptions(DEFAULT_OPTIONS);
+      setCurrentUserIdState('u-principal');
+    },
+  };
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+export function useData(): DataState {
+  const v = useContext(Ctx);
+  if (!v) throw new Error('useData outside provider');
+  return v;
+}
