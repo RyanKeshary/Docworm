@@ -20,16 +20,32 @@ interface Draft extends Record<string, unknown> {
 }
 
 export function ProposalForm() {
-  const { options, currentUser, proposals, saveProposals, pushAudit, users, getNextRefNumber } = useData();
+  const { options, currentUser, proposals, saveProposals, pushAudit, pushNotification, users, getNextRefNumber } = useData();
+  const { id: editId } = useParams();
+  const editing = proposals.find((p) => p.id === editId);
+  const canEdit = editing && editing.submitterId === currentUser.id && ['Draft', 'Changes Requested'].includes(editing.status);
   const [saving, setSaving] = useState(false);
   const nav = useNavigate();
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const draftKey = editId ? `docworm:draft:${editId}` : 'docworm:draft:new';
   const [draft, setDraft] = useState<Draft>(() => {
     try {
-      const raw = localStorage.getItem('docworm:draft:new');
+      const raw = localStorage.getItem(draftKey);
       if (raw) return JSON.parse(raw);
     } catch { /* noop */ }
+    if (editing) {
+      return {
+        academicYear: editing.academicYear, eventCategory: editing.eventCategory,
+        organizingBody: editing.organizingBody, startDate: editing.startDate, endDate: editing.endDate,
+        startTime: editing.startTime, endTime: editing.endTime, audience: editing.audience,
+        departments: editing.departments, years: editing.years, participants: editing.participants,
+        resources: editing.resources.map((r) => ({ ...r, status: 'Pending' as const })),
+        hasBudget: editing.hasBudget, budgetHead: editing.budgetHead, openingBalance: editing.openingBalance,
+        budgetItems: editing.budgetItems, budgetJustification: editing.budgetJustification,
+        poMappings: editing.poMappings, purpose: editing.purpose, eventName: editing.eventName,
+      };
+    }
     return {
       academicYear: currentAcademicYear(), eventCategory: 'Technical', organizingBody: 'Department',
       startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10),
@@ -38,8 +54,17 @@ export function ProposalForm() {
       budgetItems: [], poMappings: [], purpose: '', eventName: '',
     };
   });
-  useEffect(() => { localStorage.setItem('docworm:draft:new', JSON.stringify(draft)); }, [draft]);
+  useEffect(() => { localStorage.setItem(draftKey, JSON.stringify(draft)); }, [draft, draftKey]);
   const set = (k: string, v: unknown) => setDraft((d) => ({ ...d, [k]: v }));
+
+  if (editId && !canEdit) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-4">
+        <Link to="/proposals" className="text-sm text-primary font-semibold inline-flex items-center gap-1"><ArrowLeft size={15} /> Back to proposals</Link>
+        <EmptyState title="Cannot edit this proposal" hint="Only the submitter can edit, and only while it is a draft or changes were requested." />
+      </div>
+    );
+  }
 
   const toggleMulti = (key: 'audience' | 'departments' | 'years', v: string) => {
     const arr = [...((draft[key] as string[]) ?? [])];
@@ -125,10 +150,32 @@ export function ProposalForm() {
     if (status !== 'Draft' && !(validate(0) && validate(2))) { setStep(0); return; }
     setSaving(true);
     try {
+      if (editing && canEdit) {
+        const fresh = await buildProposal(status);
+        const updated: Proposal = {
+          ...fresh,
+          id: editing.id,
+          refNo: editing.refNo,
+          dateOfRequest: editing.dateOfRequest,
+          createdAt: editing.createdAt,
+          attachments: editing.attachments,
+          submitterId: editing.submitterId,
+          submitterName: editing.submitterName,
+          submitterDept: editing.submitterDept,
+          // Resubmission reopens every review step so approvers see the new version.
+          approvalChain: fresh.approvalChain,
+          updatedAt: nowStr(),
+        };
+        saveProposals(proposals.map((x) => x.id === editing.id ? updated : x));
+        pushAudit({ actorId: currentUser.id, actorName: currentUser.name, action: `${status === 'Draft' ? 'Updated draft' : 'Resubmitted proposal'} ${updated.refNo}`, entity: 'Proposal', entityId: updated.id });
+        localStorage.removeItem(draftKey);
+        nav(`/proposals/${updated.id}`);
+        return;
+      }
       const p = await buildProposal(status);
       saveProposals([p, ...proposals]);
       pushAudit({ actorId: currentUser.id, actorName: currentUser.name, action: `${status === 'Draft' ? 'Saved draft' : 'Submitted proposal'} ${p.refNo}`, entity: 'Proposal', entityId: p.id });
-      localStorage.removeItem('docworm:draft:new');
+      localStorage.removeItem(draftKey);
       nav(`/proposals/${p.id}`);
     } finally {
       setSaving(false);
@@ -140,10 +187,10 @@ export function ProposalForm() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
-      <Link to="/proposals" className="text-sm text-primary font-semibold inline-flex items-center gap-1"><ArrowLeft size={15} /> Back to proposals</Link>
+      <Link to={editing ? `/proposals/${editing.id}` : '/proposals'} className="text-sm text-primary font-semibold inline-flex items-center gap-1"><ArrowLeft size={15} /> {editing ? 'Back to proposal' : 'Back to proposals'}</Link>
       <div>
-        <p className="text-xs text-slate-500">New proposal, draft auto-saves in this browser</p>
-        <h1 className="text-2xl font-bold">Create permission request</h1>
+        <p className="text-xs text-slate-500">{editing ? `Editing ${editing.refNo}, draft auto-saves in this browser` : 'New proposal, draft auto-saves in this browser'}</p>
+        <h1 className="text-2xl font-bold">{editing ? 'Edit permission request' : 'Create permission request'}</h1>
       </div>
       <div className="bg-white border border-gray-200 rounded-card p-4">
         <ol className="flex flex-wrap gap-2" aria-label="Form progress">
@@ -163,7 +210,7 @@ export function ProposalForm() {
           <>
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Reference number (auto-generated on submit)" hint="Format: SLRTCE/CELL OR DEPT/CATEGORY/running number">
-                <input disabled value="SLRTCE/.../auto on submit" className={`${inputCls} bg-gray-50`} />
+                <input disabled value={editing ? editing.refNo : 'SLRTCE/.../auto on submit'} className={`${inputCls} bg-gray-50`} />
               </Field>
               <Field label="Academic year">
                 <select value={draft.academicYear as string} onChange={(e) => set('academicYear', e.target.value)} className={inputCls}>
@@ -395,7 +442,7 @@ export function ProposalForm() {
         <button onClick={() => save('Draft')} className={btnGhost} disabled={saving}><Save size={15} /> {saving ? 'Saving...' : 'Save as draft'}</button>
         {step < STEPS.length - 1
           ? <button onClick={() => { if (validate(step)) setStep(step + 1); }} className={btnPrimary}>Next <ArrowRight size={15} /></button>
-          : <button onClick={() => save('Submitted')} className={btnPrimary} disabled={saving}><Eye size={15} /> {saving ? 'Submitting...' : 'Submit proposal'}</button>}
+          : <button onClick={() => save('Submitted')} className={btnPrimary} disabled={saving}><Eye size={15} /> {saving ? 'Submitting...' : editing ? 'Resubmit proposal' : 'Submit proposal'}</button>}
       </div>
     </div>
   );
@@ -485,6 +532,9 @@ export function ProposalDetail() {
       </div>
       <div className="flex flex-wrap gap-2 items-center">
         <h1 className="text-2xl font-bold flex-1 min-w-52">{p.eventName}</h1>
+        {p.submitterId === currentUser.id && ['Draft', 'Changes Requested'].includes(p.status) && (
+          <Link to={`/proposals/${p.id}/edit`} className={btnPrimary}>Edit</Link>
+        )}
         <button onClick={() => setLetterOpen(true)} className={btnGhost}><Eye size={15} /> Preview as letter</button>
         <button onClick={() => exportLetterPDF(p, letterhead)} className={btnGhost}>Letter PDF</button>
         <button onClick={() => exportLetterDOCX(p, letterhead)} className={btnGhost}>Letter DOCX</button>

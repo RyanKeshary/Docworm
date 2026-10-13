@@ -27,6 +27,9 @@ interface DataState {
   backend: 'local' | 'supabase';
   authLoading: boolean;
   backendError: string;
+  syncState: 'live' | 'loading' | 'offline';
+  lastSyncedAt: string | null;
+  liveTick: number;
   isAuthenticated: boolean;
   signIn: (email: string, password: string) => Promise<string | null>;
   signOut: () => Promise<void>;
@@ -87,11 +90,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [currentUserId, setCurrentUserIdState] = useState<string>(() => (backend === 'local' ? load('session', 'u-principal') : ''));
   const [authLoading, setAuthLoading] = useState(backend === 'supabase');
   const [backendError, setBackendError] = useState('');
+  const [syncState, setSyncState] = useState<'live' | 'loading' | 'offline'>(backend === 'supabase' ? 'loading' : 'live');
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [liveTick, setLiveTick] = useState(0);
 
   // Last state confirmed in Supabase, used to persist only what changed.
   const snap = useRef<{ proposals: Map<string, string>; tasks: Map<string, string> }>({
     proposals: new Map(), tasks: new Map(),
   });
+  const settingsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rtTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const channelRef = useRef<{ unsubscribe: () => void } | null>(null);
 
   const reportErr = (where: string, e: unknown) => {
     const msg = e instanceof Error ? e.message : String(e);
@@ -99,7 +108,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const applyWorkspace = (w: Awaited<ReturnType<typeof loadWorkspace>>) => {
-    setUsers(w.users.length ? w.users : users);
+    if (w.users.length) setUsers(w.users);
     setProposals(w.proposals);
     setTasks(w.tasks);
     setComments(w.comments);
@@ -107,7 +116,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setAudit(w.audit);
     setCompletions(w.completions);
     if (w.options && Object.keys(w.options).length) {
-      setOptions({ ...DEFAULT_OPTIONS, ...(w.options as unknown as AppOptions) });
+      setOptions((prev) => ({ ...DEFAULT_OPTIONS, ...prev, ...(w.options as unknown as AppOptions) }));
     }
     if (w.letterhead && w.letterhead.collegeName) {
       setLetterhead({
@@ -121,16 +130,34 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       proposals: new Map(w.proposals.map((p) => [p.id, JSON.stringify(p)])),
       tasks: new Map(w.tasks.map((t) => [t.id, JSON.stringify(t)])),
     };
+    setLastSyncedAt(nowStr());
+    setSyncState('live');
+    setBackendError('');
+  };
+
+  const loadWithRetry = async (tries = 3): Promise<boolean> => {
+    const sb = supabase();
+    const { data } = await sb.auth.getSession();
+    if (!data.session) return false;
+    let last: unknown = null;
+    for (let i = 0; i < tries; i++) {
+      try {
+        applyWorkspace(await loadWorkspace(sb));
+        return true;
+      } catch (e) {
+        last = e;
+        await new Promise((res) => setTimeout(res, 800 * (i + 1)));
+      }
+    }
+    reportErr('Could not reach the college database', last);
+    setSyncState('offline');
+    return false;
   };
 
   const refresh = async () => {
     if (backend !== 'supabase') return;
-    try {
-      const sb = supabase();
-      const { data } = await sb.auth.getSession();
-      if (!data.session) return;
-      applyWorkspace(await loadWorkspace(sb));
-    } catch (e) { reportErr('Refresh failed', e); }
+    setSyncState('loading');
+    await loadWithRetry(2);
   };
 
   // Initial session check for Supabase mode.
@@ -141,15 +168,46 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         const sb = supabase();
         const { data } = await sb.auth.getSession();
         if (data.session?.user) {
-          const w = await loadWorkspace(sb);
-          applyWorkspace(w);
-          setCurrentUserIdState(data.session.user.id);
+          const ok = await loadWithRetry(3);
+          if (ok) setCurrentUserIdState(data.session.user.id);
+        } else {
+          setSyncState('live');
         }
-      } catch (e) { reportErr('Startup sync failed', e); }
+      } catch (e) { reportErr('Startup sync failed', e); setSyncState('offline'); }
       finally { setAuthLoading(false); }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Realtime: refresh shortly after any relevant change so every screen stays live.
+  useEffect(() => {
+    if (backend !== 'supabase' || !currentUserId) return;
+    let cancelled = false;
+    try {
+      const sb = supabase();
+      const schedule = () => {
+        setLiveTick((t) => t + 1);
+        if (rtTimer.current) clearTimeout(rtTimer.current);
+        rtTimer.current = setTimeout(() => { if (!cancelled) refresh(); }, 1500);
+      };
+      const ch = sb
+        .channel('docworm-live')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'docworm_proposals' }, schedule)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'docworm_tasks' }, schedule)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'docworm_comments' }, schedule)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'docworm_completion_reports' }, schedule)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'docworm_notifications', filter: `user_id=eq.${currentUserId}` }, schedule)
+        .subscribe();
+      channelRef.current = ch;
+    } catch { /* realtime unavailable, manual refresh still works */ }
+    return () => {
+      cancelled = true;
+      if (rtTimer.current) clearTimeout(rtTimer.current);
+      try { channelRef.current?.unsubscribe(); } catch { /* noop */ }
+      channelRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backend, currentUserId]);
 
   // Local mode persistence only. Supabase mode persists per change below.
   useEffect(() => { if (backend === 'local') persist('users', users); }, [users, backend]);
@@ -181,6 +239,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
       if (error) return error.message;
       const uidNow = data.user.id;
+      setSyncState('loading');
       const w = await loadWorkspace(sb);
       applyWorkspace(w);
       setCurrentUserIdState(uidNow);
@@ -188,6 +247,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (!me) return 'Signed in, but no staff profile exists for this account. Ask the principal to create one.';
       return null;
     } catch (e) {
+      setSyncState('offline');
       return e instanceof Error ? e.message : 'Sign in failed.';
     }
   };
@@ -248,9 +308,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  // Debounced settings writer: keystroke level saves collapse into one write,
+  // and empty payloads are never sent, so settings cannot be blanked by a race.
+  const queueSettingsWrite = (nextOptions: AppOptions, nextHead: typeof letterhead) => {
+    if (backend !== 'supabase') return;
+    if (!Object.keys(nextOptions).length || !nextHead.collegeName) return;
+    if (settingsTimer.current) clearTimeout(settingsTimer.current);
+    settingsTimer.current = setTimeout(() => {
+      upsertSettings(supabase(), nextOptions, nextHead).catch((e) => reportErr('Sync settings failed', e));
+    }, 800);
+  };
+
   const value: DataState = {
     users, proposals, tasks, comments, notifications, audit, completions, options, letterhead,
     currentUserId, currentUser, backend, authLoading, backendError,
+    syncState, lastSyncedAt, liveTick,
     isAuthenticated: backend === 'local' ? true : Boolean(currentUserId),
     signIn, signOut, refresh,
     setCurrentUserId: setCurrentUserIdState,
@@ -278,9 +350,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     },
     saveOptions: (next) => {
       setOptions(next);
-      if (backend === 'supabase') {
-        upsertSettings(supabase(), next, letterhead).catch((e) => reportErr('Sync settings failed', e));
-      }
+      queueSettingsWrite(next, letterhead);
     },
     saveUsers: (next) => {
       setUsers(next);
@@ -290,9 +360,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     },
     saveLetterhead: (next) => {
       setLetterhead(next);
-      if (backend === 'supabase') {
-        upsertSettings(supabase(), options, next).catch((e) => reportErr('Sync letterhead failed', e));
-      }
+      queueSettingsWrite(options, next);
     },
     pushNotification: (n) => {
       const full: Notification = { ...n, id: uid(), createdAt: nowStr(), read: n.read ?? false };

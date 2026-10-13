@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   FileText, LayoutDashboard, CheckSquare, BarChart3, Bell, Settings,
-  Menu, X, Search, LogOut, ChevronLeft, FilePlus2, CalendarDays, Bug,
+  Menu, X, Search, LogOut, ChevronLeft, FilePlus2, CalendarDays, Bug, User,
 } from 'lucide-react';
 import { useData } from './store';
 
@@ -117,7 +117,7 @@ export function ExportMenu({ onExport }: { onExport: (fmt: 'CSV' | 'XLSX' | 'PDF
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const { currentUser, users, setCurrentUserId, notifications, backend, signOut, refresh, backendError } = useData();
+  const { currentUser, users, setCurrentUserId, notifications, backend, signOut, refresh, backendError, syncState, lastSyncedAt } = useData();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [devOpen, setDevOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -127,6 +127,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const links = [
     { to: '/', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+    ...(currentUser.role !== 'Principal' ? [{ to: '/faculty', label: 'My Panel', icon: <User size={18} /> }] : []),
     { to: '/proposals', label: 'Proposals', icon: <FileText size={18} /> },
     { to: '/proposals/new', label: 'New Proposal', icon: <FilePlus2 size={18} /> },
     { to: '/tasks', label: 'Tasks', icon: <CheckSquare size={18} /> },
@@ -208,10 +209,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
           {backend === 'supabase' && (
             <button onClick={refresh} className="w-full text-left px-4 py-1 text-[11px] text-slate-500 hover:text-primary border-b border-gray-100">
-              Connected to college database, click to refresh
+              {syncState === 'live' && `Live, synced ${lastSyncedAt ?? 'just now'}, click to refresh`}
+              {syncState === 'loading' && 'Syncing with college database...'}
+              {syncState === 'offline' && 'Offline, showing last loaded data, click to retry'}
             </button>
           )}
         </header>
+        {syncState === 'offline' && (
+          <div className="mx-4 sm:mx-6 mt-3 bg-red-50 border border-red-200 text-red-800 text-xs rounded-card px-3 py-2 print-hidden flex items-center gap-2" role="alert">
+            <span className="flex-1">Connection to the college database was lost. Your view may be out of date.</span>
+            <button onClick={refresh} className="px-2.5 py-1 font-bold rounded-md bg-red-600 text-white">Retry</button>
+          </div>
+        )}
         {backendError && (
           <div className="mx-4 sm:mx-6 mt-3 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-card px-3 py-2 print-hidden" role="status">
             Sync note: {backendError}

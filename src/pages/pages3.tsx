@@ -512,7 +512,7 @@ export function NotificationsCenter() {
 }
 
 export function SettingsPage() {
-  const { options, saveOptions, users, saveUsers, letterhead, saveLetterhead, resetDemo, audit, currentUser } = useData();
+  const { options, saveOptions, users, saveUsers, letterhead, saveLetterhead, resetDemo, audit, currentUser, backend, syncState, lastSyncedAt, refresh } = useData();
   const [tab, setTab] = useState('options');
   const [newUser, setNewUser] = useState({ name: '', email: '', role: 'Faculty', department: 'IT', designation: '', phone: '' });
   const nav = useNavigate();
@@ -530,6 +530,11 @@ export function SettingsPage() {
   return (
     <div className="space-y-4">
       <div><p className="text-xs text-slate-500">Admin</p><h1 className="text-2xl font-bold">Settings</h1></div>
+      <p className="text-xs text-slate-500">
+        Source: {backend === 'supabase' ? 'college database' : 'local demo data'}
+        {backend === 'supabase' && `, status ${syncState}, last synced ${lastSyncedAt ?? 'never'}`}
+        {backend === 'supabase' && <button onClick={refresh} className="ml-2 text-primary font-semibold">Refresh now</button>}
+      </p>
       <div className="flex gap-1 bg-white border border-gray-200 rounded-card p-1 w-fit flex-wrap">
         {['options', 'users', 'letterhead', 'audit'].map((t) => (
           <button key={t} onClick={() => setTab(t)} className={`px-3 py-1.5 text-sm font-medium rounded-md capitalize ${tab === t ? 'bg-primary-light text-primary-dark' : 'text-slate-600'}`}>{t}</button>
