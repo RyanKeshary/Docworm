@@ -6,8 +6,8 @@ import { SEED_AUDIT, SEED_COMMENTS, SEED_NOTIFICATIONS, SEED_PROPOSALS, SEED_TAS
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import {
   insertAudit, insertComment, insertNotification, loadWorkspace,
-  nextRefNumber, persistProposal, persistTask, upsertCompletion,
-  upsertProfile, upsertSettings, uploadAttachment,
+  nextRefNumber, persistProposal, deleteProposal, persistTask, deleteTask, upsertCompletion,
+  upsertProfile, deleteProfile, upsertSettings, uploadAttachment,
 } from './lib/backend';
 
 export type CompletionMap = { [proposalId: string]: CompletionReport };
@@ -341,6 +341,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setProposals(next);
     if (backend !== 'supabase') return;
     const sb = supabase();
+    const nextIds = new Set(next.map((p) => p.id));
+    for (const [id] of snap.current.proposals.entries()) {
+      if (!nextIds.has(id)) {
+        snap.current.proposals.delete(id);
+        deleteProposal(sb, id).catch((e) => reportErr(`Delete proposal ${id} failed`, e));
+      }
+    }
     next.forEach((p) => {
       const prev = snap.current.proposals.get(p.id);
       const now = JSON.stringify(p);
@@ -355,6 +362,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setTasks(next);
     if (backend !== 'supabase') return;
     const sb = supabase();
+    const nextIds = new Set(next.map((t) => t.id));
+    for (const [id] of snap.current.tasks.entries()) {
+      if (!nextIds.has(id)) {
+        snap.current.tasks.delete(id);
+        deleteTask(sb, id).catch((e) => reportErr(`Delete task ${id} failed`, e));
+      }
+    }
     next.forEach((t) => {
       const prev = snap.current.tasks.get(t.id);
       const now = JSON.stringify(t);
@@ -410,10 +424,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       queueSettingsWrite(next, letterhead);
     },
     saveUsers: (next) => {
-      setUsers(next);
       if (backend === 'supabase') {
+        const nextIds = new Set(next.map((u) => u.id));
+        users.filter((u) => !nextIds.has(u.id)).forEach((u) =>
+          deleteProfile(supabase(), u.id).catch((e) => reportErr('Delete user failed', e)));
         next.forEach((u) => upsertProfile(supabase(), u).catch((e) => reportErr('Sync user failed', e)));
       }
+      setUsers(next);
     },
     saveLetterhead: (next) => {
       setLetterhead(next);

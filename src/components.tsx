@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
-  FileText, LayoutDashboard, CheckSquare, BarChart3, Bell, Settings,
-  Menu, X, Search, LogOut, ChevronLeft, FilePlus2, CalendarDays, Bug, User, Database, Shield,
+  FileText, Bell, Settings,
+  Menu, X, Search, LogOut, ChevronLeft, User, Database, Shield, Crown, GraduationCap, Building2, Users,
 } from 'lucide-react';
 import { useData } from './store';
+import { ROLE_META, PERMISSIONS } from './lib/roleUtils';
 
 export const STATUS_STYLE: Record<string, string> = {
   Approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -137,13 +138,27 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [q, setQ] = useState('');
   const nav = useNavigate();
   const unread = notifications.filter((n) => n.userId === currentUser.id && !n.read).length;
+  const role = currentUser.role;
+  const roleMeta = ROLE_META[role] ?? ROLE_META.Faculty;
 
-  // Streamlined primary navigation links for core functionality
-  const links = [
-    { to: '/', label: 'Permission Requests', icon: <FileText size={18} /> },
-    { to: '/notifications', label: 'Notifications', icon: <Bell size={18} /> },
-    { to: '/settings', label: 'Settings & Database', icon: <Settings size={18} /> },
+  // Role-specific navigation
+  const allLinks = [
+    { to: '/', label: 'Permission Requests', icon: <FileText size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
+    { to: '/notifications', label: 'Notifications', icon: <Bell size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
+    { to: '/settings', label: 'Settings & Admin', icon: <Settings size={18} />, roles: ['Principal'] },
+    { to: '/settings', label: 'Settings', icon: <Settings size={18} />, roles: ['Dean', 'HOD', 'Faculty'] },
   ];
+
+  // De-dupe by role visibility
+  const links = allLinks.filter((l) => l.roles.includes(role));
+  // Remove duplicate '/settings' — keep only the first match for this role
+  const seen = new Set<string>();
+  const dedupedLinks = links.filter((l) => {
+    const k = l.to;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 
   const searchGo = (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,6 +167,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const side = (
     <div className="flex flex-col h-full bg-surface">
+      {/* App logo */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-primary-border">
         <Link to="/" className="flex items-center gap-2.5">
           <span className="w-9 h-9 rounded-xl bg-gradient-to-tr from-primary-dark to-primary text-white flex items-center justify-center shadow-sm">
@@ -171,8 +187,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
         )}
       </div>
 
+      {/* Role badge */}
+      {!collapsed && (
+        <div className={`mx-3 mt-3 mb-1 px-3 py-2 rounded-lg border ${roleMeta.border} ${roleMeta.bg} flex items-center gap-2`}>
+          <span className="text-base">{roleMeta.icon}</span>
+          <div>
+            <p className={`text-[11px] font-bold uppercase tracking-wider ${roleMeta.accent}`}>{role}</p>
+            <p className="text-[10px] text-ink-muted truncate max-w-[140px]">{currentUser.name}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Nav links */}
       <nav className="flex-1 overflow-y-auto p-3 space-y-0.5" aria-label="Primary">
-        {links.map((l) => (
+        {!collapsed && <p className="text-[10px] text-ink-muted uppercase font-semibold px-3 pb-1 pt-1">Navigation</p>}
+        {dedupedLinks.map((l) => (
           <NavLink
             key={l.to + l.label}
             to={l.to}
@@ -188,6 +217,47 @@ export function Layout({ children }: { children: React.ReactNode }) {
             {!collapsed && <span className="truncate">{l.label}</span>}
           </NavLink>
         ))}
+
+        {/* Role-specific quick info */}
+        {!collapsed && (
+          <div className="mt-4 pt-3 border-t border-primary-border/40">
+            <p className="text-[10px] text-ink-muted uppercase font-semibold px-3 pb-2">Your Access Level</p>
+            <div className="px-3 space-y-1.5 text-[11px] text-ink-muted">
+              {role === 'Principal' && (
+                <>
+                  <p>✅ Final sanction authority</p>
+                  <p>✅ View all departments</p>
+                  <p>✅ Manage users & settings</p>
+                  <p>✅ Assign tasks to anyone</p>
+                </>
+              )}
+              {role === 'Dean' && (
+                <>
+                  <p>✅ View all departments</p>
+                  <p>✅ Review endorsed proposals</p>
+                  <p>✅ Forward to Principal</p>
+                  <p>🔒 Cannot manage system settings</p>
+                </>
+              )}
+              {role === 'HOD' && (
+                <>
+                  <p>✅ View {currentUser.department} dept only</p>
+                  <p>✅ First reviewer in chain</p>
+                  <p>✅ Assign dept tasks</p>
+                  <p>🔒 Cannot access other depts</p>
+                </>
+              )}
+              {role === 'Faculty' && (
+                <>
+                  <p>✅ Submit new requests</p>
+                  <p>✅ View your submissions</p>
+                  <p>✅ Download approved letters</p>
+                  <p>🔒 Cannot approve proposals</p>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </nav>
 
       <div className="p-3 border-t border-primary-border space-y-2 bg-page">
@@ -210,19 +280,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
             onClick={() => setDevOpen(true)}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-card text-xs font-semibold border border-primary-border text-primary bg-primary-pale hover:bg-primary-light transition-colors"
           >
-            <User size={14} /> {!collapsed && `Switch Role: ${currentUser.role}`}
+            <User size={14} /> {!collapsed && `Switch Account (${currentUser.role})`}
           </button>
         )}
 
         {!collapsed && (
           <div className="px-1 py-1">
             <div className="flex items-center gap-2">
-              <span className="w-7 h-7 rounded-full bg-primary-light text-primary font-bold text-xs flex items-center justify-center shrink-0">
+              <span className={`w-7 h-7 rounded-full ${roleMeta.bg} border ${roleMeta.border} font-bold text-xs flex items-center justify-center shrink-0`}>
                 {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold text-ink truncate">{currentUser.name}</p>
-                <p className="text-[11px] text-ink-muted truncate">{currentUser.role} • {currentUser.department}</p>
+                <p className={`text-[11px] truncate ${roleMeta.accent}`}>{currentUser.role} • {currentUser.department}</p>
               </div>
             </div>
           </div>
@@ -335,22 +405,42 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </div>
       {devOpen && (
         <Modal title="Switch Active Account" onClose={() => setDevOpen(false)}>
-          <p className="text-sm text-ink-muted mb-3">Select an account to test permissions and approvals as that role.</p>
-          <div className="space-y-2">
-            {users.map((u) => (
-              <button
-                key={u.id}
-                onClick={() => { setCurrentUserId(u.id); setDevOpen(false); nav('/'); }}
-                className={`w-full text-left px-3 py-2 rounded-card border text-sm transition-colors ${
-                  u.id === currentUser.id
-                    ? 'border-primary bg-primary-light text-ink'
-                    : 'border-primary-border hover:bg-primary-pale text-ink'
-                }`}
-              >
-                <span className="font-semibold">{u.name}</span>
-                <span className="text-ink-muted">, {u.role}, {u.department}, {u.email}</span>
-              </button>
-            ))}
+          <p className="text-sm text-ink-muted mb-4">Select an account to test permissions and approvals as that role.</p>
+          <div className="space-y-2.5">
+            {users.map((u) => {
+              const meta = ROLE_META[u.role as keyof typeof ROLE_META] ?? ROLE_META.Faculty;
+              const isActive = u.id === currentUser.id;
+              const roleDesc: Record<string, string> = {
+                Principal: 'Final sanction authority — approves all proposals, manages users & settings',
+                Dean: 'Cross-dept review — forwards endorsed proposals to Principal',
+                HOD: 'Department head — first reviewer, endorses to Dean',
+                Faculty: 'Submitter — creates requests, tracks approvals',
+              };
+              return (
+                <button
+                  key={u.id}
+                  onClick={() => { setCurrentUserId(u.id); setDevOpen(false); nav('/'); }}
+                  className={`w-full text-left px-4 py-3 rounded-card border transition-colors ${
+                    isActive
+                      ? `${meta.border} ${meta.bg} ring-1 ring-primary/20`
+                      : 'border-primary-border hover:bg-primary-pale'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="text-xl mt-0.5">{meta.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-ink">{u.name}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${meta.badge}`}>{u.role}</span>
+                        {isActive && <span className="text-[10px] text-emerald-600 font-semibold">● Active</span>}
+                      </div>
+                      <p className="text-xs text-ink-muted mt-0.5 truncate">{u.department} • {u.email}</p>
+                      <p className={`text-[11px] mt-1 ${meta.accent}`}>{roleDesc[u.role] ?? ''}</p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </Modal>
       )}

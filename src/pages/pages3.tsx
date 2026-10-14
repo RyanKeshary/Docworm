@@ -22,7 +22,28 @@ export function TasksList() {
   const [detail, setDetail] = useState<Task | null>(null);
 
   const name = (id: string) => users.find((u) => u.id === id)?.name ?? id;
-  const list = tasks.filter((t) => {
+
+  // Role-based scoping:
+  // - Principal & Dean: see all tasks across all departments
+  // - HOD: sees all tasks within their department (assigned by/to department staff)
+  // - Faculty: sees tasks assigned to them or created by them
+  const scopedTasks = useMemo(() => {
+    if (currentUser.role === 'Principal' || currentUser.role === 'Dean') {
+      return tasks;
+    }
+    if (currentUser.role === 'HOD') {
+      const deptUserIds = new Set(users.filter((u) => u.department === currentUser.department).map((u) => u.id));
+      return tasks.filter(
+        (t) =>
+          deptUserIds.has(t.assignedBy) ||
+          t.assignedTo.some((uid) => deptUserIds.has(uid)) ||
+          t.assignedBy === currentUser.id,
+      );
+    }
+    return tasks.filter((t) => t.assignedTo.includes(currentUser.id) || t.assignedBy === currentUser.id);
+  }, [tasks, currentUser, users]);
+
+  const list = scopedTasks.filter((t) => {
     if (fType && t.taskType !== fType) return false;
     if (fPriority && t.priority !== fPriority) return false;
     const cs = computedTaskStatus(t.dueDate, t.status);
@@ -535,6 +556,22 @@ export function SettingsPage() {
   const nav = useNavigate();
 
   const isAdmin = currentUser.role === 'Principal' || currentUser.role === 'Dean';
+  const isPrincipal = currentUser.role === 'Principal';
+
+  // Role-based staff directory scoping:
+  // - Principal sees all accounts and can manage/create/delete them
+  // - Dean sees all HODs and faculties across all departments
+  // - HOD sees all faculties and staff in their department
+  // - Faculty sees their department contacts
+  const visibleStaff = useMemo(() => {
+    if (currentUser.role === 'Principal' || currentUser.role === 'Dean') {
+      return users;
+    }
+    if (currentUser.role === 'HOD') {
+      return users.filter((u) => u.department === currentUser.department);
+    }
+    return users.filter((u) => u.department === currentUser.department || u.id === currentUser.id);
+  }, [users, currentUser]);
 
   const editList = (key: keyof typeof options, val: string) => {
     saveOptions({ ...options, [key]: val.split(',').map((s) => s.trim()).filter(Boolean) });
@@ -1015,9 +1052,10 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
               </span>
             </div>
 
-            {isAdmin && (
+            {/* Only Principal has authority to create staff accounts */}
+            {isPrincipal && (
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-card space-y-3">
-                <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">Create New Staff / Faculty Account:</p>
+                <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">Create New Staff / Faculty Account (Principal Only):</p>
                 <div className="grid sm:grid-cols-3 gap-2.5">
                   <input value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} placeholder="Full Name (e.g. Dr. Priya Rao)" className={inputCls} aria-label="User name" />
                   <input value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} placeholder="Email address" className={inputCls} aria-label="User email" />
@@ -1036,7 +1074,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
             )}
 
             <div className="divide-y divide-gray-100 border border-gray-200 rounded-card overflow-hidden">
-              {users.map((u) => (
+              {visibleStaff.map((u) => (
                 <div key={u.id} className="flex flex-wrap items-center justify-between p-3.5 hover:bg-slate-50/70 transition-colors gap-2">
                   <div>
                     <div className="flex items-center gap-2">

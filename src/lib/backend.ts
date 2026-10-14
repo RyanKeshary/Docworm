@@ -297,34 +297,71 @@ export async function persistProposal(sb: SupabaseClient, p: Proposal): Promise<
   ]);
   const ops: PromiseLike<{ error: unknown }>[] = [];
   if (p.resources.length) {
-    ops.push(sb.from('docworm_resources').insert(p.resources.map((r) => ({
-      id: r.id, proposal_id: p.id, resource_type: r.resourceType, room_no: r.roomNo,
-      owner_dept: r.ownerDept, date: r.date, start_time: r.startTime, end_time: r.endTime,
-      status: r.status, decided_by: r.decidedBy ?? '', decided_at: r.decidedAt ?? '', remark: r.remark ?? '',
+    ops.push(sb.from('docworm_resources').insert(p.resources.map((r, i) => ({
+      id: r.id && !['r1', 'r2', 'r-1'].includes(r.id) ? r.id : `${p.id}_res_${i}`,
+      proposal_id: p.id,
+      resource_type: r.resourceType,
+      room_no: r.roomNo,
+      owner_dept: r.ownerDept,
+      date: r.date,
+      start_time: r.startTime,
+      end_time: r.endTime,
+      status: r.status,
+      decided_by: r.decidedBy ?? '',
+      decided_at: r.decidedAt ?? '',
+      remark: r.remark ?? '',
     }))) as unknown as PromiseLike<{ error: unknown }>);
   }
   if (p.budgetItems.length) {
-    ops.push(sb.from('docworm_budget_items').insert(p.budgetItems.map((b) => ({
-      id: b.id, proposal_id: p.id, item: b.item, category: b.category,
-      quantity: b.quantity, unit_cost: b.unitCost,
+    ops.push(sb.from('docworm_budget_items').insert(p.budgetItems.map((b, i) => ({
+      id: b.id && !['b1', 'b2', 'b-1'].includes(b.id) ? b.id : `${p.id}_b_${i}`,
+      proposal_id: p.id,
+      item: b.item,
+      category: b.category,
+      quantity: b.quantity,
+      unit_cost: b.unitCost,
     }))) as unknown as PromiseLike<{ error: unknown }>);
   }
   if (p.poMappings.length) {
     ops.push(sb.from('docworm_po_mappings').insert(p.poMappings.map((m) => ({
-      proposal_id: p.id, po: m.po, explanation: m.explanation,
+      proposal_id: p.id,
+      po: m.po,
+      explanation: m.explanation,
     }))) as unknown as PromiseLike<{ error: unknown }>);
   }
   if (p.approvalChain.length) {
     ops.push(sb.from('docworm_approval_steps').insert(p.approvalChain.map((s, i) => ({
-      id: s.id, proposal_id: p.id, step_order: i, role: s.role,
-      user_id: uuidOrNull(s.userId), user_name: s.userName, action: s.action,
-      acted_at: s.actedAt ?? '', remark: s.remark ?? '',
+      id: s.id && !['s-hod', 's-dean', 's-prin', 's1', 's2', 's3', 's4'].includes(s.id) ? s.id : `${p.id}_step_${s.role.toLowerCase()}_${i}`,
+      proposal_id: p.id,
+      step_order: i,
+      role: s.role,
+      user_id: uuidOrNull(s.userId),
+      user_name: s.userName,
+      action: s.action,
+      acted_at: s.actedAt ?? '',
+      remark: s.remark ?? '',
     }))) as unknown as PromiseLike<{ error: unknown }>);
   }
   const results = await Promise.all(ops);
   for (const r of results) {
     if (r.error) throw r.error;
   }
+}
+
+export async function deleteProposal(sb: SupabaseClient, proposalId: string): Promise<void> {
+  const { error } = await sb.from('docworm_proposals').delete().eq('id', proposalId);
+  if (error) throw error;
+}
+
+export async function deleteTask(sb: SupabaseClient, taskId: string): Promise<void> {
+  const { error } = await sb.from('docworm_tasks').delete().eq('id', taskId);
+  if (error) throw error;
+}
+
+export async function deleteProfile(sb: SupabaseClient, userId: string): Promise<void> {
+  if (!isUuid(userId)) return;
+  const { error } = await sb.from('docworm_profiles').delete().eq('id', userId);
+  if (error) throw error;
 }
 
 export async function persistTask(sb: SupabaseClient, t: Task): Promise<void> {
