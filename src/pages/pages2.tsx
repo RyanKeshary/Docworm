@@ -105,6 +105,8 @@ export function ProposalForm() {
     const cat = (draft.eventCategory as string) ?? 'General';
     const year = (draft.academicYear as string) ?? currentAcademicYear();
     const refNo = await getNextRefNumber(cell, cat, year);
+    const hod = users.find((u) => u.role === 'HOD' && u.department === cell) || users.find((u) => u.role === 'HOD');
+    const dean = users.find((u) => u.role === 'Dean');
     const principal = users.find((u) => u.role === 'Principal');
     return {
       id: `p-${Date.now().toString(36)}`,
@@ -137,8 +139,8 @@ export function ProposalForm() {
       status,
       approvalChain: [
         { id: 's1', role: 'Submitter', userId: currentUser.id, userName: currentUser.name, action: status === 'Draft' ? 'Pending' : 'Approved', actedAt: status === 'Draft' ? undefined : nowStr(), remark: status === 'Draft' ? undefined : 'Submitted for approval' },
-        { id: 's2', role: 'HOD', userId: currentUser.id, userName: currentUser.name, action: 'Pending' },
-        ...(draft.organizingBody === 'SWDC' ? [{ id: 's3', role: 'Dean', userId: '', userName: 'Dean SWDC', action: 'Pending' as const }] : []),
+        { id: 's2', role: 'HOD', userId: hod?.id ?? '', userName: hod?.name ?? `HOD ${cell}`, action: 'Pending' },
+        ...(draft.organizingBody === 'SWDC' ? [{ id: 's3', role: 'Dean', userId: dean?.id ?? '', userName: dean?.name ?? 'Dean SWDC', action: 'Pending' as const }] : []),
         { id: 's4', role: 'Principal', userId: principal?.id ?? '', userName: principal?.name ?? 'Principal', action: 'Pending' },
       ],
       createdAt: nowStr(),

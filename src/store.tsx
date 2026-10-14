@@ -47,7 +47,9 @@ interface DataState {
   saveLetterhead: (l: { collegeName: string; address: string; phone: string; email: string }) => void;
   pushNotification: (n: Omit<Notification, 'id' | 'createdAt' | 'read'> & { read?: boolean }) => void;
   pushAudit: (a: Omit<AuditLog, 'id' | 'createdAt'>) => void;
+  signUp: (user: Omit<User, 'id'>) => Promise<string | null>;
   resetDemo: () => void;
+  purgeFakeData: () => void;
 }
 
 const Ctx = createContext<DataState | null>(null);
@@ -56,7 +58,33 @@ function load<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem('docworm:' + key);
     if (!raw) return fallback;
-    return JSON.parse(raw) as T;
+    const parsed = JSON.parse(raw);
+    // Purge legacy demo proposals, tasks, comments, notifications, audit logs from earlier builds
+    if (key === 'proposals' && Array.isArray(parsed) && parsed.some((p: { id?: string }) => p.id === 'p-hackathon' || p.id === 'p-robo')) {
+      localStorage.removeItem('docworm:' + key);
+      return fallback;
+    }
+    if (key === 'tasks' && Array.isArray(parsed) && parsed.some((t: { id?: string }) => t.id === 't1' || t.id === 't2')) {
+      localStorage.removeItem('docworm:' + key);
+      return fallback;
+    }
+    if (key === 'comments' && Array.isArray(parsed) && parsed.some((c: { id?: string }) => c.id === 'c1')) {
+      localStorage.removeItem('docworm:' + key);
+      return fallback;
+    }
+    if (key === 'notifications' && Array.isArray(parsed) && parsed.some((n: { id?: string }) => n.id === 'n1')) {
+      localStorage.removeItem('docworm:' + key);
+      return fallback;
+    }
+    if (key === 'audit' && Array.isArray(parsed) && parsed.some((a: { id?: string }) => a.id === 'l1')) {
+      localStorage.removeItem('docworm:' + key);
+      return fallback;
+    }
+    if (key === 'users' && Array.isArray(parsed) && parsed.some((u: { name?: string }) => u.name === 'Dr. S. R. Patil')) {
+      localStorage.removeItem('docworm:' + key);
+      return fallback;
+    }
+    return parsed as T;
   } catch { return fallback; }
 }
 function persist(key: string, val: unknown) {
@@ -222,7 +250,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { if (backend === 'local') persist('session', currentUserId); }, [currentUserId, backend]);
 
   const currentUser = useMemo(
-    () => users.find((u) => u.id === currentUserId) ?? users[0],
+    () => users.find((u) => u.id === currentUserId) ?? users[0] ?? {
+      id: 'guest',
+      name: 'Staff User',
+      email: '',
+      role: 'Faculty',
+      department: 'HAS',
+      designation: 'Staff',
+      phone: '',
+      password: '',
+    },
     [users, currentUserId],
   );
 
@@ -230,7 +267,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setBackendError('');
     if (backend === 'local') {
       const u = users.find((x) => x.email.toLowerCase() === email.trim().toLowerCase() && x.password === password);
-      if (!u) return 'Invalid email or password. Try a demo account below.';
+      if (!u) return 'Invalid email or password.';
       setCurrentUserIdState(u.id);
       return null;
     }
@@ -250,6 +287,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setSyncState('offline');
       return e instanceof Error ? e.message : 'Sign in failed.';
     }
+  };
+
+  const signUp = async (newUser: Omit<User, 'id'>): Promise<string | null> => {
+    if (!newUser.email.trim() || !newUser.password) return 'Email and password are required.';
+    const emailNorm = newUser.email.trim().toLowerCase();
+    if (users.some((u) => u.email.toLowerCase() === emailNorm)) {
+      return 'An account with this email already exists.';
+    }
+    const createdUser: User = {
+      ...newUser,
+      id: `u-${Date.now().toString(36)}`,
+      email: emailNorm,
+    };
+    const updatedUsers = [...users, createdUser];
+    setUsers(updatedUsers);
+    if (backend === 'local') {
+      persist('users', updatedUsers);
+      setCurrentUserIdState(createdUser.id);
+    }
+    return null;
   };
 
   const signOut = async () => {
@@ -376,11 +433,48 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         insertAudit(supabase(), full).catch((e) => reportErr('Sync audit failed', e));
       }
     },
+    signUp,
     resetDemo: () => {
-      setUsers(SEED_USERS); setProposals(SEED_PROPOSALS); setTasks(SEED_TASKS);
-      setComments(SEED_COMMENTS); setNotifications(SEED_NOTIFICATIONS); setAudit(SEED_AUDIT);
-      setCompletions({}); setOptions(DEFAULT_OPTIONS);
-      setCurrentUserIdState('u-principal');
+      localStorage.removeItem('docworm:proposals');
+      localStorage.removeItem('docworm:tasks');
+      localStorage.removeItem('docworm:comments');
+      localStorage.removeItem('docworm:notifications');
+      localStorage.removeItem('docworm:audit');
+      localStorage.removeItem('docworm:completions');
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('docworm:draft')) {
+          localStorage.removeItem(k);
+        }
+      }
+      setProposals([]);
+      setTasks([]);
+      setComments([]);
+      setNotifications([]);
+      setAudit([]);
+      setCompletions({});
+      setOptions(DEFAULT_OPTIONS);
+      setLetterhead(DEFAULT_LETTERHEAD);
+    },
+    purgeFakeData: () => {
+      localStorage.removeItem('docworm:proposals');
+      localStorage.removeItem('docworm:tasks');
+      localStorage.removeItem('docworm:comments');
+      localStorage.removeItem('docworm:notifications');
+      localStorage.removeItem('docworm:audit');
+      localStorage.removeItem('docworm:completions');
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('docworm:draft')) {
+          localStorage.removeItem(k);
+        }
+      }
+      setProposals([]);
+      setTasks([]);
+      setComments([]);
+      setNotifications([]);
+      setAudit([]);
+      setCompletions({});
     },
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

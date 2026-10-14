@@ -1,6 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  ArrowLeft, Plus, Database, Server, ExternalLink, RefreshCw, Trash2,
+  Shield, CheckCircle2, Copy, Check, Info, User as UserIcon, Lock,
+} from 'lucide-react';
 import { useData, nowStr } from '../store';
 import { Badge, Drawer, EmptyState, ExportMenu, Field, Modal, btnGhost, btnPrimary, inputCls } from '../components';
 import { REPORT_COLS, computedTaskStatus, detectClashes, exportCSV, exportPDF, exportXLSX, flattenProposal, flattenReport, flattenTask, budgetTotals, exportLetterPDF } from '../utils';
@@ -512,87 +515,497 @@ export function NotificationsCenter() {
 }
 
 export function SettingsPage() {
-  const { options, saveOptions, users, saveUsers, letterhead, saveLetterhead, resetDemo, audit, currentUser, backend, syncState, lastSyncedAt, refresh } = useData();
-  const [tab, setTab] = useState('options');
+  const {
+    options, saveOptions, users, saveUsers, letterhead, saveLetterhead,
+    resetDemo, purgeFakeData, audit, currentUser, setCurrentUserId,
+    backend, syncState, lastSyncedAt, refresh, proposals, tasks, comments, notifications,
+  } = useData();
+
+  const [params, setParams] = useSearchParams();
+  const currentTab = params.get('tab') ?? 'database';
+  const setTab = (t: string) => setParams({ tab: t });
+
   const [newUser, setNewUser] = useState({ name: '', email: '', role: 'Faculty', department: 'IT', designation: '', phone: '' });
+  const [purgeFeedback, setPurgeFeedback] = useState('');
+  const [copiedEnv, setCopiedEnv] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const nav = useNavigate();
-  if (currentUser.role !== 'Principal') {
-    return <EmptyState title="Principal only" hint="Settings is restricted to the principal." />;
-  }
+
+  const isAdmin = currentUser.role === 'Principal' || currentUser.role === 'Dean';
+
   const editList = (key: keyof typeof options, val: string) => {
     saveOptions({ ...options, [key]: val.split(',').map((s) => s.trim()).filter(Boolean) });
   };
+
   const addUser = () => {
     if (!newUser.name.trim() || !newUser.email.trim()) return;
-    saveUsers([...users, { id: `u-${Date.now().toString(36)}`, name: newUser.name, email: newUser.email, role: newUser.role as 'Principal' | 'Dean' | 'HOD' | 'Faculty', department: newUser.department, designation: newUser.designation || newUser.role, phone: newUser.phone || '', password: 'docworm123' }]);
+    saveUsers([...users, {
+      id: `u-${Date.now().toString(36)}`,
+      name: newUser.name.trim(),
+      email: newUser.email.trim().toLowerCase(),
+      role: newUser.role as 'Principal' | 'Dean' | 'HOD' | 'Faculty',
+      department: newUser.department,
+      designation: newUser.designation.trim() || newUser.role,
+      phone: newUser.phone.trim(),
+      password: 'password123',
+    }]);
     setNewUser({ name: '', email: '', role: 'Faculty', department: 'IT', designation: '', phone: '' });
   };
+
+  const handlePurgeFakeData = () => {
+    if (window.confirm('Are you sure you want to remove all fake proposals, demo tasks, notifications, and reset to a clean slate? This action cannot be undone.')) {
+      purgeFakeData();
+      setPurgeFeedback('All fake proposals, dummy tasks, and cached mock entries have been purged!');
+      setTimeout(() => setPurgeFeedback(''), 4000);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
+  };
+
+  const sampleEnvText = `# Supabase Cloud Credentials for Docworm
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres`;
+
+  const copyEnv = () => {
+    navigator.clipboard.writeText(sampleEnvText);
+    setCopiedEnv(true);
+    setTimeout(() => setCopiedEnv(false), 2500);
+  };
+
+  const tables = [
+    { name: 'docworm_proposals', count: proposals.length, desc: 'Institutional permission letters, dates, budget, department approvals' },
+    { name: 'docworm_tasks', count: tasks.length, desc: 'Event action items, assignees, priorities, and deadlines' },
+    { name: 'docworm_profiles', count: users.length, desc: 'Institutional staff profiles, designations, roles & departments' },
+    { name: 'docworm_comments', count: comments.length, desc: 'Review notes, queries, and HOD/Dean remarks' },
+    { name: 'docworm_notifications', count: notifications.length, desc: 'Live alerts for signers, submitters & coordinators' },
+    { name: 'docworm_audit_log', count: audit.length, desc: 'Institutional audit trail of all approval decisions and changes' },
+    { name: 'docworm_resources', count: 'Dynamic', desc: 'Room & seminar hall bookings and clashes' },
+    { name: 'docworm_approval_steps', count: 'Dynamic', desc: 'Step-by-step routing chain (Submitter -> HOD -> Dean -> Principal)' },
+    { name: 'docworm_completion_reports', count: 'Dynamic', desc: 'Post-event completion evidence and participant statistics' },
+    { name: 'docworm_settings', count: '1', desc: 'Custom dropdown lists, departments, and letterhead' },
+  ];
+
   return (
-    <div className="space-y-4">
-      <div><p className="text-xs text-slate-500">Admin</p><h1 className="text-2xl font-bold">Settings</h1></div>
-      <p className="text-xs text-slate-500">
-        Source: {backend === 'supabase' ? 'college database' : 'local demo data'}
-        {backend === 'supabase' && `, status ${syncState}, last synced ${lastSyncedAt ?? 'never'}`}
-        {backend === 'supabase' && <button onClick={refresh} className="ml-2 text-primary font-semibold">Refresh now</button>}
-      </p>
-      <div className="flex gap-1 bg-white border border-gray-200 rounded-card p-1 w-fit flex-wrap">
-        {['options', 'users', 'letterhead', 'audit'].map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`px-3 py-1.5 text-sm font-medium rounded-md capitalize ${tab === t ? 'bg-primary-light text-primary-dark' : 'text-slate-600'}`}>{t}</button>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-primary">System & Configuration</span>
+            {!isAdmin && (
+              <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
+                {currentUser.role} View
+              </span>
+            )}
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mt-0.5">Settings & Database</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+            Access database connection, institutional options, letterhead, and staff directory.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handlePurgeFakeData}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-card text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition-colors shadow-xs"
+            title="Wipe any old demo proposals, tasks, or fake records"
+          >
+            <Trash2 size={14} /> Purge All Fake Data
+          </button>
+          <button onClick={() => nav('/')} className={btnGhost}>Dashboard</button>
+        </div>
+      </div>
+
+      {purgeFeedback && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-card p-3.5 flex items-center gap-2.5 animate-fade-in shadow-xs">
+          <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+          <span>{purgeFeedback}</span>
+        </div>
+      )}
+
+      {/* Tabs navigation - clean, responsive pills */}
+      <div className="flex gap-1.5 bg-slate-100/80 p-1.5 rounded-card border border-slate-200/60 overflow-x-auto scrollbar-thin">
+        {[
+          { id: 'database', label: 'Database & Backend', icon: <Database size={15} /> },
+          { id: 'profile', label: 'My Profile', icon: <UserIcon size={15} /> },
+          { id: 'letterhead', label: 'College Letterhead', icon: null },
+          { id: 'options', label: 'Academic Options', icon: null },
+          { id: 'users', label: 'Staff Directory', icon: null },
+          { id: 'audit', label: `Audit Log (${audit.length})`, icon: null },
+        ].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all shrink-0 ${
+              currentTab === t.id
+                ? 'bg-white text-primary shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+            }`}
+          >
+            {t.icon}
+            {t.label}
+          </button>
         ))}
       </div>
-      {tab === 'options' && (
-        <div className="bg-white border border-gray-200 rounded-card p-5 space-y-3">
-          <p className="text-sm text-slate-500">Dropdown options, comma separated. Changes apply across all forms immediately.</p>
-          {(['departments', 'eventCategories', 'organizingBodies', 'taskTypes', 'budgetHeads', 'resourceTypes', 'academicYears'] as const).map((k) => (
-            <Field key={k} label={k}>
-              <textarea value={(options[k] as string[]).join(', ')} onChange={(e) => editList(k, e.target.value)} className={inputCls} rows={2} />
-            </Field>
-          ))}
-          <Field label="College letterhead name"><input value={letterhead.collegeName} onChange={(e) => saveLetterhead({ ...letterhead, collegeName: e.target.value })} className={inputCls} /></Field>
-          <div className="flex gap-2">
-            <button onClick={resetDemo} className={btnGhost}>Reset demo data</button>
-            <button onClick={() => nav('/')} className={btnPrimary}>Back to dashboard</button>
+
+      {/* 1. DATABASE & BACKEND TAB */}
+      {currentTab === 'database' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Active Backend Status Banner */}
+          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-gray-100">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className={`w-3 h-3 rounded-full ${backend === 'supabase' ? (syncState === 'live' ? 'bg-emerald-500 animate-pulse-dot' : 'bg-amber-500') : 'bg-violet-500'}`} />
+                  <span className="font-bold text-base sm:text-lg text-slate-900">
+                    Active Storage: {backend === 'supabase' ? 'Supabase PostgreSQL (Cloud Database)' : 'Local Browser Storage (HTML5 LocalStorage)'}
+                  </span>
+                </div>
+                <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                  {backend === 'supabase'
+                    ? `Live Realtime synchronization active. Last synced at: ${lastSyncedAt ?? 'Initial sync'}.`
+                    : 'Currently storing all proposals, tasks, and users in your browser storage. Connect Supabase to enable cloud persistence across devices.'}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {backend === 'supabase' && (
+                  <button
+                    onClick={handleRefresh}
+                    disabled={refreshing}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card text-xs font-semibold bg-primary-pale text-primary border border-primary-border hover:bg-primary-light transition-colors"
+                  >
+                    <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+                    {refreshing ? 'Syncing...' : 'Sync Now'}
+                  </button>
+                )}
+                <a
+                  href="https://supabase.com/dashboard"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs transition-colors"
+                >
+                  <ExternalLink size={14} /> Open Supabase Console
+                </a>
+              </div>
+            </div>
+
+            {/* Where to access the database */}
+            <div className="mt-5 grid md:grid-cols-3 gap-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-card p-4">
+                <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm">
+                  <Server size={16} className="text-primary" />
+                  <span>1. Cloud Table Editor</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                  Go to <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer" className="text-primary underline font-medium">Supabase Dashboard</a> &rarr; <b>Table Editor</b> to directly view, filter, insert, or edit rows in any table.
+                </p>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-card p-4">
+                <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm">
+                  <Database size={16} className="text-primary" />
+                  <span>2. SQL Editor / Direct DB</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                  Connect via <b>pgAdmin</b>, <b>DBeaver</b>, or <b>psql</b> using the Postgres connection string in your <code>DATABASE_URL</code> (Port 5432).
+                </p>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-card p-4">
+                <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm">
+                  <Shield size={16} className="text-primary" />
+                  <span>3. Local Migrations</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                  SQL migrations live in <code>supabase/migrations/</code>. Run <code>npm run db:migrate</code> to apply changes or add tables anytime.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Database Tables Overview */}
+          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
+            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+              <div>
+                <h2 className="font-bold text-slate-900 text-base">PostgreSQL Database Schema & Tables</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Tables created in public schema of your database</p>
+              </div>
+              <span className="text-xs font-semibold bg-primary-pale text-primary border border-primary-border px-2.5 py-1 rounded-full">
+                10 Tables
+              </span>
+            </div>
+
+            <div className="mt-4 overflow-x-auto scrollbar-thin">
+              <table className="w-full text-left text-xs sm:text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-slate-50/70 text-slate-600">
+                    <th className="py-2.5 px-3 font-semibold">Table Name</th>
+                    <th className="py-2.5 px-3 font-semibold">Current Count</th>
+                    <th className="py-2.5 px-3 font-semibold">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-slate-700">
+                  {tables.map((t) => (
+                    <tr key={t.name} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-2.5 px-3 font-mono font-medium text-primary-dark">{t.name}</td>
+                      <td className="py-2.5 px-3 font-semibold text-slate-900">{t.count}</td>
+                      <td className="py-2.5 px-3 text-slate-500">{t.desc}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Configuration Guide */}
+          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-slate-900 text-base">Environment Configuration (.env)</h2>
+                <p className="text-xs text-slate-500">Configure these keys to connect Docworm directly to your Supabase instance.</p>
+              </div>
+              <button
+                onClick={copyEnv}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-card text-xs font-semibold border border-gray-300 hover:bg-slate-50 text-slate-700 transition-colors"
+              >
+                {copiedEnv ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                {copiedEnv ? 'Copied' : 'Copy Sample .env'}
+              </button>
+            </div>
+            <pre className="p-4 bg-slate-900 text-slate-100 rounded-card text-xs font-mono overflow-x-auto">
+              {sampleEnvText}
+            </pre>
           </div>
         </div>
       )}
-      {tab === 'users' && (
-        <div className="bg-white border border-gray-200 rounded-card p-5 space-y-3">
-          <div className="grid sm:grid-cols-3 gap-2">
-            <input value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} placeholder="Name" className={inputCls} aria-label="User name" />
-            <input value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} placeholder="Email" className={inputCls} aria-label="User email" />
-            <input value={newUser.phone} onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })} placeholder="Phone" className={inputCls} aria-label="User phone" />
-            <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} className={inputCls} aria-label="Role">{['Principal', 'Dean', 'HOD', 'Faculty'].map((r) => <option key={r}>{r}</option>)}</select>
-            <select value={newUser.department} onChange={(e) => setNewUser({ ...newUser, department: e.target.value })} className={inputCls} aria-label="Department">{options.departments.map((r) => <option key={r}>{r}</option>)}</select>
-            <input value={newUser.designation} onChange={(e) => setNewUser({ ...newUser, designation: e.target.value })} placeholder="Designation" className={inputCls} aria-label="Designation" />
+
+      {/* 2. PROFILE TAB */}
+      {currentTab === 'profile' && (
+        <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-5 animate-fade-in">
+          <div>
+            <h2 className="font-bold text-slate-900 text-base">Logged-in Staff Profile</h2>
+            <p className="text-xs text-slate-500">Your institutional credentials and current authorization role.</p>
           </div>
-          <button onClick={addUser} className={btnPrimary}><Plus size={15} /> Add user (password: docworm123)</button>
-          <div className="divide-y divide-gray-100 border border-gray-100 rounded-card">
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="border border-gray-200 rounded-card p-4 bg-slate-50">
+              <span className="text-xs text-slate-500 block">Full Name</span>
+              <span className="text-base font-semibold text-slate-900 block mt-0.5">{currentUser.name}</span>
+            </div>
+            <div className="border border-gray-200 rounded-card p-4 bg-slate-50">
+              <span className="text-xs text-slate-500 block">Institutional Email</span>
+              <span className="text-base font-semibold text-slate-900 block mt-0.5">{currentUser.email || 'None registered'}</span>
+            </div>
+            <div className="border border-gray-200 rounded-card p-4 bg-slate-50">
+              <span className="text-xs text-slate-500 block">Authorization Role</span>
+              <span className="text-base font-semibold text-primary block mt-0.5">{currentUser.role}</span>
+            </div>
+            <div className="border border-gray-200 rounded-card p-4 bg-slate-50">
+              <span className="text-xs text-slate-500 block">Department</span>
+              <span className="text-base font-semibold text-slate-900 block mt-0.5">{currentUser.department}</span>
+            </div>
+            <div className="border border-gray-200 rounded-card p-4 bg-slate-50">
+              <span className="text-xs text-slate-500 block">Designation</span>
+              <span className="text-base font-semibold text-slate-900 block mt-0.5">{currentUser.designation || currentUser.role}</span>
+            </div>
+            <div className="border border-gray-200 rounded-card p-4 bg-slate-50">
+              <span className="text-xs text-slate-500 block">Contact Phone</span>
+              <span className="text-base font-semibold text-slate-900 block mt-0.5">{currentUser.phone || 'Not specified'}</span>
+            </div>
+          </div>
+
+          {backend === 'local' && (
+            <div className="border-t border-gray-100 pt-4">
+              <p className="text-xs font-semibold text-slate-600 mb-2">Switch Active Role in Local Mode:</p>
+              <div className="flex flex-wrap gap-2">
+                {users.map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => setCurrentUserId(u.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                      u.id === currentUser.id
+                        ? 'bg-primary text-white border-primary shadow-xs'
+                        : 'border-gray-200 bg-white hover:border-primary-border text-slate-700'
+                    }`}
+                  >
+                    {u.name} ({u.role})
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3. OPTIONS TAB */}
+      {currentTab === 'options' && (
+        <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4 animate-fade-in">
+          <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+            <div>
+              <h2 className="font-bold text-slate-900 text-base">Academic & Proposal Dropdown Lists</h2>
+              <p className="text-xs text-slate-500">Comma-separated entries. Changes apply across all forms immediately.</p>
+            </div>
+            {!isAdmin && (
+              <span className="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full font-medium">
+                <Lock size={12} /> Admin Managed
+              </span>
+            )}
+          </div>
+
+          {(['departments', 'eventCategories', 'organizingBodies', 'taskTypes', 'budgetHeads', 'resourceTypes', 'academicYears'] as const).map((k) => (
+            <Field key={k} label={k.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase())}>
+              <textarea
+                value={(options[k] as string[]).join(', ')}
+                onChange={(e) => isAdmin && editList(k, e.target.value)}
+                disabled={!isAdmin}
+                className={`${inputCls} ${!isAdmin ? 'bg-slate-50 text-slate-600 cursor-not-allowed' : ''}`}
+                rows={2}
+              />
+            </Field>
+          ))}
+        </div>
+      )}
+
+      {/* 4. USERS TAB */}
+      {currentTab === 'users' && (
+        <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4 animate-fade-in">
+          <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+            <div>
+              <h2 className="font-bold text-slate-900 text-base">Staff Directory & Authorized Accounts</h2>
+              <p className="text-xs text-slate-500">Official faculty, department heads, deans, and administration accounts.</p>
+            </div>
+            <span className="text-xs font-semibold bg-primary-pale text-primary border border-primary-border px-2.5 py-1 rounded-full">
+              {users.length} Registered
+            </span>
+          </div>
+
+          {isAdmin && (
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-card space-y-3">
+              <p className="text-xs font-semibold text-slate-700">Add New Staff Member:</p>
+              <div className="grid sm:grid-cols-3 gap-2.5">
+                <input value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} placeholder="Full Name (e.g. Dr. Priya Rao)" className={inputCls} aria-label="User name" />
+                <input value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} placeholder="Email address" className={inputCls} aria-label="User email" />
+                <input value={newUser.phone} onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })} placeholder="Phone (optional)" className={inputCls} aria-label="User phone" />
+                <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} className={inputCls} aria-label="Role">
+                  {['Faculty', 'HOD', 'Dean', 'Principal'].map((r) => <option key={r}>{r}</option>)}
+                </select>
+                <select value={newUser.department} onChange={(e) => setNewUser({ ...newUser, department: e.target.value })} className={inputCls} aria-label="Department">
+                  {options.departments.map((r) => <option key={r}>{r}</option>)}
+                </select>
+                <input value={newUser.designation} onChange={(e) => setNewUser({ ...newUser, designation: e.target.value })} placeholder="Designation (e.g. Assistant Professor)" className={inputCls} aria-label="Designation" />
+              </div>
+              <button onClick={addUser} className={btnPrimary}><Plus size={15} /> Add Staff Account</button>
+            </div>
+          )}
+
+          <div className="divide-y divide-gray-100 border border-gray-200 rounded-card overflow-hidden">
             {users.map((u) => (
-              <div key={u.id} className="flex gap-2 items-center px-3 py-2 text-sm">
-                <span className="font-semibold flex-1">{u.name} <span className="font-normal text-slate-500">({u.role}, {u.department}, {u.email})</span></span>
-                <button onClick={() => saveUsers(users.filter((x) => x.id !== u.id))} className="text-xs text-red-600">Remove</button>
+              <div key={u.id} className="flex flex-wrap items-center justify-between p-3.5 hover:bg-slate-50/70 transition-colors gap-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-sm text-slate-900">{u.name}</span>
+                    <Badge text={u.role} />
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {u.designation} • Dept of {u.department} • <span className="font-mono">{u.email}</span>
+                  </p>
+                </div>
+                {isAdmin && users.length > 1 && (
+                  <button onClick={() => saveUsers(users.filter((x) => x.id !== u.id))} className="text-xs text-rose-600 hover:text-rose-800 font-semibold px-2 py-1 rounded hover:bg-rose-50 transition-colors">
+                    Remove
+                  </button>
+                )}
               </div>
             ))}
           </div>
         </div>
       )}
-      {tab === 'letterhead' && (
-        <div className="bg-white border border-gray-200 rounded-card p-5 space-y-3">
-          <Field label="College name"><input value={letterhead.collegeName} onChange={(e) => saveLetterhead({ ...letterhead, collegeName: e.target.value })} className={inputCls} /></Field>
-          <Field label="Address"><textarea value={letterhead.address} onChange={(e) => saveLetterhead({ ...letterhead, address: e.target.value })} className={inputCls} rows={2} /></Field>
-          <div className="grid sm:grid-cols-2 gap-2">
-            <Field label="Phone"><input value={letterhead.phone} onChange={(e) => saveLetterhead({ ...letterhead, phone: e.target.value })} className={inputCls} /></Field>
-            <Field label="Email"><input value={letterhead.email} onChange={(e) => saveLetterhead({ ...letterhead, email: e.target.value })} className={inputCls} /></Field>
+
+      {/* 5. LETTERHEAD TAB */}
+      {currentTab === 'letterhead' && (
+        <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4 animate-fade-in">
+          <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+            <div>
+              <h2 className="font-bold text-slate-900 text-base">College Letterhead Header</h2>
+              <p className="text-xs text-slate-500">Appears on every exported PDF and DOCX permission letter.</p>
+            </div>
+            {!isAdmin && (
+              <span className="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full font-medium">
+                <Lock size={12} /> Admin Managed
+              </span>
+            )}
           </div>
-          <p className="text-xs text-slate-500">Letterhead appears on every exported formal letter header.</p>
+
+          <Field label="College Name">
+            <input
+              value={letterhead.collegeName}
+              onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, collegeName: e.target.value })}
+              disabled={!isAdmin}
+              className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+            />
+          </Field>
+          <Field label="Official Address">
+            <textarea
+              value={letterhead.address}
+              onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, address: e.target.value })}
+              disabled={!isAdmin}
+              className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+              rows={2}
+            />
+          </Field>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Phone">
+              <input
+                value={letterhead.phone}
+                onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, phone: e.target.value })}
+                disabled={!isAdmin}
+                className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+              />
+            </Field>
+            <Field label="Official Email">
+              <input
+                value={letterhead.email}
+                onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, email: e.target.value })}
+                disabled={!isAdmin}
+                className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+              />
+            </Field>
+          </div>
         </div>
       )}
-      {tab === 'audit' && (
-        <div className="bg-white border border-gray-200 rounded-card p-5">
-          <h2 className="font-semibold">Audit log ({audit.length})</h2>
-          <ul className="mt-2 space-y-1.5 text-sm max-h-96 overflow-auto">
-            {audit.map((a) => <li key={a.id} className="border-b border-gray-50 py-1.5"><b>{a.actorName}</b>: {a.action} <span className="text-xs text-slate-400">({a.createdAt})</span></li>)}
-          </ul>
+
+      {/* 6. AUDIT TAB */}
+      {currentTab === 'audit' && (
+        <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs animate-fade-in">
+          <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+            <div>
+              <h2 className="font-bold text-slate-900 text-base">Institutional Audit Trail</h2>
+              <p className="text-xs text-slate-500">Chronological record of official approvals, edits, and status changes.</p>
+            </div>
+            <span className="text-xs font-semibold bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">
+              {audit.length} Records
+            </span>
+          </div>
+
+          <div className="mt-4 max-h-[500px] overflow-y-auto space-y-2 pr-1 scrollbar-thin">
+            {audit.map((a) => (
+              <div key={a.id} className="border border-gray-100 rounded-card p-3 hover:bg-slate-50/70 transition-colors text-xs sm:text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900">{a.actorName}</span>
+                  <span className="text-[11px] text-slate-400 font-mono">{a.createdAt}</span>
+                </div>
+                <p className="text-slate-600 mt-1">{a.action}</p>
+              </div>
+            ))}
+            {audit.length === 0 && (
+              <EmptyState title="No audit records" hint="Actions performed across Docworm will be recorded here." />
+            )}
+          </div>
         </div>
       )}
     </div>

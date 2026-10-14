@@ -1,30 +1,30 @@
 import React, { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
   FileText, LayoutDashboard, CheckSquare, BarChart3, Bell, Settings,
-  Menu, X, Search, LogOut, ChevronLeft, FilePlus2, CalendarDays, Bug, User,
+  Menu, X, Search, LogOut, ChevronLeft, FilePlus2, CalendarDays, Bug, User, Database, Shield,
 } from 'lucide-react';
 import { useData } from './store';
 
 export const STATUS_STYLE: Record<string, string> = {
-  Approved: 'bg-green-100 text-green-800 border-green-200',
-  Completed: 'bg-green-100 text-green-800 border-green-200',
-  Submitted: 'bg-amber-100 text-amber-800 border-amber-200',
-  'Under Review': 'bg-amber-100 text-amber-800 border-amber-200',
-  'Changes Requested': 'bg-amber-100 text-amber-800 border-amber-200',
-  Rejected: 'bg-red-100 text-red-800 border-red-200',
-  Overdue: 'bg-red-100 text-red-800 border-red-200',
-  Draft: 'bg-gray-100 text-gray-700 border-gray-200',
-  Withdrawn: 'bg-gray-100 text-gray-700 border-gray-200',
-  Pending: 'bg-amber-100 text-amber-800 border-amber-200',
-  'Not Started': 'bg-gray-100 text-gray-700 border-gray-200',
-  'In Progress': 'bg-purple-100 text-purple-800 border-purple-200',
-  Cancelled: 'bg-gray-100 text-gray-700 border-gray-200',
+  Approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  Completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  Submitted: 'bg-amber-50 text-amber-700 border-amber-200',
+  'Under Review': 'bg-amber-50 text-amber-700 border-amber-200',
+  'Changes Requested': 'bg-orange-50 text-orange-700 border-orange-200',
+  Rejected: 'bg-rose-50 text-rose-700 border-rose-200',
+  Overdue: 'bg-rose-50 text-rose-700 border-rose-200',
+  Draft: 'bg-slate-100 text-slate-700 border-slate-200',
+  Withdrawn: 'bg-slate-100 text-slate-700 border-slate-200',
+  Pending: 'bg-amber-50 text-amber-700 border-amber-200',
+  'Not Started': 'bg-slate-100 text-slate-700 border-slate-200',
+  'In Progress': 'bg-purple-50 text-purple-700 border-purple-200',
+  Cancelled: 'bg-slate-100 text-slate-700 border-slate-200',
 };
 
 export function Badge({ text }: { text: string }) {
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${STATUS_STYLE[text] ?? 'bg-purple-100 text-purple-800 border-purple-200'}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${STATUS_STYLE[text] ?? 'bg-purple-50 text-purple-700 border-purple-200'}`}>
       {text}
     </span>
   );
@@ -32,21 +32,21 @@ export function Badge({ text }: { text: string }) {
 
 export function EmptyState({ title, hint, icon }: { title: string; hint: string; icon?: React.ReactNode }) {
   return (
-    <div className="border border-dashed border-gray-300 rounded-card bg-white p-10 text-center">
-      <div className="mx-auto w-10 h-10 rounded-lg bg-primary-pale text-primary flex items-center justify-center mb-3">
-        {icon ?? <FileText size={20} />}
+    <div className="border border-dashed border-gray-300 rounded-card bg-white p-8 sm:p-10 text-center">
+      <div className="mx-auto w-12 h-12 rounded-xl bg-primary-pale text-primary flex items-center justify-center mb-3 shadow-sm">
+        {icon ?? <FileText size={22} />}
       </div>
-      <p className="font-semibold text-slate-800">{title}</p>
-      <p className="text-sm text-slate-500 mt-1">{hint}</p>
+      <p className="font-semibold text-slate-800 text-base">{title}</p>
+      <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">{hint}</p>
     </div>
   );
 }
 
 export function Skeleton({ lines = 3 }: { lines?: number }) {
   return (
-    <div className="space-y-2 animate-pulse" aria-hidden>
+    <div className="space-y-2.5 animate-pulse" aria-hidden>
       {Array.from({ length: lines }).map((_, i) => (
-        <div key={i} className="h-10 bg-gray-100 rounded-card" />
+        <div key={i} className="h-10 bg-slate-100 rounded-card" />
       ))}
     </div>
   );
@@ -54,14 +54,14 @@ export function Skeleton({ lines = 3 }: { lines?: number }) {
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-      <div className={`relative bg-white rounded-card border border-gray-200 shadow-xl w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[90vh] overflow-auto animate-fade-in`}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
+      <div className={`relative bg-white rounded-card border border-gray-200 shadow-2xl w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[92vh] flex flex-col overflow-hidden animate-fade-in`}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="font-semibold text-slate-900">{title}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100" aria-label="Close dialog"><X size={18} /></button>
+          <h2 className="font-semibold text-slate-900 text-base">{title}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors" aria-label="Close dialog"><X size={18} /></button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="p-5 overflow-y-auto">{children}</div>
       </div>
     </div>
   );
@@ -69,14 +69,14 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
 
 export function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-      <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white border-l border-gray-200 shadow-xl overflow-auto animate-slide-in">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 sticky top-0 bg-white">
-          <h2 className="font-semibold text-slate-900">{title}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100" aria-label="Close panel"><X size={18} /></button>
+    <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white border-l border-gray-200 shadow-2xl flex flex-col overflow-hidden animate-slide-in">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-white">
+          <h2 className="font-semibold text-slate-900 text-base">{title}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors" aria-label="Close panel"><X size={18} /></button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="p-5 flex-1 overflow-y-auto">{children}</div>
       </div>
     </div>
   );
@@ -88,25 +88,26 @@ export function Field({ label, children, hint, error }: { label: string; childre
       <span className="text-sm font-medium text-slate-700">{label}</span>
       <div className="mt-1">{children}</div>
       {hint && <span className="text-xs text-slate-500 mt-1 block">{hint}</span>}
-      {error && <span className="text-xs text-red-600 mt-1 block">{error}</span>}
+      {error && <span className="text-xs text-rose-600 font-medium mt-1 block">{error}</span>}
     </label>
   );
 }
 
-export const inputCls = 'w-full rounded-card border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none';
-export const btnPrimary = 'inline-flex items-center gap-2 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark focus-visible:outline-2 transition-colors disabled:opacity-50';
-export const btnGhost = 'inline-flex items-center gap-2 rounded-card border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-gray-50 transition-colors';
+export const inputCls = 'w-full rounded-card border border-gray-300 bg-white px-3.5 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all';
+export const btnPrimary = 'inline-flex items-center gap-2 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark shadow-sm hover:shadow active:scale-[0.98] transition-all disabled:opacity-50';
+export const btnGhost = 'inline-flex items-center gap-2 rounded-card border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-gray-50 hover:border-gray-400 shadow-sm transition-all disabled:opacity-50';
 
-export function ExportMenu({ onExport }: { onExport: (fmt: 'CSV' | 'XLSX' | 'PDF' | 'Print') => void }) {  const [open, setOpen] = useState(false);
+export function ExportMenu({ onExport }: { onExport: (fmt: 'CSV' | 'XLSX' | 'PDF' | 'Print') => void }) {
+  const [open, setOpen] = useState(false);
   return (
     <div className="relative print-hidden">
       <button className={btnGhost} onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open}>
         Export
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-card shadow-lg z-20" role="menu">
+        <div className="absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-card shadow-lg z-20 animate-fade-in" role="menu">
           {(['CSV', 'XLSX', 'PDF', 'Print'] as const).map((f) => (
-            <button key={f} role="menuitem" className="w-full text-left px-4 py-2 text-sm hover:bg-primary-pale" onClick={() => { onExport(f); setOpen(false); }}>
+            <button key={f} role="menuitem" className="w-full text-left px-4 py-2 text-sm hover:bg-primary-pale transition-colors first:rounded-t-card last:rounded-b-card" onClick={() => { onExport(f); setOpen(false); }}>
               {f === 'Print' ? 'Print' : `Download ${f}`}
             </button>
           ))}
@@ -125,16 +126,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const nav = useNavigate();
   const unread = notifications.filter((n) => n.userId === currentUser.id && !n.read).length;
 
+  // Primary navigation links: Settings is ALWAYS visible for ALL roles!
   const links = [
     { to: '/', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
-    ...(currentUser.role !== 'Principal' ? [{ to: '/faculty', label: 'My Panel', icon: <User size={18} /> }] : []),
+    { to: '/faculty', label: 'Faculty Panel', icon: <User size={18} /> },
     { to: '/proposals', label: 'Proposals', icon: <FileText size={18} /> },
     { to: '/proposals/new', label: 'New Proposal', icon: <FilePlus2 size={18} /> },
     { to: '/tasks', label: 'Tasks', icon: <CheckSquare size={18} /> },
     { to: '/calendar', label: 'Calendar', icon: <CalendarDays size={18} /> },
     { to: '/reports', label: 'Reports', icon: <BarChart3 size={18} /> },
     { to: '/notifications', label: 'Notifications', icon: <Bell size={18} /> },
-    ...(currentUser.role === 'Principal' ? [{ to: '/settings', label: 'Settings', icon: <Settings size={18} /> }] : []),
+    { to: '/settings', label: 'Settings', icon: <Settings size={18} /> },
   ];
 
   const searchGo = (e: React.FormEvent) => {
@@ -143,35 +145,80 @@ export function Layout({ children }: { children: React.ReactNode }) {
   };
 
   const side = (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-4 py-4 border-b border-gray-100">
-        <span className="w-8 h-8 rounded-lg bg-primary text-white flex items-center justify-center"><FileText size={18} /></span>
-        {!collapsed && <span className="font-bold text-lg text-primary">Docworm</span>}
+    <div className="flex flex-col h-full bg-white">
+      <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
+        <Link to="/" className="flex items-center gap-2.5">
+          <span className="w-9 h-9 rounded-xl bg-gradient-to-tr from-primary-dark to-primary text-white flex items-center justify-center shadow-sm">
+            <FileText size={19} />
+          </span>
+          {!collapsed && (
+            <div>
+              <span className="font-bold text-lg text-slate-900 tracking-tight block">Docworm</span>
+              <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block -mt-1">Institutional Portal</span>
+            </div>
+          )}
+        </Link>
+        {mobileOpen && (
+          <button onClick={() => setMobileOpen(false)} className="lg:hidden p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
+            <X size={18} />
+          </button>
+        )}
       </div>
-      <nav className="flex-1 overflow-auto p-3 space-y-1" aria-label="Primary">
+
+      <nav className="flex-1 overflow-y-auto p-3 space-y-1" aria-label="Primary">
         {links.map((l) => (
           <NavLink
             key={l.to + l.label}
             to={l.to}
             end={l.to === '/'}
             onClick={() => setMobileOpen(false)}
-            className={({ isActive }) => `flex items-center gap-3 px-3 py-2 rounded-card text-sm font-medium transition-colors ${isActive ? 'bg-primary-light text-primary-dark' : 'text-slate-600 hover:bg-gray-100'}`}
+            className={({ isActive }) => `flex items-center gap-3 px-3 py-2.5 rounded-card text-sm font-medium transition-all ${
+              isActive
+                ? 'bg-primary-light text-primary-dark font-semibold shadow-xs'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+            }`}
           >
-            {l.icon}
-            {!collapsed && l.label}
+            <span className="shrink-0">{l.icon}</span>
+            {!collapsed && <span className="truncate">{l.label}</span>}
           </NavLink>
         ))}
       </nav>
-      <div className="p-3 border-t border-gray-100 space-y-2">
+
+      <div className="p-3 border-t border-gray-100 space-y-2 bg-slate-50/50">
+        <Link
+          to="/settings?tab=database"
+          onClick={() => setMobileOpen(false)}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-card text-xs font-medium border border-gray-200 bg-white hover:border-primary-border hover:bg-primary-pale/30 text-slate-700 transition-colors"
+          title="Inspect database and backend access"
+        >
+          <Database size={14} className={backend === 'supabase' ? 'text-emerald-600' : 'text-primary'} />
+          {!collapsed && (
+            <span className="truncate">
+              Database: {backend === 'supabase' ? 'Supabase' : 'Local Storage'}
+            </span>
+          )}
+        </Link>
+
         {backend === 'local' && (
-          <button onClick={() => setDevOpen(true)} className="w-full flex items-center gap-2 px-3 py-2 rounded-card text-xs font-medium border border-dashed border-primary-border text-primary-dark bg-primary-pale hover:bg-primary-light">
-            <Bug size={14} /> {!collapsed && `Dev menu: ${currentUser.role}`}
+          <button
+            onClick={() => setDevOpen(true)}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-card text-xs font-semibold border border-primary-border text-primary-dark bg-primary-pale hover:bg-primary-light transition-colors"
+          >
+            <User size={14} /> {!collapsed && `Switch Role: ${currentUser.role}`}
           </button>
         )}
+
         {!collapsed && (
-          <div className="px-1">
-            <p className="text-xs font-semibold text-slate-800 truncate">{currentUser.name}</p>
-            <p className="text-xs text-slate-500 truncate">{currentUser.role} | {currentUser.department}</p>
+          <div className="px-1 py-1">
+            <div className="flex items-center gap-2">
+              <span className="w-7 h-7 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center shrink-0">
+                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-slate-800 truncate">{currentUser.name}</p>
+                <p className="text-[11px] text-slate-500 truncate">{currentUser.role} • {currentUser.department}</p>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -179,42 +226,94 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen flex">
-      <aside className={`hidden lg:block border-r border-gray-200 bg-white transition-all ${collapsed ? 'w-16' : 'w-60'} shrink-0 sticky top-0 h-screen`}>
+    <div className="min-h-screen flex bg-[#F8FAFC]">
+      <aside className={`hidden lg:block border-r border-gray-200 bg-white transition-all ${collapsed ? 'w-16' : 'w-60'} shrink-0 sticky top-0 h-screen z-20`}>
         {side}
       </aside>
+
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
-          <div className="absolute inset-0 bg-slate-900/40" onClick={() => setMobileOpen(false)} />
-          <div className="absolute left-0 top-0 h-full w-64 bg-white animate-slide-in">{side}</div>
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-xs" onClick={() => setMobileOpen(false)} />
+          <div className="absolute left-0 top-0 h-full w-72 bg-white shadow-2xl animate-slide-in">{side}</div>
         </div>
       )}
+
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-30 bg-white border-b border-gray-200 print-hidden">
-          <div className="flex items-center gap-2 px-4 py-2.5">
-            <button className="lg:hidden p-2 rounded-md hover:bg-gray-100" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu size={18} /></button>
-            <button className="hidden lg:block p-2 rounded-md hover:bg-gray-100" onClick={() => setCollapsed((c) => !c)} aria-label="Toggle sidebar"><ChevronLeft size={18} /></button>
-            <form onSubmit={searchGo} className="hidden sm:flex items-center gap-2 flex-1 max-w-md">
-              <div className="relative flex-1">
+        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-200 print-hidden">
+          <div className="flex items-center gap-2.5 px-4 py-2.5">
+            <button className="lg:hidden p-2 rounded-lg hover:bg-slate-100 text-slate-700" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu size={19} /></button>
+            <button className="hidden lg:block p-2 rounded-lg hover:bg-slate-100 text-slate-600" onClick={() => setCollapsed((c) => !c)} aria-label="Toggle sidebar"><ChevronLeft size={18} className={collapsed ? 'rotate-180 transition-transform' : 'transition-transform'} /></button>
+
+            <form onSubmit={searchGo} className="flex-1 max-w-md hidden sm:block">
+              <div className="relative">
                 <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ref no, event, person" className={`${inputCls} pl-9`} aria-label="Global search" />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search ref no, event name, department..."
+                  className={`${inputCls} pl-9 py-1.5 text-xs sm:text-sm`}
+                  aria-label="Global search"
+                />
               </div>
             </form>
+
             <div className="flex-1 sm:hidden" />
-            <button onClick={() => nav('/notifications')} className="relative p-2 rounded-md hover:bg-gray-100" aria-label={`Notifications, ${unread} unread`}>
+
+            {/* Direct database status button that links to Settings -> Database tab */}
+            <Link
+              to="/settings?tab=database"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all ${
+                backend === 'supabase'
+                  ? syncState === 'live'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                    : syncState === 'loading'
+                    ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                    : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                  : 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'
+              }`}
+              title="Database Access & Status. Click to inspect."
+            >
+              <span className={`w-2 h-2 rounded-full ${backend === 'supabase' ? (syncState === 'live' ? 'bg-emerald-500 animate-pulse-dot' : syncState === 'loading' ? 'bg-amber-500' : 'bg-rose-500') : 'bg-violet-500'}`} />
+              <span className="hidden md:inline">
+                {backend === 'supabase' ? (syncState === 'live' ? 'Database: Supabase Live' : syncState === 'loading' ? 'Database: Syncing...' : 'Database: Offline') : 'Database: Local'}
+              </span>
+              <span className="md:hidden">DB</span>
+            </Link>
+
+            <button
+              onClick={() => nav('/notifications')}
+              className="relative p-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors"
+              aria-label={`Notifications, ${unread} unread`}
+            >
               <Bell size={18} />
-              {unread > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-5 h-5 px-1 rounded-full bg-primary text-white text-[11px] font-bold flex items-center justify-center">{unread}</span>}
+              {unread > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center">
+                  {unread}
+                </span>
+              )}
             </button>
-            <button onClick={() => { signOut(); nav('/login'); }} className="p-2 rounded-md hover:bg-gray-100" aria-label="Log out"><LogOut size={18} /></button>
+
+            <button
+              onClick={() => { signOut(); nav('/login'); }}
+              className="p-2 rounded-lg hover:bg-rose-50 text-slate-600 hover:text-rose-600 transition-colors"
+              title="Sign Out"
+              aria-label="Log out"
+            >
+              <LogOut size={18} />
+            </button>
           </div>
+
           {backend === 'supabase' && (
-            <button onClick={refresh} className="w-full text-left px-4 py-1 text-[11px] text-slate-500 hover:text-primary border-b border-gray-100">
-              {syncState === 'live' && `Live, synced ${lastSyncedAt ?? 'just now'}, click to refresh`}
-              {syncState === 'loading' && 'Syncing with college database...'}
-              {syncState === 'offline' && 'Offline, showing last loaded data, click to retry'}
+            <button
+              onClick={refresh}
+              className="w-full text-left px-4 py-1 text-[11px] text-slate-500 hover:text-primary border-t border-gray-100 bg-slate-50/50 flex items-center justify-between"
+            >
+              <span>{syncState === 'live' ? `Connected to college database (synced ${lastSyncedAt ?? 'just now'})` : syncState === 'loading' ? 'Syncing with Supabase...' : 'Database connection interrupted. Showing cached state.'}</span>
+              <span className="font-semibold text-primary">Click to refresh</span>
             </button>
           )}
         </header>
+
         {syncState === 'offline' && (
           <div className="mx-4 sm:mx-6 mt-3 bg-red-50 border border-red-200 text-red-800 text-xs rounded-card px-3 py-2 print-hidden flex items-center gap-2" role="alert">
             <span className="flex-1">Connection to the college database was lost. Your view may be out of date.</span>
@@ -229,8 +328,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto">{children}</main>
       </div>
       {devOpen && (
-        <Modal title="Dev menu: role switcher (demo only)" onClose={() => setDevOpen(false)}>
-          <p className="text-sm text-slate-600 mb-3">Quickly preview each role. Production builds hide this menu.</p>
+        <Modal title="Switch Active Account" onClose={() => setDevOpen(false)}>
+          <p className="text-sm text-slate-600 mb-3">Select an account to test permissions and approvals as that role.</p>
           <div className="space-y-2">
             {users.map((u) => (
               <button
@@ -310,7 +409,7 @@ export function AttachmentUploader({ files, onChange, max = 5 }: {
         </label>
         <span className="text-xs text-slate-500">
           {files.length} of {max} files. PDF, DOC, DOCX, images only, 10 MB each.
-          {backend === 'local' && ' Files are metadata only in demo mode.'}
+          {backend === 'local' && ' Files stored in local storage.'}
         </span>
       </div>
       {err && <p className="text-xs text-red-600 mt-1" role="alert">{err}</p>}
