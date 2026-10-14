@@ -138,17 +138,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const nav = useNavigate();
   const unread = notifications.filter((n) => n.userId === currentUser.id && !n.read).length;
 
-  // Primary navigation links: Settings is ALWAYS visible for ALL roles!
+  // Streamlined primary navigation links for core functionality
   const links = [
-    { to: '/', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
-    { to: '/faculty', label: 'Faculty Panel', icon: <User size={18} /> },
-    { to: '/proposals', label: 'Proposals', icon: <FileText size={18} /> },
-    { to: '/proposals/new', label: 'New Proposal', icon: <FilePlus2 size={18} /> },
-    { to: '/tasks', label: 'Tasks', icon: <CheckSquare size={18} /> },
-    { to: '/calendar', label: 'Calendar', icon: <CalendarDays size={18} /> },
-    { to: '/reports', label: 'Reports', icon: <BarChart3 size={18} /> },
+    { to: '/', label: 'Permission Requests', icon: <FileText size={18} /> },
     { to: '/notifications', label: 'Notifications', icon: <Bell size={18} /> },
-    { to: '/settings', label: 'Settings', icon: <Settings size={18} /> },
+    { to: '/settings', label: 'Settings & Database', icon: <Settings size={18} /> },
   ];
 
   const searchGo = (e: React.FormEvent) => {

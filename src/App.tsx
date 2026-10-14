@@ -2,10 +2,9 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { DataProvider, useData } from './store';
 import { Layout } from './components';
-import { Login, Dashboard, ProposalsList } from './pages/pages1';
-import { ProposalForm, ProposalDetail } from './pages/pages2';
-import { FacultyPanel } from './pages/faculty';
-import { TasksList, TaskDetail, CalendarView, Reports, NotificationsCenter, SettingsPage } from './pages/pages3';
+import { PermissionPortal } from './pages/PermissionPortal';
+import { Login } from './pages/pages1';
+import { SettingsPage, NotificationsCenter } from './pages/pages3';
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, authLoading } = useData();
@@ -26,19 +25,13 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/" element={<Guard><Dashboard /></Guard>} />
-          <Route path="/proposals" element={<Guard><ProposalsList /></Guard>} />
-          <Route path="/proposals/new" element={<Guard><ProposalForm /></Guard>} />
-          <Route path="/proposals/:id/edit" element={<Guard><ProposalForm /></Guard>} />
-          <Route path="/proposals/:id" element={<Guard><ProposalDetail /></Guard>} />
-          <Route path="/faculty" element={<Guard><FacultyPanel /></Guard>} />
-          <Route path="/tasks" element={<Guard><TasksList /></Guard>} />
-          <Route path="/tasks/:id" element={<Guard><TaskDetail /></Guard>} />
-          <Route path="/calendar" element={<Guard><CalendarView /></Guard>} />
-          <Route path="/reports" element={<Guard><Reports /></Guard>} />
+          <Route path="/" element={<Guard><PermissionPortal /></Guard>} />
+          <Route path="/requests" element={<Guard><PermissionPortal /></Guard>} />
+          <Route path="/proposals" element={<Guard><PermissionPortal /></Guard>} />
+          <Route path="/faculty" element={<Guard><PermissionPortal /></Guard>} />
           <Route path="/notifications" element={<Guard><NotificationsCenter /></Guard>} />
           <Route path="/settings" element={<Guard><SettingsPage /></Guard>} />
-          <Route path="*" element={<Guard><Dashboard /></Guard>} />
+          <Route path="*" element={<Guard><PermissionPortal /></Guard>} />
         </Routes>
       </BrowserRouter>
     </DataProvider>
