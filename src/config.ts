@@ -2,10 +2,10 @@
 // All categorical inputs are dropdowns sourced from here. No free text categories.
 
 export const THEME = {
-  primary: '#6D4AFF',
-  primaryDark: '#5B3FD1',
-  primaryLight: '#EFEBFF',
-  primaryPale: '#F6F3FF',
+  primary: '#3975B7',
+  primaryDark: '#2F639B',
+  primaryLight: '#E0EDFA',
+  primaryPale: '#F0F6FC',
 };
 
 export interface AppOptions {

@@ -107,10 +107,10 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 bg-gradient-to-br from-slate-100 via-purple-50/30 to-indigo-50/20">
+    <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 bg-gradient-to-br from-slate-100 via-sky-50/50 to-blue-50/30">
       <div className="w-full max-w-5xl grid md:grid-cols-5 gap-0 bg-white border border-gray-200/80 rounded-2xl overflow-hidden shadow-xl">
         {/* Left institutional hero panel */}
-        <div className="md:col-span-2 bg-gradient-to-br from-primary-dark via-primary to-indigo-700 text-white p-7 sm:p-9 flex flex-col justify-between">
+        <div className="md:col-span-2 bg-gradient-to-br from-primary-dark via-primary to-primary-hover text-white p-7 sm:p-9 flex flex-col justify-between">
           <div>
             <div className="flex items-center gap-2.5">
               <span className="w-10 h-10 rounded-xl bg-white text-primary flex items-center justify-center shadow-md">
@@ -209,7 +209,7 @@ export function Login() {
                 </div>
 
                 {/* Faculty portal callout */}
-                <div className="mt-3 p-3 bg-purple-50/70 border border-primary-border/60 rounded-card flex items-start gap-2.5">
+                <div className="mt-3 p-3 bg-primary-pale border border-primary-border rounded-card flex items-start gap-2.5">
                   <div className="p-1 rounded-md bg-primary text-white shrink-0 mt-0.5">
                     {portal === 'Faculty' ? <GraduationCap size={14} /> : portal === 'HOD' ? <Building2 size={14} /> : portal === 'Dean' ? <Landmark size={14} /> : <Briefcase size={14} />}
                   </div>
@@ -430,7 +430,7 @@ export function Dashboard() {
     { key: 'Approved This Month', value: approvedMonth, icon: <CheckCircle2 size={19} />, color: 'from-emerald-500 to-emerald-600', sub: 'across departments' },
     { key: 'Rejected', value: rejected, icon: <FileText size={19} />, color: 'from-rose-500 to-rose-600', sub: 'needs resubmission' },
     { key: 'Pending Reports', value: pendingReports, icon: <AlertTriangle size={19} />, color: 'from-orange-500 to-orange-600', sub: 'past event date' },
-    { key: 'Open Tasks', value: openTasks, icon: <ListTodo size={19} />, color: 'from-primary to-indigo-600', sub: `${myTasks.length} assigned to you` },
+    { key: 'Open Tasks', value: openTasks, icon: <ListTodo size={19} />, color: 'from-primary to-primary-hover', sub: `${myTasks.length} assigned to you` },
     { key: 'Overdue Tasks', value: overdueTasks, icon: <AlertTriangle size={19} />, color: 'from-rose-500 to-pink-600', sub: 'needs attention' },
   ];
 
@@ -690,7 +690,7 @@ export function ProposalsList() {
         <div className="bg-white border border-gray-200 rounded-card p-4 flex flex-wrap gap-2">
           {ALL_COLS.map((c) => (
             <label key={c} className="flex items-center gap-1.5 text-sm border border-gray-200 rounded-md px-2 py-1">
-              <input type="checkbox" checked={cols.includes(c)} onChange={() => setCols((prev) => prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c])} className="accent-[#6D4AFF]" /> {c}
+              <input type="checkbox" checked={cols.includes(c)} onChange={() => setCols((prev) => prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c])} className="accent-primary" /> {c}
             </label>
           ))}
         </div>
@@ -748,23 +748,26 @@ export function ProposalsList() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-slate-500 border-b border-gray-100">
-                  <th className="p-3"><input type="checkbox" aria-label="Select all" checked={selected.length === list.length} onChange={() => setSelected(selected.length === list.length ? [] : list.map((p) => p.id))} className="accent-[#6D4AFF]" /></th>
+                  <th className="p-3"><input type="checkbox" aria-label="Select all" checked={selected.length === list.length} onChange={() => setSelected(selected.length === list.length ? [] : list.map((p) => p.id))} className="accent-primary" /></th>
                   {cols.map((c) => <th key={c} className="p-3 font-semibold capitalize">{c}</th>)}
                   <th className="p-3">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {shown.map((p) => (
-                  <tr key={p.id} className="border-b border-gray-50 hover:bg-primary-pale/40">
-                    <td className="p-3"><input type="checkbox" aria-label={`Select ${p.refNo}`} checked={selected.includes(p.id)} onChange={() => setSelected((s) => s.includes(p.id) ? s.filter((x) => x !== p.id) : [...s, p.id])} className="accent-[#6D4AFF]" /></td>
-                    {cols.map((c) => (
-                      <td key={c} className="p-3">
-                        {c === 'status' ? <Badge text={String(flattenProposal(p)[c])} /> : c === 'refNo' ? <span className="font-mono text-xs">{p.refNo}</span> : String(flattenProposal(p)[c] ?? '')}
-                      </td>
-                    ))}
-                    <td className="p-3"><Link to={`/proposals/${p.id}`} className="text-primary font-semibold text-sm">Open</Link></td>
-                  </tr>
-                ))}
+                {shown.map((p) => {
+                  const flat = flattenProposal(p);
+                  return (
+                    <tr key={p.id} className="border-b border-gray-50 hover:bg-primary-pale/40">
+                      <td className="p-3"><input type="checkbox" aria-label={`Select ${p.refNo}`} checked={selected.includes(p.id)} onChange={() => setSelected((s) => s.includes(p.id) ? s.filter((x) => x !== p.id) : [...s, p.id])} className="accent-primary" /></td>
+                      {cols.map((c) => (
+                        <td key={c} className="p-3">
+                          {c === 'status' ? <Badge text={String(flat[c])} /> : c === 'refNo' ? <span className="font-mono text-xs">{p.refNo}</span> : String(flat[c] ?? '')}
+                        </td>
+                      ))}
+                      <td className="p-3"><Link to={`/proposals/${p.id}`} className="text-primary font-semibold text-sm">Open</Link></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

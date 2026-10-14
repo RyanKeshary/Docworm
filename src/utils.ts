@@ -194,7 +194,7 @@ export async function exportLetterDOCX(p: Proposal, college: { collegeName: stri
   const doc = new Document({
     sections: [{
       children: [
-        new Paragraph({ children: [new TextRun({ text: 'Docworm', color: '6D4AFF', bold: true, size: 20 })] }),
+        new Paragraph({ children: [new TextRun({ text: 'Docworm', color: '3975B7', bold: true, size: 20 })] }),
         new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: college.collegeName, size: 32 })] }),
         para(college.address),
         para(`${college.phone} | ${college.email}`),

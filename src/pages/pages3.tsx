@@ -7,7 +7,7 @@ import {
 import { useData, nowStr } from '../store';
 import { Badge, Drawer, EmptyState, ExportMenu, Field, Modal, btnGhost, btnPrimary, inputCls } from '../components';
 import { REPORT_COLS, computedTaskStatus, detectClashes, exportCSV, exportPDF, exportXLSX, flattenProposal, flattenReport, flattenTask, budgetTotals, exportLetterPDF } from '../utils';
-import type { Task } from '../types';
+import type { Task, User } from '../types';
 
 export function TasksList() {
   const { tasks, users, currentUser, saveTasks, pushNotification, pushAudit } = useData();
@@ -16,6 +16,7 @@ export function TasksList() {
   const [fStatus, setFStatus] = useState('');
   const [fPriority, setFPriority] = useState('');
   const [search, setSearch] = useState('');
+  const [modalUserSearch, setModalUserSearch] = useState('');
   const [create, setCreate] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', taskType: 'Report Submission', priority: 'Medium', assignedTo: [] as string[], dueDate: '' });
   const [detail, setDetail] = useState<Task | null>(null);
@@ -69,7 +70,7 @@ export function TasksList() {
           else if (f === 'PDF') exportPDF('docworm-tasks.pdf', 'Docworm tasks export', cols, rows);
           else window.print();
         }} />
-        {currentUser.role === 'Principal' && <button onClick={() => setCreate(true)} className={btnPrimary}><Plus size={15} /> New task</button>}
+        {(currentUser.role === 'Principal' || currentUser.role === 'HOD') && <button onClick={() => setCreate(true)} className={btnPrimary}><Plus size={15} /> New task</button>}
       </div>
 
       <div className="flex flex-wrap gap-2 bg-white border border-gray-200 rounded-card p-3">
@@ -168,11 +169,11 @@ export function TasksList() {
             </div>
             <fieldset>
               <legend className="text-sm font-medium">Assign to (searchable)</legend>
-              <input placeholder="Type to filter users" className={`${inputCls} mt-1 mb-2`} onChange={(e) => setSearch(e.target.value)} aria-label="Filter users" />
+              <input placeholder="Type to filter users" className={`${inputCls} mt-1 mb-2`} value={modalUserSearch} onChange={(e) => setModalUserSearch(e.target.value)} aria-label="Filter users" />
               <div className="max-h-40 overflow-auto border border-gray-200 rounded-card divide-y divide-gray-50">
-                {users.filter((u) => u.role !== 'Principal' && (u.name + u.department).toLowerCase().includes(search.toLowerCase())).map((u) => (
+                {users.filter((u) => u.role !== 'Principal' && (u.name + u.department).toLowerCase().includes(modalUserSearch.toLowerCase())).map((u) => (
                   <label key={u.id} className="flex items-center gap-2 px-3 py-2 text-sm">
-                    <input type="checkbox" checked={form.assignedTo.includes(u.id)} onChange={() => setForm({ ...form, assignedTo: form.assignedTo.includes(u.id) ? form.assignedTo.filter((x) => x !== u.id) : [...form.assignedTo, u.id] })} className="accent-[#6D4AFF]" />
+                    <input type="checkbox" checked={form.assignedTo.includes(u.id)} onChange={() => setForm({ ...form, assignedTo: form.assignedTo.includes(u.id) ? form.assignedTo.filter((x) => x !== u.id) : [...form.assignedTo, u.id] })} className="accent-primary" />
                     {u.name} <span className="text-xs text-slate-500">({u.role}, {u.department})</span>
                   </label>
                 ))}
@@ -271,7 +272,7 @@ export function TaskDetail() {
 
 export function CalendarView() {
   const { proposals } = useData();
-  const approved = proposals.filter((p) => ['Approved', 'Completed', 'Under Review', 'Submitted'].includes(p.status));
+  const approved = proposals.filter((p) => ['Approved', 'Completed'].includes(p.status));
   const clashes = detectClashes(proposals);
   const days = useMemo(() => {
     const m: Record<string, typeof approved> = {};
@@ -312,10 +313,12 @@ export function CalendarView() {
 
 export function Reports() {
   const { proposals, tasks, completions, currentUser, pushNotification, pushAudit, letterhead, options } = useData();
-  const [year, setYear] = useState('2026-27');
+  const currentYear = new Date().getFullYear();
+  const defaultAcYear = `${currentYear}-${String(currentYear + 1).slice(2)}`;
+  const [year, setYear] = useState(defaultAcYear);
   const [dept, setDept] = useState('');
   const [status, setStatus] = useState('');
-  const [range, setRange] = useState({ from: '2026-01-01', to: '2026-12-31' });
+  const [range, setRange] = useState({ from: `${currentYear}-01-01`, to: `${currentYear}-12-31` });
 
   const yp = proposals.filter((p) => p.academicYear === year);
   const approvalRate = proposals.length ? Math.round((proposals.filter((p) => ['Approved', 'Completed'].includes(p.status)).length / proposals.length) * 100) : 0;
@@ -504,7 +507,7 @@ export function NotificationsCenter() {
             <p className="font-semibold">{n.title} <span className="text-xs font-normal text-slate-400">{n.createdAt}</span></p>
             <p className="text-slate-600 mt-0.5">{n.body}</p>
             <div className="mt-2 flex gap-2">
-              <Link to={n.link} className="text-primary font-semibold text-xs">Open linked item</Link>
+              {n.link && <Link to={n.link} className="text-primary font-semibold text-xs">Open linked item</Link>}
               {!n.read && <button onClick={() => saveNotifications(notifications.map((x) => x.id === n.id ? { ...x, read: true } : x))} className="text-xs text-slate-500 underline">Mark read</button>}
             </div>
           </div>
@@ -525,7 +528,7 @@ export function SettingsPage() {
   const currentTab = params.get('tab') ?? 'database';
   const setTab = (t: string) => setParams({ tab: t });
 
-  const [newUser, setNewUser] = useState({ name: '', email: '', role: 'Faculty', department: 'IT', designation: '', phone: '' });
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: 'password123', role: 'Faculty', department: 'IT', designation: '', phone: '' });
   const [purgeFeedback, setPurgeFeedback] = useState('');
   const [copiedEnv, setCopiedEnv] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -538,7 +541,14 @@ export function SettingsPage() {
   };
 
   const addUser = () => {
-    if (!newUser.name.trim() || !newUser.email.trim()) return;
+    if (!newUser.name.trim() || !newUser.email.trim()) {
+      alert('Name and email are required.');
+      return;
+    }
+    if (users.some((x) => x.email.toLowerCase() === newUser.email.trim().toLowerCase())) {
+      alert('An account with this email already exists.');
+      return;
+    }
     saveUsers([...users, {
       id: `u-${Date.now().toString(36)}`,
       name: newUser.name.trim(),
@@ -547,9 +557,15 @@ export function SettingsPage() {
       department: newUser.department,
       designation: newUser.designation.trim() || newUser.role,
       phone: newUser.phone.trim(),
-      password: 'password123',
+      password: newUser.password || 'password123',
     }]);
-    setNewUser({ name: '', email: '', role: 'Faculty', department: 'IT', designation: '', phone: '' });
+    setNewUser({ name: '', email: '', password: 'password123', role: 'Faculty', department: 'IT', designation: '', phone: '' });
+  };
+
+  const removeUser = (u: User) => {
+    if (window.confirm(`Are you sure you want to remove the staff account for ${u.name} (${u.email})?`)) {
+      saveUsers(users.filter((x) => x.id !== u.id));
+    }
   };
 
   const handlePurgeFakeData = () => {
@@ -632,9 +648,9 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
         {[
           { id: 'database', label: 'Database & Backend', icon: <Database size={15} /> },
           { id: 'profile', label: 'My Profile', icon: <UserIcon size={15} /> },
+          { id: 'auth', label: 'Role & Auth Control', icon: <Shield size={15} /> },
           { id: 'letterhead', label: 'College Letterhead', icon: null },
           { id: 'options', label: 'Academic Options', icon: null },
-          { id: 'users', label: 'Staff Directory', icon: null },
           { id: 'audit', label: `Audit Log (${audit.length})`, icon: null },
         ].map((t) => (
           <button
@@ -660,7 +676,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-gray-100">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className={`w-3 h-3 rounded-full ${backend === 'supabase' ? (syncState === 'live' ? 'bg-emerald-500 animate-pulse-dot' : 'bg-amber-500') : 'bg-violet-500'}`} />
+                  <span className={`w-3 h-3 rounded-full ${backend === 'supabase' ? (syncState === 'live' ? 'bg-emerald-500 animate-pulse-dot' : 'bg-amber-500') : 'bg-primary'}`} />
                   <span className="font-bold text-base sm:text-lg text-slate-900">
                     Active Storage: {backend === 'supabase' ? 'Supabase PostgreSQL (Cloud Database)' : 'Local Browser Storage (HTML5 LocalStorage)'}
                   </span>
@@ -871,57 +887,189 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
         </div>
       )}
 
-      {/* 4. USERS TAB */}
-      {currentTab === 'users' && (
-        <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4 animate-fade-in">
-          <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-            <div>
-              <h2 className="font-bold text-slate-900 text-base">Staff Directory & Authorized Accounts</h2>
-              <p className="text-xs text-slate-500">Official faculty, department heads, deans, and administration accounts.</p>
+      {/* 4. ROLE & AUTH CONTROL TAB */}
+      {currentTab === 'auth' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Active User Credentials & Impersonation Panel */}
+          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                  <h2 className="font-bold text-slate-900 text-base">Current Session & Role Access</h2>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Logged in as <span className="font-semibold text-slate-800">{currentUser.name}</span> ({currentUser.email}) with <span className="font-semibold text-primary">{currentUser.role}</span> privileges.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary-pale text-primary border border-primary-border">
+                  Active Role: {currentUser.role}
+                </span>
+              </div>
             </div>
-            <span className="text-xs font-semibold bg-primary-pale text-primary border border-primary-border px-2.5 py-1 rounded-full">
-              {users.length} Registered
-            </span>
+
+            {/* Instant Role Switcher for Testing Role-based Access */}
+            <div className="mt-4 pt-1">
+              <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider block mb-2">
+                Switch Role / Test Impersonation:
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {[
+                  { role: 'Principal', email: 'principal@slrtce.in', desc: 'Institutional Head & Final Sanction' },
+                  { role: 'Dean', email: 'dean@slrtce.in', desc: 'Student Welfare & Clearance' },
+                  { role: 'HOD', email: 'hod.it@slrtce.in', desc: 'Dept Review & Room Approval' },
+                  { role: 'Faculty', email: 'faculty@slrtce.in', desc: 'Draft Letters & Run Events' },
+                ].map((item) => {
+                  const targetUser = users.find((u) => u.role === item.role);
+                  const isCurrent = currentUser.role === item.role;
+                  return (
+                    <button
+                      key={item.role}
+                      type="button"
+                      onClick={() => {
+                        if (targetUser) {
+                          setCurrentUserId(targetUser.id);
+                        }
+                      }}
+                      className={`text-left p-3 rounded-card border transition-all ${
+                        isCurrent
+                          ? 'border-primary bg-primary-pale/80 shadow-xs ring-1 ring-primary/30'
+                          : 'border-gray-200 bg-slate-50/70 hover:bg-slate-100/80 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-slate-900">{item.role}</span>
+                        {isCurrent && <span className="text-[10px] font-bold text-primary bg-white px-1.5 py-0.5 rounded border border-primary-border">Active</span>}
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-tight">{item.desc}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
-          {isAdmin && (
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-card space-y-3">
-              <p className="text-xs font-semibold text-slate-700">Add New Staff Member:</p>
-              <div className="grid sm:grid-cols-3 gap-2.5">
-                <input value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} placeholder="Full Name (e.g. Dr. Priya Rao)" className={inputCls} aria-label="User name" />
-                <input value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} placeholder="Email address" className={inputCls} aria-label="User email" />
-                <input value={newUser.phone} onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })} placeholder="Phone (optional)" className={inputCls} aria-label="User phone" />
-                <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} className={inputCls} aria-label="Role">
-                  {['Faculty', 'HOD', 'Dean', 'Principal'].map((r) => <option key={r}>{r}</option>)}
-                </select>
-                <select value={newUser.department} onChange={(e) => setNewUser({ ...newUser, department: e.target.value })} className={inputCls} aria-label="Department">
-                  {options.departments.map((r) => <option key={r}>{r}</option>)}
-                </select>
-                <input value={newUser.designation} onChange={(e) => setNewUser({ ...newUser, designation: e.target.value })} placeholder="Designation (e.g. Assistant Professor)" className={inputCls} aria-label="Designation" />
+          {/* Institutional Role Permissions Matrix */}
+          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
+            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Institutional Role Permission Matrix</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Defines access boundaries enforced across all modules</p>
               </div>
-              <button onClick={addUser} className={btnPrimary}><Plus size={15} /> Add Staff Account</button>
             </div>
-          )}
+            <div className="mt-4 overflow-x-auto scrollbar-thin">
+              <table className="w-full text-left text-xs sm:text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-slate-50 text-slate-600">
+                    <th className="py-2.5 px-3 font-semibold">Role</th>
+                    <th className="py-2.5 px-3 font-semibold">Proposals Authority</th>
+                    <th className="py-2.5 px-3 font-semibold">Resource / Lab Approvals</th>
+                    <th className="py-2.5 px-3 font-semibold">Task Delegation</th>
+                    <th className="py-2.5 px-3 font-semibold">System & Database</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  <tr className="hover:bg-slate-50/50">
+                    <td className="py-3 px-3 font-semibold text-slate-900 flex items-center gap-1.5"><Badge text="Principal" /></td>
+                    <td className="py-3 px-3 text-slate-600">Final institutional sanction; force approve; budget clearance</td>
+                    <td className="py-3 px-3 text-slate-600">Full institutional room override</td>
+                    <td className="py-3 px-3 text-slate-600">Create & assign tasks across all departments</td>
+                    <td className="py-3 px-3 text-emerald-700 font-medium">Full Admin (Staff, DB, Letterhead)</td>
+                  </tr>
+                  <tr className="hover:bg-slate-50/50">
+                    <td className="py-3 px-3 font-semibold text-slate-900 flex items-center gap-1.5"><Badge text="Dean" /></td>
+                    <td className="py-3 px-3 text-slate-600">Student welfare & inter-departmental approval stage</td>
+                    <td className="py-3 px-3 text-slate-600">View room allocation & clashes</td>
+                    <td className="py-3 px-3 text-slate-600">View college tasks & assignments</td>
+                    <td className="py-3 px-3 text-slate-500">View audit logs & analytics</td>
+                  </tr>
+                  <tr className="hover:bg-slate-50/50">
+                    <td className="py-3 px-3 font-semibold text-slate-900 flex items-center gap-1.5"><Badge text="HOD" /></td>
+                    <td className="py-3 px-3 text-slate-600">First-level departmental proposal endorsement</td>
+                    <td className="py-3 px-3 text-slate-600">Approve / reject labs & classrooms owned by department</td>
+                    <td className="py-3 px-3 text-slate-600">Assign departmental tasks to faculty</td>
+                    <td className="py-3 px-3 text-slate-500">Department reports & directory</td>
+                  </tr>
+                  <tr className="hover:bg-slate-50/50">
+                    <td className="py-3 px-3 font-semibold text-slate-900 flex items-center gap-1.5"><Badge text="Faculty" /></td>
+                    <td className="py-3 px-3 text-slate-600">Draft proposals, request budgets, submit completion reports</td>
+                    <td className="py-3 px-3 text-slate-600">Request rooms / seminar halls with clash detection</td>
+                    <td className="py-3 px-3 text-slate-600">View & complete assigned tasks</td>
+                    <td className="py-3 px-3 text-slate-500">Personal profile & proposal history</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-          <div className="divide-y divide-gray-100 border border-gray-200 rounded-card overflow-hidden">
-            {users.map((u) => (
-              <div key={u.id} className="flex flex-wrap items-center justify-between p-3.5 hover:bg-slate-50/70 transition-colors gap-2">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-sm text-slate-900">{u.name}</span>
-                    <Badge text={u.role} />
-                  </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {u.designation} • Dept of {u.department} • <span className="font-mono">{u.email}</span>
-                  </p>
-                </div>
-                {isAdmin && users.length > 1 && (
-                  <button onClick={() => saveUsers(users.filter((x) => x.id !== u.id))} className="text-xs text-rose-600 hover:text-rose-800 font-semibold px-2 py-1 rounded hover:bg-rose-50 transition-colors">
-                    Remove
-                  </button>
-                )}
+          {/* Staff Accounts Management */}
+          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Authorized Staff Accounts Directory</h3>
+                <p className="text-xs text-slate-500">Manage user logins, passwords, designations, and departmental permissions</p>
               </div>
-            ))}
+              <span className="text-xs font-semibold bg-primary-pale text-primary border border-primary-border px-2.5 py-1 rounded-full">
+                {users.length} Active Accounts
+              </span>
+            </div>
+
+            {isAdmin && (
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-card space-y-3">
+                <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">Create New Staff / Faculty Account:</p>
+                <div className="grid sm:grid-cols-3 gap-2.5">
+                  <input value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} placeholder="Full Name (e.g. Dr. Priya Rao)" className={inputCls} aria-label="User name" />
+                  <input value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} placeholder="Email address" className={inputCls} aria-label="User email" />
+                  <input value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} placeholder="Password (default: password123)" className={inputCls} aria-label="User password" />
+                  <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} className={inputCls} aria-label="Role">
+                    {['Faculty', 'HOD', 'Dean', 'Principal'].map((r) => <option key={r}>{r}</option>)}
+                  </select>
+                  <select value={newUser.department} onChange={(e) => setNewUser({ ...newUser, department: e.target.value })} className={inputCls} aria-label="Department">
+                    {options.departments.map((r) => <option key={r}>{r}</option>)}
+                  </select>
+                  <input value={newUser.designation} onChange={(e) => setNewUser({ ...newUser, designation: e.target.value })} placeholder="Designation (e.g. Assistant Professor)" className={inputCls} aria-label="Designation" />
+                  <input value={newUser.phone} onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })} placeholder="Phone (optional)" className={inputCls} aria-label="User phone" />
+                </div>
+                <button onClick={addUser} className={btnPrimary}><Plus size={15} /> Add Staff Account</button>
+              </div>
+            )}
+
+            <div className="divide-y divide-gray-100 border border-gray-200 rounded-card overflow-hidden">
+              {users.map((u) => (
+                <div key={u.id} className="flex flex-wrap items-center justify-between p-3.5 hover:bg-slate-50/70 transition-colors gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm text-slate-900">{u.name}</span>
+                      <Badge text={u.role} />
+                      {u.id === currentUser.id && (
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full">Current User</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {u.designation} • Dept of {u.department} • <span className="font-mono text-slate-700">{u.email}</span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentUserId(u.id)}
+                      className="text-xs text-primary hover:text-primary-dark font-semibold px-2.5 py-1 rounded border border-primary-border bg-primary-pale hover:bg-primary-light transition-colors"
+                      title="Quick switch active user session"
+                    >
+                      Login As
+                    </button>
+                    {isAdmin && users.length > 1 && u.id !== currentUser.id && (
+                      <button
+                        onClick={() => removeUser(u)}
+                        className="text-xs text-rose-600 hover:text-rose-800 font-semibold px-2.5 py-1 rounded hover:bg-rose-50 transition-colors"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

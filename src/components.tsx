@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
   FileText, LayoutDashboard, CheckSquare, BarChart3, Bell, Settings,
@@ -99,8 +99,20 @@ export const btnGhost = 'inline-flex items-center gap-2 rounded-card border bord
 
 export function ExportMenu({ onExport }: { onExport: (fmt: 'CSV' | 'XLSX' | 'PDF' | 'Print') => void }) {
   const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    if (open) document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [open]);
+
   return (
-    <div className="relative print-hidden">
+    <div ref={menuRef} className="relative print-hidden">
       <button className={btnGhost} onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open}>
         Export
       </button>

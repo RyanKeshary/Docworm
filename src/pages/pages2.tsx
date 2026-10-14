@@ -335,7 +335,7 @@ export function ProposalForm() {
         {step === 2 && (
           <>
             <label className="flex items-center gap-3 bg-primary-pale border border-primary-border rounded-card p-3">
-              <input type="checkbox" checked={Boolean(draft.hasBudget)} onChange={(e) => set('hasBudget', e.target.checked)} className="w-4 h-4 accent-[#6D4AFF]" />
+              <input type="checkbox" checked={Boolean(draft.hasBudget)} onChange={(e) => set('hasBudget', e.target.checked)} className="w-4 h-4 accent-primary" />
               <span className="text-sm font-semibold">This event has a budget</span>
             </label>
             {draft.hasBudget && (
@@ -402,7 +402,7 @@ export function ProposalForm() {
                           if (existing) set('poMappings', cur.filter((m) => m.po !== po.code));
                           else set('poMappings', [...cur, { po: po.code, explanation: '' }]);
                         }}
-                        className="w-4 h-4 accent-[#6D4AFF]"
+                        className="w-4 h-4 accent-primary"
                       />
                       <span title={po.name} className="text-sm font-bold text-primary-dark underline decoration-dotted cursor-help">{po.code}</span>
                       <span className="text-xs text-slate-500">{po.name}</span>
@@ -470,13 +470,39 @@ export function ProposalDetail() {
   const existingReport = completions[p.id];
   const reportPending = p.status === 'Approved' && p.endDate < new Date().toISOString().slice(0, 10) && !existingReport;
 
+  const pendingStep = p.approvalChain.find((s) => s.action === 'Pending');
+  const canAct = Boolean(
+    pendingStep && (
+      pendingStep.userId === currentUser.id ||
+      (currentUser.role === 'Principal' && pendingStep.role === 'Principal') ||
+      (currentUser.role === 'Dean' && pendingStep.role === 'Dean') ||
+      (currentUser.role === 'HOD' && pendingStep.role === 'HOD' && (currentUser.department === p.submitterDept || !pendingStep.userId)) ||
+      currentUser.role === 'Principal'
+    ) && ['Submitted', 'Under Review'].includes(p.status)
+  );
+
   const act = (action: 'Approved' | 'Rejected' | 'Changes Requested') => {
+    if (!canAct) {
+      setBulkMsg('You do not have permission to act on this stage of the proposal.');
+      return;
+    }
     if ((action !== 'Approved') && !remark.trim()) { setBulkMsg('A remark is mandatory for reject or request changes.'); return; }
+    let matched = false;
     const chain = p.approvalChain.map((s) => {
-      const isMine = s.userId === currentUser.id || (currentUser.role === 'Principal' && s.role === 'Principal') || (currentUser.role === 'Dean' && s.role === 'Dean' && !s.userId);
-      if (isMine && s.action === 'Pending') return { ...s, action, actedAt: nowStr(), remark: remark || action, userId: currentUser.id, userName: currentUser.name };
+      const isMine = s.userId === currentUser.id ||
+        (currentUser.role === 'Principal' && s.role === 'Principal') ||
+        (currentUser.role === 'Dean' && s.role === 'Dean' && !s.userId) ||
+        (currentUser.role === 'HOD' && s.role === 'HOD' && (currentUser.department === p.submitterDept || !s.userId));
+      if (isMine && s.action === 'Pending' && !matched) {
+        matched = true;
+        return { ...s, action, actedAt: nowStr(), remark: remark || action, userId: currentUser.id, userName: currentUser.name };
+      }
       return s;
     });
+    if (!matched && currentUser.role !== 'Principal') {
+      setBulkMsg('No pending step matches your role for this proposal.');
+      return;
+    }
     let status = p.status;
     if (action === 'Rejected') status = 'Rejected';
     else if (action === 'Changes Requested') status = 'Changes Requested';
@@ -664,19 +690,30 @@ export function ProposalDetail() {
               ))}
             </ol>
             <div className="mt-4 space-y-2">
-              <Field label="Remark (mandatory for reject or changes)">
-                <input value={remark} onChange={(e) => setRemark(e.target.value)} className={inputCls} placeholder="Decision note" />
-              </Field>
-              <div className="flex flex-wrap gap-1.5">
-                <button onClick={() => act('Approved')} className="px-3 py-1.5 text-xs font-semibold rounded-md bg-green-600 text-white">Approve</button>
-                <button onClick={() => act('Rejected')} className="px-3 py-1.5 text-xs font-semibold rounded-md border border-red-300 text-red-700">Reject</button>
-                <button onClick={() => act('Changes Requested')} className="px-3 py-1.5 text-xs font-semibold rounded-md border border-amber-300 text-amber-800">Request changes</button>
-              </div>
-              {p.submitterId === currentUser.id && ['Submitted', 'Under Review', 'Changes Requested'].includes(p.status) && (
-                <button onClick={() => setStatus('Withdrawn')} className="text-xs text-slate-500 underline">Withdraw proposal</button>
+              {canAct ? (
+                <>
+                  <Field label={`Remark (${pendingStep ? pendingStep.role : 'Reviewer'} Decision)`}>
+                    <input value={remark} onChange={(e) => setRemark(e.target.value)} className={inputCls} placeholder="Decision note (mandatory for reject or changes)" />
+                  </Field>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button onClick={() => act('Approved')} className="px-3 py-1.5 text-xs font-semibold rounded-md bg-green-600 hover:bg-green-700 text-white shadow-xs transition-colors">Approve</button>
+                    <button onClick={() => act('Rejected')} className="px-3 py-1.5 text-xs font-semibold rounded-md border border-red-300 text-red-700 hover:bg-red-50 transition-colors">Reject</button>
+                    <button onClick={() => act('Changes Requested')} className="px-3 py-1.5 text-xs font-semibold rounded-md border border-amber-300 text-amber-800 hover:bg-amber-50 transition-colors">Request changes</button>
+                  </div>
+                </>
+              ) : (
+                ['Submitted', 'Under Review'].includes(p.status) && (
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-card text-xs text-slate-600">
+                    <span className="font-semibold text-slate-700 block">Pending Stage:</span>
+                    Awaiting action from {pendingStep ? `${pendingStep.role} (${pendingStep.userName || 'Designated Office'})` : 'Approver'}.
+                  </div>
+                )
               )}
-              {currentUser.role === 'Principal' && (
-                <button onClick={() => { setStatus('Approved'); pushNotification({ userId: p.submitterId, title: 'Proposal Approved', body: `${p.refNo} approved by Principal`, link: `/proposals/${p.id}` }); }} className="text-xs text-primary font-semibold underline">Force approve (principal)</button>
+              {p.submitterId === currentUser.id && ['Submitted', 'Under Review', 'Changes Requested'].includes(p.status) && (
+                <button onClick={() => setStatus('Withdrawn')} className="text-xs text-slate-500 hover:text-slate-800 underline block pt-1">Withdraw proposal</button>
+              )}
+              {currentUser.role === 'Principal' && p.status !== 'Approved' && (
+                <button onClick={() => { setStatus('Approved'); pushNotification({ userId: p.submitterId, title: 'Proposal Approved', body: `${p.refNo} approved by Principal`, link: `/proposals/${p.id}` }); }} className="text-xs text-primary font-semibold underline block pt-1">Force approve (Principal Sanction)</button>
               )}
             </div>
           </section>
@@ -684,7 +721,7 @@ export function ProposalDetail() {
           <section className="bg-white border border-gray-200 rounded-card p-5">
             <h2 className="font-semibold mb-2">Audit log</h2>
             <ul className="text-xs space-y-1.5 text-slate-600">
-              {notifications.filter((n) => n.link.includes(p.id)).slice(0, 4).map((n) => <li key={n.id}>{n.createdAt}: {n.title}, {n.body}</li>)}
+              {notifications.filter((n) => n.link && n.link.includes(p.id)).slice(0, 4).map((n) => <li key={n.id}>{n.createdAt}: {n.title}, {n.body}</li>)}
               <li>Created {p.createdAt}, updated {p.updatedAt}</li>
               <li>Submitted by {p.submitterName} ({p.submitterDept})</li>
             </ul>
@@ -723,8 +760,8 @@ export function ProposalDetail() {
         <Modal title="Completion report" onClose={() => setReportOpen(false)}>
           <div className="space-y-3 text-sm">
             <label className="flex gap-4">
-              <span className="flex items-center gap-1.5"><input type="radio" checked={report.done} onChange={() => setReport({ ...report, done: true })} className="accent-[#6D4AFF]" /> Done</span>
-              <span className="flex items-center gap-1.5"><input type="radio" checked={!report.done} onChange={() => setReport({ ...report, done: false })} className="accent-[#6D4AFF]" /> Not Done</span>
+              <span className="flex items-center gap-1.5"><input type="radio" checked={report.done} onChange={() => setReport({ ...report, done: true })} className="accent-primary" /> Done</span>
+              <span className="flex items-center gap-1.5"><input type="radio" checked={!report.done} onChange={() => setReport({ ...report, done: false })} className="accent-primary" /> Not Done</span>
             </label>
             {!report.done && (
               <Field label="Reason (mandatory)">

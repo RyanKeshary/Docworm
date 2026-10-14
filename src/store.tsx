@@ -115,7 +115,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [completions, setCompletions] = useState<CompletionMap>(() => load('completions', {} as CompletionMap));
   const [options, setOptions] = useState<AppOptions>(() => load('options', DEFAULT_OPTIONS));
   const [letterhead, setLetterhead] = useState(() => load('letterhead', DEFAULT_LETTERHEAD));
-  const [currentUserId, setCurrentUserIdState] = useState<string>(() => (backend === 'local' ? load('session', 'u-principal') : ''));
+  const [currentUserId, setCurrentUserIdState] = useState<string>(() => (backend === 'local' ? load('session', '') : ''));
   const [authLoading, setAuthLoading] = useState(backend === 'supabase');
   const [backendError, setBackendError] = useState('');
   const [syncState, setSyncState] = useState<'live' | 'loading' | 'offline'>(backend === 'supabase' ? 'loading' : 'live');
@@ -250,13 +250,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { if (backend === 'local') persist('session', currentUserId); }, [currentUserId, backend]);
 
   const currentUser = useMemo(
-    () => users.find((u) => u.id === currentUserId) ?? users[0] ?? {
-      id: 'guest',
-      name: 'Staff User',
+    () => (currentUserId ? users.find((u) => u.id === currentUserId) : null) ?? {
+      id: '',
+      name: 'Guest',
       email: '',
-      role: 'Faculty',
+      role: 'Faculty' as const,
       department: 'HAS',
-      designation: 'Staff',
+      designation: 'Visitor',
       phone: '',
       password: '',
     },
@@ -291,6 +291,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = async (newUser: Omit<User, 'id'>): Promise<string | null> => {
     if (!newUser.email.trim() || !newUser.password) return 'Email and password are required.';
+    if (newUser.password.length < 6) return 'Password must be at least 6 characters.';
     const emailNorm = newUser.email.trim().toLowerCase();
     if (users.some((u) => u.email.toLowerCase() === emailNorm)) {
       return 'An account with this email already exists.';
@@ -312,10 +313,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     if (backend === 'supabase') {
       try { await supabase().auth.signOut(); } catch { /* noop */ }
-      setCurrentUserIdState('');
-    } else {
-      localStorage.removeItem('docworm:session');
     }
+    localStorage.removeItem('docworm:session');
+    setCurrentUserIdState('');
   };
 
   const getNextRefNumber = async (cellOrDept: string, category: string, year: string): Promise<string> => {
@@ -380,7 +380,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     users, proposals, tasks, comments, notifications, audit, completions, options, letterhead,
     currentUserId, currentUser, backend, authLoading, backendError,
     syncState, lastSyncedAt, liveTick,
-    isAuthenticated: backend === 'local' ? true : Boolean(currentUserId),
+    isAuthenticated: Boolean(currentUserId),
     signIn, signOut, refresh,
     setCurrentUserId: setCurrentUserIdState,
     getNextRefNumber, uploadFile,
