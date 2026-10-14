@@ -133,7 +133,6 @@ export function ExportMenu({ onExport }: { onExport: (fmt: 'CSV' | 'XLSX' | 'PDF
 export function Layout({ children }: { children: React.ReactNode }) {
   const { currentUser, users, setCurrentUserId, notifications, backend, signOut, refresh, backendError, syncState, lastSyncedAt } = useData();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [devOpen, setDevOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [q, setQ] = useState('');
   const nav = useNavigate();
@@ -275,14 +274,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
           )}
         </Link>
 
-        {backend === 'local' && (
-          <button
-            onClick={() => setDevOpen(true)}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-card text-xs font-semibold border border-primary-border text-primary bg-primary-pale hover:bg-primary-light transition-colors"
-          >
-            <User size={14} /> {!collapsed && `Switch Account (${currentUser.role})`}
-          </button>
-        )}
+        <button
+          onClick={async () => {
+            await signOut();
+            nav('/login');
+          }}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-card text-xs font-semibold border border-rose-200 text-rose-700 bg-rose-50/70 hover:bg-rose-100 transition-colors"
+          title="Sign out of Docworm"
+        >
+          <LogOut size={14} /> {!collapsed && 'Sign Out'}
+        </button>
 
         {!collapsed && (
           <div className="px-1 py-1">
@@ -403,47 +404,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
         )}
         <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto">{children}</main>
       </div>
-      {devOpen && (
-        <Modal title="Switch Active Account" onClose={() => setDevOpen(false)}>
-          <p className="text-sm text-ink-muted mb-4">Select an account to test permissions and approvals as that role.</p>
-          <div className="space-y-2.5">
-            {users.map((u) => {
-              const meta = ROLE_META[u.role as keyof typeof ROLE_META] ?? ROLE_META.Faculty;
-              const isActive = u.id === currentUser.id;
-              const roleDesc: Record<string, string> = {
-                Principal: 'Final sanction authority — approves all proposals, manages users & settings',
-                Dean: 'Cross-dept review — forwards endorsed proposals to Principal',
-                HOD: 'Department head — first reviewer, endorses to Dean',
-                Faculty: 'Submitter — creates requests, tracks approvals',
-              };
-              return (
-                <button
-                  key={u.id}
-                  onClick={() => { setCurrentUserId(u.id); setDevOpen(false); nav('/'); }}
-                  className={`w-full text-left px-4 py-3 rounded-card border transition-colors ${
-                    isActive
-                      ? `${meta.border} ${meta.bg} ring-1 ring-primary/20`
-                      : 'border-primary-border hover:bg-primary-pale'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="text-xl mt-0.5">{meta.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm text-ink">{u.name}</span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${meta.badge}`}>{u.role}</span>
-                        {isActive && <span className="text-[10px] text-emerald-600 font-semibold">● Active</span>}
-                      </div>
-                      <p className="text-xs text-ink-muted mt-0.5 truncate">{u.department} • {u.email}</p>
-                      <p className={`text-[11px] mt-1 ${meta.accent}`}>{roleDesc[u.role] ?? ''}</p>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }

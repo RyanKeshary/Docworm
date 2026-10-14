@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Plus, Database, Server, ExternalLink, RefreshCw, Trash2,
   Shield, CheckCircle2, Copy, Check, Info, User as UserIcon, Lock,
+  Crown, CheckCircle, XCircle, UserCheck, AlertTriangle,
 } from 'lucide-react';
 import { useData, nowStr } from '../store';
 import { Badge, Drawer, EmptyState, ExportMenu, Field, Modal, btnGhost, btnPrimary, inputCls } from '../components';
@@ -543,65 +544,97 @@ export function SettingsPage() {
     options, saveOptions, users, saveUsers, letterhead, saveLetterhead,
     resetDemo, purgeFakeData, audit, currentUser, setCurrentUserId,
     backend, syncState, lastSyncedAt, refresh, proposals, tasks, comments, notifications,
+    approveFaculty, rejectFaculty, addLeadership, removeUser: storeRemoveUser,
   } = useData();
 
   const [params, setParams] = useSearchParams();
-  const currentTab = params.get('tab') ?? 'database';
+  const currentTab = params.get('tab') ?? 'leadership';
   const setTab = (t: string) => setParams({ tab: t });
 
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: 'password123', role: 'Faculty', department: 'IT', designation: '', phone: '' });
+  const isPrincipal = currentUser.role === 'Principal';
+  const isAdmin = currentUser.role === 'Principal' || currentUser.role === 'Dean';
+
+  const pendingFaculty = useMemo(() => users.filter((u) => u.status === 'pending_approval'), [users]);
+
+  const [leadershipForm, setLeadershipForm] = useState({
+    name: '',
+    email: '',
+    password: 'password123',
+    role: 'HOD' as 'HOD' | 'Dean',
+    department: 'IT',
+    designation: 'Head of Department, IT',
+    phone: '',
+  });
+  const [leadershipFeedback, setLeadershipFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [staffRoleFilter, setStaffRoleFilter] = useState<'All' | 'Principal' | 'Dean' | 'HOD' | 'Faculty'>('All');
+  const [staffSearchQuery, setStaffSearchQuery] = useState('');
   const [purgeFeedback, setPurgeFeedback] = useState('');
   const [copiedEnv, setCopiedEnv] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const nav = useNavigate();
 
-  const isAdmin = currentUser.role === 'Principal' || currentUser.role === 'Dean';
-  const isPrincipal = currentUser.role === 'Principal';
-
-  // Role-based staff directory scoping:
-  // - Principal sees all accounts and can manage/create/delete them
-  // - Dean sees all HODs and faculties across all departments
-  // - HOD sees all faculties and staff in their department
-  // - Faculty sees their department contacts
+  // Filtered staff list based on role scoping and search
   const visibleStaff = useMemo(() => {
-    if (currentUser.role === 'Principal' || currentUser.role === 'Dean') {
-      return users;
+    let list = users;
+    if (staffRoleFilter !== 'All') {
+      list = list.filter((u) => u.role === staffRoleFilter);
     }
-    if (currentUser.role === 'HOD') {
-      return users.filter((u) => u.department === currentUser.department);
+    if (staffSearchQuery.trim()) {
+      const q = staffSearchQuery.toLowerCase();
+      list = list.filter((u) =>
+        u.name.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        u.department.toLowerCase().includes(q) ||
+        u.designation.toLowerCase().includes(q)
+      );
     }
-    return users.filter((u) => u.department === currentUser.department || u.id === currentUser.id);
-  }, [users, currentUser]);
+    return list;
+  }, [users, staffRoleFilter, staffSearchQuery]);
 
   const editList = (key: keyof typeof options, val: string) => {
     saveOptions({ ...options, [key]: val.split(',').map((s) => s.trim()).filter(Boolean) });
   };
 
-  const addUser = () => {
-    if (!newUser.name.trim() || !newUser.email.trim()) {
-      alert('Name and email are required.');
+  const handleAppointLeadership = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLeadershipFeedback(null);
+    if (!leadershipForm.name.trim() || !leadershipForm.email.trim()) {
+      setLeadershipFeedback({ type: 'error', msg: 'Full name and institutional email are required.' });
       return;
     }
-    if (users.some((x) => x.email.toLowerCase() === newUser.email.trim().toLowerCase())) {
-      alert('An account with this email already exists.');
+    const err = addLeadership({
+      name: leadershipForm.name.trim(),
+      email: leadershipForm.email.trim(),
+      password: leadershipForm.password || 'password123',
+      role: leadershipForm.role,
+      department: leadershipForm.role === 'HOD' ? leadershipForm.department : 'HAS',
+      designation: leadershipForm.designation.trim() || (leadershipForm.role === 'HOD' ? `Head of Department, ${leadershipForm.department}` : 'Dean, Student Welfare'),
+      phone: leadershipForm.phone.trim(),
+    });
+    if (err) {
+      setLeadershipFeedback({ type: 'error', msg: err });
       return;
     }
-    saveUsers([...users, {
-      id: `u-${Date.now().toString(36)}`,
-      name: newUser.name.trim(),
-      email: newUser.email.trim().toLowerCase(),
-      role: newUser.role as 'Principal' | 'Dean' | 'HOD' | 'Faculty',
-      department: newUser.department,
-      designation: newUser.designation.trim() || newUser.role,
-      phone: newUser.phone.trim(),
-      password: newUser.password || 'password123',
-    }]);
-    setNewUser({ name: '', email: '', password: 'password123', role: 'Faculty', department: 'IT', designation: '', phone: '' });
+    setLeadershipFeedback({ type: 'success', msg: `Successfully appointed ${leadershipForm.role}: ${leadershipForm.name}!` });
+    setLeadershipForm({
+      name: '',
+      email: '',
+      password: 'password123',
+      role: 'HOD',
+      department: 'IT',
+      designation: 'Head of Department, IT',
+      phone: '',
+    });
+    setTimeout(() => setLeadershipFeedback(null), 4000);
   };
 
-  const removeUser = (u: User) => {
-    if (window.confirm(`Are you sure you want to remove the staff account for ${u.name} (${u.email})?`)) {
-      saveUsers(users.filter((x) => x.id !== u.id));
+  const handleRemoveUser = (target: User) => {
+    if (target.role === 'Principal') {
+      alert('The Principal account is the institutional master administrator and cannot be removed.');
+      return;
+    }
+    if (window.confirm(`Are you sure you want to permanently remove ${target.name} (${target.role}, ${target.department})? This action cannot be undone.`)) {
+      storeRemoveUser(target.id);
     }
   };
 
@@ -683,9 +716,15 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
       {/* Tabs navigation - clean, responsive pills */}
       <div className="flex gap-1.5 bg-slate-100/80 p-1.5 rounded-card border border-slate-200/60 overflow-x-auto scrollbar-thin">
         {[
+          {
+            id: 'leadership',
+            label: 'Leadership & Staff',
+            badge: pendingFaculty.length > 0 ? `${pendingFaculty.length} Pending` : null,
+            icon: <Crown size={15} />,
+          },
           { id: 'database', label: 'Database & Backend', icon: <Database size={15} /> },
           { id: 'profile', label: 'My Profile', icon: <UserIcon size={15} /> },
-          { id: 'auth', label: 'Role & Auth Control', icon: <Shield size={15} /> },
+          { id: 'auth', label: 'Role Permissions', icon: <Shield size={15} /> },
           { id: 'letterhead', label: 'College Letterhead', icon: null },
           { id: 'options', label: 'Academic Options', icon: null },
           { id: 'audit', label: `Audit Log (${audit.length})`, icon: null },
@@ -700,10 +739,342 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
             }`}
           >
             {t.icon}
-            {t.label}
+            <span>{t.label}</span>
+            {t.badge && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500 text-white font-extrabold animate-pulse ml-0.5">
+                {t.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>
+
+      {/* 0. LEADERSHIP & FACULTY MANAGEMENT TAB */}
+      {currentTab === 'leadership' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Top Info Banner */}
+          <div className="bg-gradient-to-r from-violet-50/90 via-white to-violet-50/30 border border-violet-200 rounded-card p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <span className="w-10 h-10 rounded-xl bg-violet-100 border border-violet-200 flex items-center justify-center text-xl shrink-0">🏛️</span>
+              <div>
+                <h2 className="font-bold text-base text-slate-900">Institutional Leadership & Faculty Administration</h2>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Principal controls appointments of Heads of Department (HOD) and Deans, and verifies faculty registrations.
+                </p>
+              </div>
+            </div>
+            {isPrincipal && (
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-violet-100 text-violet-800 border border-violet-300 shrink-0">
+                👑 Principal Authority Active
+              </span>
+            )}
+          </div>
+
+          {leadershipFeedback && (
+            <div className={`p-4 rounded-card border text-xs sm:text-sm flex items-center gap-2.5 animate-fade-in ${
+              leadershipFeedback.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-rose-50 border-rose-200 text-rose-800'
+            }`}>
+              {leadershipFeedback.type === 'success' ? <CheckCircle2 size={18} className="text-emerald-600 shrink-0" /> : <AlertTriangle size={18} className="text-rose-600 shrink-0" />}
+              <span>{leadershipFeedback.msg}</span>
+            </div>
+          )}
+
+          {/* 1. PENDING FACULTY REGISTRATIONS (PRINCIPAL APPROVAL QUEUE) */}
+          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-gray-100">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-slate-900 text-base">Pending Faculty Registrations</h3>
+                  {pendingFaculty.length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                      {pendingFaculty.length} Awaiting Verification
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Direct faculty registrations require official Principal approval before portal login and event request submissions are unlocked.
+                </p>
+              </div>
+            </div>
+
+            {pendingFaculty.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2">
+                <CheckCircle size={32} className="text-emerald-500 mx-auto" />
+                <p className="text-sm font-semibold text-slate-700">No Pending Faculty Registrations</p>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  All faculty accounts are reviewed and active. New registrations from the registration page will appear here for Principal verification.
+                </p>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-3.5">
+                {pendingFaculty.map((u) => (
+                  <div key={u.id} className="p-4 rounded-xl border border-amber-200 bg-amber-50/40 hover:bg-amber-50/70 transition-all flex flex-col justify-between space-y-3">
+                    <div className="flex items-start gap-3">
+                      <span className="w-10 h-10 rounded-full bg-amber-100 border border-amber-300 text-amber-800 font-bold flex items-center justify-center shrink-0">
+                        {u.name.charAt(0).toUpperCase()}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-sm text-slate-900">{u.name}</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                            Dept of {u.department}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-0.5">{u.designation || 'Faculty Coordinator'} • <span className="font-mono text-slate-700">{u.email}</span></p>
+                        {u.phone && <p className="text-[11px] text-slate-500 mt-0.5">Phone: {u.phone}</p>}
+                        {u.registeredAt && <p className="text-[10px] text-slate-400 mt-1">Submitted: {u.registeredAt}</p>}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-amber-200/60 flex items-center justify-end gap-2">
+                      {isPrincipal ? (
+                        <>
+                          <button
+                            onClick={() => approveFaculty(u.id)}
+                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors flex items-center gap-1.5"
+                          >
+                            <CheckCircle2 size={13} />
+                            Approve Registration
+                          </button>
+                          <button
+                            onClick={() => rejectFaculty(u.id)}
+                            className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 transition-colors"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-xs text-amber-700 font-medium">Pending Principal Approval</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 2. APPOINT LEADERSHIP (HODs & DEANS - PRINCIPAL ONLY) */}
+          {isPrincipal && (
+            <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
+              <div className="pb-3 border-b border-gray-100">
+                <h3 className="font-bold text-slate-900 text-base">Appoint Leadership (HODs & Deans)</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Appoint institutional department heads and deans. Appointed leadership accounts are instantly active.
+                </p>
+              </div>
+
+              <form onSubmit={handleAppointLeadership} className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-700">Appoint Role:</span>
+                  <div className="flex gap-2">
+                    {(['HOD', 'Dean'] as const).map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setLeadershipForm({
+                          ...leadershipForm,
+                          role: r,
+                          designation: r === 'HOD' ? `Head of Department, ${leadershipForm.department}` : 'Dean, Student Welfare',
+                        })}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                          leadershipForm.role === r
+                            ? 'bg-primary text-white border-primary shadow-xs'
+                            : 'bg-slate-50 text-slate-700 border-gray-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {r === 'HOD' ? '🏢 Head of Department (HOD)' : '🎓 Dean'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">Full Name *</label>
+                    <input
+                      required
+                      value={leadershipForm.name}
+                      onChange={(e) => setLeadershipForm({ ...leadershipForm, name: e.target.value })}
+                      placeholder="e.g. Dr. Satish Deshmukh"
+                      className={inputCls}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">
+                      {leadershipForm.role === 'HOD' ? 'Department Headed *' : 'Assigned Domain / Office'}
+                    </label>
+                    {leadershipForm.role === 'HOD' ? (
+                      <select
+                        value={leadershipForm.department}
+                        onChange={(e) => setLeadershipForm({
+                          ...leadershipForm,
+                          department: e.target.value,
+                          designation: `Head of Department, ${e.target.value}`,
+                        })}
+                        className={inputCls}
+                      >
+                        {options.departments.map((d) => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    ) : (
+                      <input
+                        value="HAS / Student Welfare"
+                        disabled
+                        className={`${inputCls} bg-slate-50 text-slate-500 cursor-not-allowed`}
+                      />
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">Designation</label>
+                    <input
+                      value={leadershipForm.designation}
+                      onChange={(e) => setLeadershipForm({ ...leadershipForm, designation: e.target.value })}
+                      placeholder="e.g. Professor & HOD"
+                      className={inputCls}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">Institutional Email *</label>
+                    <input
+                      required
+                      type="email"
+                      value={leadershipForm.email}
+                      onChange={(e) => setLeadershipForm({ ...leadershipForm, email: e.target.value })}
+                      placeholder="hod.it@slrtce.in"
+                      className={inputCls}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">Login Password *</label>
+                    <input
+                      required
+                      type="text"
+                      value={leadershipForm.password}
+                      onChange={(e) => setLeadershipForm({ ...leadershipForm, password: e.target.value })}
+                      placeholder="Password"
+                      className={inputCls}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">Phone Number (optional)</label>
+                    <input
+                      value={leadershipForm.phone}
+                      onChange={(e) => setLeadershipForm({ ...leadershipForm, phone: e.target.value })}
+                      placeholder="+91 98765 43210"
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button type="submit" className={btnPrimary}>
+                    <Plus size={15} /> Appoint {leadershipForm.role === 'HOD' ? 'Head of Department' : 'Dean'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* 3. ACTIVE LEADERSHIP & STAFF DIRECTORY */}
+          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-100">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Authorized Leadership & Staff Directory</h3>
+                <p className="text-xs text-slate-500 mt-0.5">All active institutional accounts registered in the system</p>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <input
+                  value={staffSearchQuery}
+                  onChange={(e) => setStaffSearchQuery(e.target.value)}
+                  placeholder="Search staff..."
+                  className={`${inputCls} !py-1.5 text-xs w-48`}
+                />
+                <span className="text-xs font-semibold bg-primary-pale text-primary border border-primary-border px-2.5 py-1 rounded-full">
+                  {visibleStaff.length} Accounts
+                </span>
+              </div>
+            </div>
+
+            {/* Filter pills */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(['All', 'Principal', 'Dean', 'HOD', 'Faculty'] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setStaffRoleFilter(r)}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                    staffRoleFilter === r
+                      ? 'bg-primary text-white border-primary shadow-xs'
+                      : 'bg-slate-50 text-slate-600 border-gray-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {r} ({r === 'All' ? users.length : users.filter((u) => u.role === r).length})
+                </button>
+              ))}
+            </div>
+
+            {/* Directory items */}
+            <div className="divide-y divide-gray-100 border border-gray-200 rounded-card overflow-hidden">
+              {visibleStaff.map((u) => {
+                const isMe = u.id === currentUser.id;
+                const isPending = u.status === 'pending_approval';
+                return (
+                  <div key={u.id} className="flex flex-wrap items-center justify-between p-4 hover:bg-slate-50/70 transition-colors gap-3">
+                    <div className="flex items-start gap-3">
+                      <span className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                        u.role === 'Principal' ? 'bg-violet-100 text-violet-800 border border-violet-300' :
+                        u.role === 'Dean' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
+                        u.role === 'HOD' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                        'bg-amber-100 text-amber-800 border border-amber-300'
+                      }`}>
+                        {u.name.charAt(0).toUpperCase()}
+                      </span>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-sm text-slate-900">{u.name}</span>
+                          <Badge text={u.role} />
+                          {isPending && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
+                              Pending Approval
+                            </span>
+                          )}
+                          {isMe && (
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                              ● You
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {u.designation} • Dept of {u.department} • <span className="font-mono text-slate-700">{u.email}</span>
+                          {u.phone && ` • ${u.phone}`}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {isPrincipal && u.role !== 'Principal' && !isMe && (
+                        <button
+                          onClick={() => handleRemoveUser(u)}
+                          className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50 transition-colors"
+                          title="Remove user account"
+                        >
+                          Remove Account
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 1. DATABASE & BACKEND TAB */}
       {currentTab === 'database' && (
@@ -872,26 +1243,6 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
             </div>
           </div>
 
-          {backend === 'local' && (
-            <div className="border-t border-gray-100 pt-4">
-              <p className="text-xs font-semibold text-slate-600 mb-2">Switch Active Role in Local Mode:</p>
-              <div className="flex flex-wrap gap-2">
-                {users.map((u) => (
-                  <button
-                    key={u.id}
-                    onClick={() => setCurrentUserId(u.id)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                      u.id === currentUser.id
-                        ? 'bg-primary text-white border-primary shadow-xs'
-                        : 'border-gray-200 bg-white hover:border-primary-border text-slate-700'
-                    }`}
-                  >
-                    {u.name} ({u.role})
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -927,62 +1278,31 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
       {/* 4. ROLE & AUTH CONTROL TAB */}
       {currentTab === 'auth' && (
         <div className="space-y-6 animate-fade-in">
-          {/* Active User Credentials & Impersonation Panel */}
+          {/* Active User Credentials Card */}
           <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                  <h2 className="font-bold text-slate-900 text-base">Current Session & Role Access</h2>
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <h2 className="font-bold text-slate-900 text-base">Active User Session</h2>
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
-                  Logged in as <span className="font-semibold text-slate-800">{currentUser.name}</span> ({currentUser.email}) with <span className="font-semibold text-primary">{currentUser.role}</span> privileges.
+                  Logged in as <span className="font-semibold text-slate-800">{currentUser.name}</span> ({currentUser.email}) with institutional <span className="font-semibold text-primary">{currentUser.role}</span> privileges.
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary-pale text-primary border border-primary-border">
                   Active Role: {currentUser.role}
                 </span>
-              </div>
-            </div>
-
-            {/* Instant Role Switcher for Testing Role-based Access */}
-            <div className="mt-4 pt-1">
-              <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider block mb-2">
-                Switch Role / Test Impersonation:
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                {[
-                  { role: 'Principal', email: 'principal@slrtce.in', desc: 'Institutional Head & Final Sanction' },
-                  { role: 'Dean', email: 'dean@slrtce.in', desc: 'Student Welfare & Clearance' },
-                  { role: 'HOD', email: 'hod.it@slrtce.in', desc: 'Dept Review & Room Approval' },
-                  { role: 'Faculty', email: 'faculty@slrtce.in', desc: 'Draft Letters & Run Events' },
-                ].map((item) => {
-                  const targetUser = users.find((u) => u.role === item.role);
-                  const isCurrent = currentUser.role === item.role;
-                  return (
-                    <button
-                      key={item.role}
-                      type="button"
-                      onClick={() => {
-                        if (targetUser) {
-                          setCurrentUserId(targetUser.id);
-                        }
-                      }}
-                      className={`text-left p-3 rounded-card border transition-all ${
-                        isCurrent
-                          ? 'border-primary bg-primary-pale/80 shadow-xs ring-1 ring-primary/30'
-                          : 'border-gray-200 bg-slate-50/70 hover:bg-slate-100/80 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-slate-900">{item.role}</span>
-                        {isCurrent && <span className="text-[10px] font-bold text-primary bg-white px-1.5 py-0.5 rounded border border-primary-border">Active</span>}
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-1 leading-tight">{item.desc}</p>
-                    </button>
-                  );
-                })}
+                {isPrincipal && (
+                  <button
+                    onClick={() => setTab('leadership')}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors flex items-center gap-1.5 shadow-xs"
+                  >
+                    <Crown size={13} />
+                    Manage Leadership & Staff
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1037,76 +1357,6 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                   </tr>
                 </tbody>
               </table>
-            </div>
-          </div>
-
-          {/* Staff Accounts Management */}
-          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <div>
-                <h3 className="font-bold text-slate-900 text-base">Authorized Staff Accounts Directory</h3>
-                <p className="text-xs text-slate-500">Manage user logins, passwords, designations, and departmental permissions</p>
-              </div>
-              <span className="text-xs font-semibold bg-primary-pale text-primary border border-primary-border px-2.5 py-1 rounded-full">
-                {users.length} Active Accounts
-              </span>
-            </div>
-
-            {/* Only Principal has authority to create staff accounts */}
-            {isPrincipal && (
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-card space-y-3">
-                <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">Create New Staff / Faculty Account (Principal Only):</p>
-                <div className="grid sm:grid-cols-3 gap-2.5">
-                  <input value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} placeholder="Full Name (e.g. Dr. Priya Rao)" className={inputCls} aria-label="User name" />
-                  <input value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} placeholder="Email address" className={inputCls} aria-label="User email" />
-                  <input value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} placeholder="Password (default: password123)" className={inputCls} aria-label="User password" />
-                  <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} className={inputCls} aria-label="Role">
-                    {['Faculty', 'HOD', 'Dean', 'Principal'].map((r) => <option key={r}>{r}</option>)}
-                  </select>
-                  <select value={newUser.department} onChange={(e) => setNewUser({ ...newUser, department: e.target.value })} className={inputCls} aria-label="Department">
-                    {options.departments.map((r) => <option key={r}>{r}</option>)}
-                  </select>
-                  <input value={newUser.designation} onChange={(e) => setNewUser({ ...newUser, designation: e.target.value })} placeholder="Designation (e.g. Assistant Professor)" className={inputCls} aria-label="Designation" />
-                  <input value={newUser.phone} onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })} placeholder="Phone (optional)" className={inputCls} aria-label="User phone" />
-                </div>
-                <button onClick={addUser} className={btnPrimary}><Plus size={15} /> Add Staff Account</button>
-              </div>
-            )}
-
-            <div className="divide-y divide-gray-100 border border-gray-200 rounded-card overflow-hidden">
-              {visibleStaff.map((u) => (
-                <div key={u.id} className="flex flex-wrap items-center justify-between p-3.5 hover:bg-slate-50/70 transition-colors gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm text-slate-900">{u.name}</span>
-                      <Badge text={u.role} />
-                      {u.id === currentUser.id && (
-                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full">Current User</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {u.designation} • Dept of {u.department} • <span className="font-mono text-slate-700">{u.email}</span>
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setCurrentUserId(u.id)}
-                      className="text-xs text-primary hover:text-primary-dark font-semibold px-2.5 py-1 rounded border border-primary-border bg-primary-pale hover:bg-primary-light transition-colors"
-                      title="Quick switch active user session"
-                    >
-                      Login As
-                    </button>
-                    {isAdmin && users.length > 1 && u.id !== currentUser.id && (
-                      <button
-                        onClick={() => removeUser(u)}
-                        className="text-xs text-rose-600 hover:text-rose-800 font-semibold px-2.5 py-1 rounded hover:bg-rose-50 transition-colors"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
             </div>
           </div>
         </div>

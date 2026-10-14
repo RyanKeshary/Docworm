@@ -17,6 +17,8 @@ export interface User {
   phone: string;
   role: Role;
   password: string;
+  status?: 'active' | 'pending_approval' | 'rejected';
+  registeredAt?: string;
 }
 
 export interface ResourceRow {

@@ -15,92 +15,52 @@ export function Login() {
   const { signIn, signUp, backend, isAuthenticated } = useData();
   const nav = useNavigate();
   const [tab, setTab] = useState<'signin' | 'register'>('signin');
-  const [portal, setPortal] = useState<RolePortal>('Faculty');
-  const [email, setEmail] = useState('faculty@slrtce.in');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<'Principal' | 'Dean' | 'HOD' | 'Faculty'>('Faculty');
   const [department, setDepartment] = useState('IT');
   const [designation, setDesignation] = useState('Assistant Professor');
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [fails, setFails] = useState(0);
-  const [lockedUntil, setLockedUntil] = useState(0);
+  const [registeredSuccess, setRegisteredSuccess] = useState<{ name: string; dept: string } | null>(null);
 
   React.useEffect(() => {
     if (isAuthenticated) nav('/');
   }, [isAuthenticated, nav]);
 
-  const selectPortal = (r: RolePortal) => {
-    setPortal(r);
-    setError('');
-    if (r === 'Faculty') {
-      setEmail('faculty@slrtce.in');
-      setPassword('password123');
-    } else if (r === 'HOD') {
-      setEmail('hod.it@slrtce.in');
-      setPassword('password123');
-    } else if (r === 'Dean') {
-      setEmail('dean@slrtce.in');
-      setPassword('password123');
-    } else if (r === 'Principal') {
-      setEmail('principal@slrtce.in');
-      setPassword('password123');
-    }
-  };
-
-  const quickLoginAs = async (r: RolePortal) => {
-    selectPortal(r);
-    setBusy(true);
-    setError('');
-    const testEmail = r === 'Faculty' ? 'faculty@slrtce.in'
-      : r === 'HOD' ? 'hod.it@slrtce.in'
-      : r === 'Dean' ? 'dean@slrtce.in' : 'principal@slrtce.in';
-    const err = await signIn(testEmail, 'password123');
-    setBusy(false);
-    if (err) setError(err);
-    else nav('/');
-  };
-
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (Date.now() < lockedUntil) {
-      setError(`Too many failed attempts. Try again in ${Math.ceil((lockedUntil - Date.now()) / 1000)} seconds.`);
-      return;
-    }
     setBusy(true);
     setError('');
 
     if (tab === 'register') {
       if (!name.trim()) { setError('Full name is required.'); setBusy(false); return; }
+      if (!email.trim()) { setError('Institutional email is required.'); setBusy(false); return; }
+      if (!password || password.length < 6) { setError('Password must be at least 6 characters.'); setBusy(false); return; }
+      
       const err = await signUp({
         name: name.trim(),
         email: email.trim(),
         password,
-        role,
+        role: 'Faculty', // Faculty registers directly
         department,
-        designation: designation.trim() || role,
+        designation: designation.trim() || 'Faculty Coordinator',
         phone: phone.trim(),
       });
       setBusy(false);
       if (err) { setError(err); return; }
-      nav('/');
+      setRegisteredSuccess({ name: name.trim(), dept: department });
+      setName('');
+      setPassword('');
+      setPhone('');
       return;
     }
 
     const err = await signIn(email, password);
     setBusy(false);
     if (err) {
-      const n = fails + 1;
-      setFails(n);
-      if (n >= 5) {
-        setLockedUntil(Date.now() + 60000);
-        setFails(0);
-        setError('Too many failed attempts. Locked for 60 seconds.');
-      } else {
-        setError(err);
-      }
+      setError(err);
       return;
     }
     nav('/');
@@ -108,7 +68,7 @@ export function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 bg-gradient-to-br from-slate-100 via-sky-50/50 to-blue-50/30">
-      <div className="w-full max-w-5xl grid md:grid-cols-5 gap-0 bg-white border border-gray-200/80 rounded-2xl overflow-hidden shadow-xl">
+      <div className="w-full max-w-4xl grid md:grid-cols-5 gap-0 bg-white border border-gray-200/80 rounded-2xl overflow-hidden shadow-xl">
         {/* Left institutional hero panel */}
         <div className="md:col-span-2 bg-gradient-to-br from-primary-dark via-primary to-primary-hover text-white p-7 sm:p-9 flex flex-col justify-between">
           <div>
@@ -126,34 +86,34 @@ export function Login() {
               Digital permission letters & approval workflows.
             </h1>
             <p className="mt-3 text-white/85 text-xs sm:text-sm leading-relaxed">
-              Replace paper movement with instant transparent routing from Faculty Coordinator to HOD, Dean, and Principal.
+              Institutional hierarchy: Faculty submits requests, HOD endorses, Dean recommends, and the Principal officially sanctions.
             </p>
           </div>
 
           <div className="mt-8 pt-6 border-t border-white/15 space-y-3">
             <div className="flex items-center gap-2.5 text-xs text-white/90">
               <ShieldCheck size={16} className="text-emerald-300 shrink-0" />
-              <span>Multi-tier approval chain with digital trail</span>
+              <span>Hierarchical routing: HOD → Dean → Principal</span>
             </div>
             <div className="flex items-center gap-2.5 text-xs text-white/90">
               <CheckCircle2 size={16} className="text-emerald-300 shrink-0" />
-              <span>Automated room clash detection & resource routing</span>
+              <span>Exclusive Principal sanction authority</span>
             </div>
             <div className="flex items-center gap-2.5 text-xs text-white/90">
-              <Sparkles size={16} className="text-emerald-300 shrink-0" />
-              <span>Task delegations and one-click letter exports</span>
+              <GraduationCap size={16} className="text-emerald-300 shrink-0" />
+              <span>Direct faculty registration with Principal approval</span>
             </div>
           </div>
         </div>
 
-        {/* Right login & role portal panel */}
+        {/* Right login & registration panel */}
         <div className="md:col-span-3 p-6 sm:p-9 flex flex-col justify-between">
           <div>
-            {/* Sign in vs Register tabs */}
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-5">
+            {/* Tabs */}
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-6">
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setTab('signin'); setError(''); }}
+                  onClick={() => { setTab('signin'); setError(''); setRegisteredSuccess(null); }}
                   className={`pb-2 px-3 text-sm font-semibold border-b-2 transition-all ${
                     tab === 'signin'
                       ? 'border-primary text-primary'
@@ -163,216 +123,170 @@ export function Login() {
                   Sign In
                 </button>
                 <button
-                  onClick={() => { setTab('register'); setError(''); }}
+                  onClick={() => { setTab('register'); setError(''); setRegisteredSuccess(null); }}
                   className={`pb-2 px-3 text-sm font-semibold border-b-2 transition-all ${
                     tab === 'register'
                       ? 'border-primary text-primary'
                       : 'border-transparent text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  Register Account
+                  Faculty Registration
                 </button>
               </div>
 
-              <span className="text-[11px] font-medium text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
-                {backend === 'supabase' ? 'Supabase Live' : 'Local Storage Mode'}
+              <span className="text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+                {backend === 'supabase' ? 'Cloud Supabase' : 'College Local Storage'}
               </span>
             </div>
 
-            {/* DEDICATED ROLE PORTAL SELECTOR: Faculty, HOD, Dean, Principal */}
-            {tab === 'signin' && (
-              <div className="mb-5">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">
-                  Select Institutional Portal:
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {[
-                    { id: 'Faculty', label: 'Faculty', icon: <GraduationCap size={15} /> },
-                    { id: 'HOD', label: 'HOD', icon: <Building2 size={15} /> },
-                    { id: 'Dean', label: 'Dean', icon: <Landmark size={15} /> },
-                    { id: 'Principal', label: 'Principal', icon: <Briefcase size={15} /> },
-                  ].map((r) => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => selectPortal(r.id as RolePortal)}
-                      className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-card text-xs font-semibold border transition-all ${
-                        portal === r.id
-                          ? 'border-primary bg-primary text-white shadow-xs'
-                          : 'border-gray-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      {r.icon}
-                      <span>{r.label}</span>
-                    </button>
-                  ))}
+            {/* Registration Success Banner */}
+            {registeredSuccess ? (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-card p-6 text-center space-y-3.5 animate-fade-in">
+                <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto text-xl shadow-xs">
+                  ✓
                 </div>
-
-                {/* Faculty portal callout */}
-                <div className="mt-3 p-3 bg-primary-pale border border-primary-border rounded-card flex items-start gap-2.5">
-                  <div className="p-1 rounded-md bg-primary text-white shrink-0 mt-0.5">
-                    {portal === 'Faculty' ? <GraduationCap size={14} /> : portal === 'HOD' ? <Building2 size={14} /> : portal === 'Dean' ? <Landmark size={14} /> : <Briefcase size={14} />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-slate-900">
-                      {portal === 'Faculty'
-                        ? 'Faculty Portal Login'
-                        : `${portal} Portal Login`}
-                    </p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      {portal === 'Faculty'
-                        ? 'Draft permission letters, route room/lab requests to HODs, view assigned tasks & submit event reports.'
-                        : portal === 'HOD'
-                        ? 'Review department proposals, clear room requests, and delegate tasks to faculty.'
-                        : portal === 'Dean'
-                        ? 'Student welfare & institutional event clearances.'
-                        : 'Final administrative sanction, budget reviews, and institutional approvals.'}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => quickLoginAs(portal)}
-                    disabled={busy}
-                    className="shrink-0 text-[11px] font-bold bg-primary text-white hover:bg-primary-dark px-2.5 py-1.5 rounded-lg shadow-xs transition-colors flex items-center gap-1"
-                    title={`Instant 1-click test sign in as ${portal}`}
-                  >
-                    <Zap size={12} /> Quick Login
-                  </button>
+                <h3 className="font-bold text-lg text-emerald-950">Registration Submitted!</h3>
+                <p className="text-xs text-emerald-800 leading-relaxed">
+                  Welcome, <span className="font-bold">{registeredSuccess.name}</span>. Your registration for <span className="font-bold">Dept of {registeredSuccess.dept}</span> has been forwarded to the Principal Office.
+                </p>
+                <div className="p-3 bg-white rounded-lg border border-emerald-200 text-xs text-slate-600 text-left space-y-1">
+                  <p className="font-bold text-slate-800">👑 Principal Approval Required</p>
+                  <p>In accordance with college regulations, faculty registrations must be approved by the Principal. Once approved, you can immediately sign in with your email and password.</p>
                 </div>
+                <button
+                  onClick={() => { setRegisteredSuccess(null); setTab('signin'); setEmail(email); }}
+                  className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-colors shadow-xs"
+                >
+                  Proceed to Sign In
+                </button>
               </div>
-            )}
+            ) : (
+              <div>
+                <div className="mb-4">
+                  <h2 className="text-lg font-bold text-slate-900">
+                    {tab === 'signin' ? 'Sign In to Your Account' : 'Faculty Coordinator Registration'}
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {tab === 'signin'
+                      ? 'Enter your institutional email address and password.'
+                      : 'Create your faculty coordinator profile. Requires Principal verification.'}
+                  </p>
+                </div>
 
-            <form onSubmit={submit} className="space-y-3.5">
-              {tab === 'register' && (
-                <>
+                {tab === 'register' && (
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 space-y-0.5">
+                    <p className="font-bold flex items-center gap-1.5 text-amber-800">
+                      <span>🏛️</span> Principal Verification Policy
+                    </p>
+                    <p className="text-[11px] text-amber-800/90 leading-relaxed">
+                      Faculty members can register directly here. Your account will be activated once approved by the Principal. (HODs and Deans are appointed by the Principal Office).
+                    </p>
+                  </div>
+                )}
+
+                <form onSubmit={submit} className="space-y-3.5">
+                  {tab === 'register' && (
+                    <>
+                      <label className="block">
+                        <span className="text-xs font-semibold text-slate-700">Full Name *</span>
+                        <input
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          placeholder="e.g. Prof. Rajesh Sharma"
+                          className={`${inputCls} mt-1`}
+                          required
+                        />
+                      </label>
+
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <label className="block">
+                          <span className="text-xs font-semibold text-slate-700">Department / Cell *</span>
+                          <select
+                            value={department}
+                            onChange={(e) => setDepartment(e.target.value)}
+                            className={`${inputCls} mt-1`}
+                            required
+                          >
+                            {[
+                              'IT', 'CMPN', 'EXTC', 'ECS', 'MECH', 'CIVIL', 'HAS',
+                              'Cultural Committee', 'Student Council', 'Sports Committee',
+                              'E-Cell', 'NSS', 'Training & Placement', 'Rotaract Club', 'Technical Committee',
+                            ].map((d) => (
+                              <option key={d} value={d}>{d}</option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="block">
+                          <span className="text-xs font-semibold text-slate-700">Designation</span>
+                          <input
+                            value={designation}
+                            onChange={(e) => setDesignation(e.target.value)}
+                            placeholder="e.g. Assistant Professor"
+                            className={`${inputCls} mt-1`}
+                          />
+                        </label>
+                      </div>
+
+                      <label className="block">
+                        <span className="text-xs font-semibold text-slate-700">Phone Number (optional)</span>
+                        <input
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          placeholder="+91 98765 43210"
+                          className={`${inputCls} mt-1`}
+                        />
+                      </label>
+                    </>
+                  )}
+
                   <label className="block">
-                    <span className="text-xs font-semibold text-slate-700">Full Name</span>
+                    <span className="text-xs font-semibold text-slate-700">Institutional Email *</span>
                     <input
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="e.g. Prof. Rajesh Sharma"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="name@slrtce.in"
                       className={`${inputCls} mt-1`}
+                      type="email"
                       required
                     />
                   </label>
 
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <label className="block">
-                      <span className="text-xs font-semibold text-slate-700">Role</span>
-                      <select value={role} onChange={(e) => setRole(e.target.value as any)} className={`${inputCls} mt-1`}>
-                        <option value="Faculty">Faculty Coordinator</option>
-                        <option value="HOD">Head of Department (HOD)</option>
-                        <option value="Dean">Dean (SWDC)</option>
-                        <option value="Principal">Principal</option>
-                      </select>
-                    </label>
-
-                    <label className="block">
-                      <span className="text-xs font-semibold text-slate-700">Department</span>
-                      <select value={department} onChange={(e) => setDepartment(e.target.value)} className={`${inputCls} mt-1`}>
-                        {['IT', 'CMPN', 'EXTC', 'ECS', 'MECH', 'CIVIL', 'HAS'].map((d) => (
-                          <option key={d} value={d}>{d}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
                   <label className="block">
-                    <span className="text-xs font-semibold text-slate-700">Designation</span>
+                    <span className="text-xs font-semibold text-slate-700">Password *</span>
                     <input
-                      value={designation}
-                      onChange={(e) => setDesignation(e.target.value)}
-                      placeholder="e.g. Assistant Professor"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
                       className={`${inputCls} mt-1`}
+                      type="password"
+                      required
                     />
                   </label>
-                </>
-              )}
 
-              <label className="block">
-                <span className="text-xs font-semibold text-slate-700">Institutional Email</span>
-                <input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@slrtce.in"
-                  className={`${inputCls} mt-1`}
-                  type="email"
-                  required
-                />
-              </label>
+                  {error && (
+                    <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium leading-relaxed">
+                      {error}
+                    </div>
+                  )}
 
-              <label className="block">
-                <span className="text-xs font-semibold text-slate-700">Password</span>
-                <input
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className={`${inputCls} mt-1`}
-                  type="password"
-                  required
-                />
-              </label>
-
-              {error && (
-                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
-                  {error}
-                </div>
-              )}
-
-              <button
-                className={`${btnPrimary} w-full justify-center py-2.5 text-sm !mt-4`}
-                type="submit"
-                disabled={busy}
-              >
-                {busy
-                  ? (tab === 'signin' ? 'Authenticating...' : 'Registering...')
-                  : (tab === 'signin' ? `Sign In as ${portal}` : 'Create Account')}
-              </button>
-            </form>
+                  <button
+                    className={`${btnPrimary} w-full justify-center py-2.5 text-sm !mt-4`}
+                    type="submit"
+                    disabled={busy}
+                  >
+                    {busy
+                      ? (tab === 'signin' ? 'Signing in...' : 'Submitting registration...')
+                      : (tab === 'signin' ? 'Sign In' : 'Submit Registration for Principal Approval')}
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
 
-          {/* Quick Demo Institutional Accounts */}
-          {backend === 'local' && tab === 'signin' && (
-            <div className="mt-5 border-t border-gray-100 pt-3">
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                Quick Test Accounts (Password: <code>password123</code>):
-              </p>
-              <div className="grid grid-cols-2 gap-1.5 text-xs">
-                <button
-                  type="button"
-                  onClick={() => quickLoginAs('Faculty')}
-                  className="text-left p-1.5 rounded-lg border border-gray-200 hover:border-primary-border hover:bg-primary-pale/40 transition-colors"
-                >
-                  <span className="font-semibold text-primary block">Faculty</span>
-                  <span className="text-[11px] text-slate-500 font-mono">faculty@slrtce.in</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => quickLoginAs('HOD')}
-                  className="text-left p-1.5 rounded-lg border border-gray-200 hover:border-primary-border hover:bg-primary-pale/40 transition-colors"
-                >
-                  <span className="font-semibold text-primary block">HOD IT</span>
-                  <span className="text-[11px] text-slate-500 font-mono">hod.it@slrtce.in</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => quickLoginAs('Dean')}
-                  className="text-left p-1.5 rounded-lg border border-gray-200 hover:border-primary-border hover:bg-primary-pale/40 transition-colors"
-                >
-                  <span className="font-semibold text-primary block">Dean SWDC</span>
-                  <span className="text-[11px] text-slate-500 font-mono">dean@slrtce.in</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => quickLoginAs('Principal')}
-                  className="text-left p-1.5 rounded-lg border border-gray-200 hover:border-primary-border hover:bg-primary-pale/40 transition-colors"
-                >
-                  <span className="font-semibold text-primary block">Principal</span>
-                  <span className="text-[11px] text-slate-500 font-mono">principal@slrtce.in</span>
-                </button>
-              </div>
-            </div>
-          )}
+          <div className="mt-6 pt-4 border-t border-gray-100 text-center text-xs text-slate-400">
+            Shree L.R. Tiwari College of Engineering • Docworm Permission Portal
+          </div>
         </div>
       </div>
     </div>

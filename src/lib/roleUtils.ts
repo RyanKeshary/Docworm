@@ -153,7 +153,12 @@ export const PERMISSIONS = {
  * - HOD: sees EVERYTHING in their department (all faculty proposals, department events).
  * - Faculty: sees only their own proposals and submissions.
  */
-export function getProposalsForRole<T extends { submitterId: string; submitterDept?: string; departments?: string[] }>(
+export function getProposalsForRole<T extends {
+  submitterId: string;
+  submitterDept?: string;
+  departments?: string[];
+  approvalChain?: { id: string; role: string; userId?: string; action: string }[];
+}>(
   proposals: T[],
   user: { id: string; role: Role; department?: string },
 ): T[] {
@@ -162,12 +167,20 @@ export function getProposalsForRole<T extends { submitterId: string; submitterDe
   }
   if (user.role === 'HOD') {
     const dept = (user.department || '').toLowerCase().trim();
-    return proposals.filter(
-      (p) =>
-        (p.submitterDept || '').toLowerCase().trim() === dept ||
-        (p.departments || []).some((d) => d.toLowerCase().trim() === dept) ||
-        p.submitterId === user.id,
-    );
+    return proposals.filter((p) => {
+      // 1. Direct submitter is this HOD
+      if (p.submitterId === user.id) return true;
+      // 2. Department match
+      const subDept = (p.submitterDept || '').toLowerCase().trim();
+      const depts = (p.departments || []).map((d) => d.toLowerCase().trim());
+      if (dept && (subDept === dept || depts.includes(dept))) return true;
+      // 3. Explicitly assigned to this HOD or unassigned HOD step in chain
+      if (p.approvalChain?.some((s) => s.role === 'HOD' && (s.userId === user.id || !s.userId))) return true;
+      // 4. If proposal is from a cell/committee without dedicated HOD, allow HOD review
+      const isCell = ['cultural committee', 'student council', 'sports committee', 'e-cell', 'nss', 'training & placement'].includes(subDept);
+      if (isCell) return true;
+      return false;
+    });
   }
   // Faculty: sees only their own submissions
   return proposals.filter((p) => p.submitterId === user.id);

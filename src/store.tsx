@@ -48,6 +48,10 @@ interface DataState {
   pushNotification: (n: Omit<Notification, 'id' | 'createdAt' | 'read'> & { read?: boolean }) => void;
   pushAudit: (a: Omit<AuditLog, 'id' | 'createdAt'>) => void;
   signUp: (user: Omit<User, 'id'>) => Promise<string | null>;
+  approveFaculty: (userId: string) => void;
+  rejectFaculty: (userId: string) => void;
+  addLeadership: (user: Omit<User, 'id'>) => string | null;
+  removeUser: (userId: string) => void;
   resetDemo: () => void;
   purgeFakeData: () => void;
 }
@@ -56,34 +60,28 @@ const Ctx = createContext<DataState | null>(null);
 
 function load<T>(key: string, fallback: T): T {
   try {
+    // One-time cleanup of legacy demo/dummy data across all keys
+    if (!localStorage.getItem('docworm:v4_clean')) {
+      localStorage.removeItem('docworm:proposals');
+      localStorage.removeItem('docworm:tasks');
+      localStorage.removeItem('docworm:comments');
+      localStorage.removeItem('docworm:notifications');
+      localStorage.removeItem('docworm:audit');
+      localStorage.removeItem('docworm:completions');
+      localStorage.removeItem('docworm:users');
+      localStorage.removeItem('docworm:session');
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('docworm:draft')) {
+          localStorage.removeItem(k);
+        }
+      }
+      localStorage.setItem('docworm:v4_clean', 'true');
+      return fallback;
+    }
     const raw = localStorage.getItem('docworm:' + key);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw);
-    // Purge legacy demo proposals, tasks, comments, notifications, audit logs from earlier builds
-    if (key === 'proposals' && Array.isArray(parsed) && parsed.some((p: { id?: string }) => p.id === 'p-hackathon' || p.id === 'p-robo')) {
-      localStorage.removeItem('docworm:' + key);
-      return fallback;
-    }
-    if (key === 'tasks' && Array.isArray(parsed) && parsed.some((t: { id?: string }) => t.id === 't1' || t.id === 't2')) {
-      localStorage.removeItem('docworm:' + key);
-      return fallback;
-    }
-    if (key === 'comments' && Array.isArray(parsed) && parsed.some((c: { id?: string }) => c.id === 'c1')) {
-      localStorage.removeItem('docworm:' + key);
-      return fallback;
-    }
-    if (key === 'notifications' && Array.isArray(parsed) && parsed.some((n: { id?: string }) => n.id === 'n1')) {
-      localStorage.removeItem('docworm:' + key);
-      return fallback;
-    }
-    if (key === 'audit' && Array.isArray(parsed) && parsed.some((a: { id?: string }) => a.id === 'l1')) {
-      localStorage.removeItem('docworm:' + key);
-      return fallback;
-    }
-    if (key === 'users' && Array.isArray(parsed) && parsed.some((u: { name?: string }) => u.name === 'Dr. S. R. Patil')) {
-      localStorage.removeItem('docworm:' + key);
-      return fallback;
-    }
     return parsed as T;
   } catch { return fallback; }
 }
@@ -268,6 +266,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (backend === 'local') {
       const u = users.find((x) => x.email.toLowerCase() === email.trim().toLowerCase() && x.password === password);
       if (!u) return 'Invalid email or password.';
+      if (u.status === 'pending_approval') {
+        return 'Your registration is pending Principal approval. You will be able to log in once the Principal approves your account.';
+      }
+      if (u.status === 'rejected') {
+        return 'Your account registration was not approved. Please contact the Principal Office.';
+      }
       setCurrentUserIdState(u.id);
       return null;
     }
@@ -282,10 +286,29 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setCurrentUserIdState(uidNow);
       const me = w.users.find((u) => u.id === uidNow);
       if (!me) return 'Signed in, but no staff profile exists for this account. Ask the principal to create one.';
+      if (me.status === 'pending_approval') {
+        return 'Your registration is pending Principal approval. You will be able to log in once approved.';
+      }
       return null;
     } catch (e) {
       setSyncState('offline');
       return e instanceof Error ? e.message : 'Sign in failed.';
+    }
+  };
+
+  const pushNotification: DataState['pushNotification'] = (n) => {
+    const full: Notification = { ...n, id: uid(), createdAt: nowStr(), read: n.read ?? false };
+    setNotifications((prev) => [full, ...prev]);
+    if (backend === 'supabase') {
+      insertNotification(supabase(), full).catch((e) => reportErr('Sync notification failed', e));
+    }
+  };
+
+  const pushAudit: DataState['pushAudit'] = (a) => {
+    const full: AuditLog = { ...a, id: uid(), createdAt: nowStr() };
+    setAudit((prev) => [full, ...prev]);
+    if (backend === 'supabase') {
+      insertAudit(supabase(), full).catch((e) => reportErr('Sync audit failed', e));
     }
   };
 
@@ -296,18 +319,135 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (users.some((u) => u.email.toLowerCase() === emailNorm)) {
       return 'An account with this email already exists.';
     }
+    const isFaculty = newUser.role === 'Faculty';
     const createdUser: User = {
       ...newUser,
       id: `u-${Date.now().toString(36)}`,
       email: emailNorm,
+      status: isFaculty ? 'pending_approval' : 'active',
+      registeredAt: nowStr(),
     };
     const updatedUsers = [...users, createdUser];
     setUsers(updatedUsers);
     if (backend === 'local') {
       persist('users', updatedUsers);
+    }
+    if (isFaculty) {
+      // Notify Principal of new faculty registration
+      const principal = users.find((x) => x.role === 'Principal');
+      if (principal) {
+        pushNotification({
+          userId: principal.id,
+          title: 'New Faculty Registration Pending Approval',
+          body: `${newUser.name} (${newUser.department}) has registered as Faculty and requires your official approval.`,
+          link: '/settings?tab=faculty-approvals',
+        });
+      }
+      pushAudit({
+        actorId: createdUser.id,
+        actorName: createdUser.name,
+        action: `Faculty registered: ${createdUser.name} (${createdUser.department}) — pending Principal approval`,
+        entity: 'User',
+        entityId: createdUser.id,
+      });
+    } else {
       setCurrentUserIdState(createdUser.id);
     }
     return null;
+  };
+
+  const approveFaculty = (userId: string) => {
+    const target = users.find((u) => u.id === userId);
+    if (!target) return;
+    const updated = users.map((u) => (u.id === userId ? { ...u, status: 'active' as const } : u));
+    setUsers(updated);
+    if (backend === 'local') persist('users', updated);
+    if (backend === 'supabase') {
+      upsertProfile(supabase(), { ...target, status: 'active' }).catch((e) => reportErr('Sync approve user failed', e));
+    }
+    pushNotification({
+      userId: target.id,
+      title: 'Registration Approved by Principal',
+      body: 'Your faculty account has been officially approved by the Principal. You may now sign in and submit event proposals.',
+      link: '/',
+    });
+    pushAudit({
+      actorId: currentUser.id,
+      actorName: currentUser.name,
+      action: `Principal approved faculty account for ${target.name} (${target.department})`,
+      entity: 'User',
+      entityId: target.id,
+    });
+  };
+
+  const rejectFaculty = (userId: string) => {
+    const target = users.find((u) => u.id === userId);
+    if (!target) return;
+    const updated = users.map((u) => (u.id === userId ? { ...u, status: 'rejected' as const } : u));
+    setUsers(updated);
+    if (backend === 'local') persist('users', updated);
+    if (backend === 'supabase') {
+      upsertProfile(supabase(), { ...target, status: 'rejected' }).catch((e) => reportErr('Sync reject user failed', e));
+    }
+    pushAudit({
+      actorId: currentUser.id,
+      actorName: currentUser.name,
+      action: `Principal rejected faculty registration for ${target.name} (${target.department})`,
+      entity: 'User',
+      entityId: target.id,
+    });
+  };
+
+  const addLeadership = (user: Omit<User, 'id'>): string | null => {
+    if (!user.name.trim() || !user.email.trim()) return 'Name and email are required.';
+    const emailNorm = user.email.trim().toLowerCase();
+    if (users.some((u) => u.email.toLowerCase() === emailNorm)) {
+      return 'An account with this email already exists.';
+    }
+    const created: User = {
+      ...user,
+      id: `u-${Date.now().toString(36)}`,
+      email: emailNorm,
+      password: user.password || 'password123',
+      status: 'active',
+      registeredAt: nowStr(),
+    };
+    const updated = [...users, created];
+    setUsers(updated);
+    if (backend === 'local') persist('users', updated);
+    if (backend === 'supabase') {
+      upsertProfile(supabase(), created).catch((e) => reportErr('Sync add leadership failed', e));
+    }
+    pushAudit({
+      actorId: currentUser.id,
+      actorName: currentUser.name,
+      action: `Principal appointed ${created.role} (${created.name}, ${created.department})`,
+      entity: 'User',
+      entityId: created.id,
+    });
+    return null;
+  };
+
+  const removeUser = (userId: string) => {
+    const target = users.find((u) => u.id === userId);
+    if (!target) return;
+    if (target.role === 'Principal') {
+      alert('The Principal account cannot be removed.');
+      return;
+    }
+    const updated = users.filter((u) => u.id !== userId);
+    setUsers(updated);
+    if (backend === 'local') persist('users', updated);
+    if (backend === 'supabase') {
+      deleteProfile(supabase(), userId).catch((e) => reportErr('Delete user profile failed', e));
+    }
+    pushAudit({
+      actorId: currentUser.id,
+      actorName: currentUser.name,
+      action: `Principal removed account: ${target.name} (${target.role}, ${target.department})`,
+      entity: 'User',
+      entityId: target.id,
+    });
   };
 
   const signOut = async () => {
@@ -339,6 +479,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const saveProposals: DataState['saveProposals'] = (next) => {
     setProposals(next);
+    if (backend === 'local') {
+      persist('proposals', next);
+    }
     if (backend !== 'supabase') return;
     const sb = supabase();
     const nextIds = new Set(next.map((p) => p.id));
@@ -436,21 +579,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setLetterhead(next);
       queueSettingsWrite(options, next);
     },
-    pushNotification: (n) => {
-      const full: Notification = { ...n, id: uid(), createdAt: nowStr(), read: n.read ?? false };
-      setNotifications((prev) => [full, ...prev]);
-      if (backend === 'supabase') {
-        insertNotification(supabase(), full).catch((e) => reportErr('Sync notification failed', e));
-      }
-    },
-    pushAudit: (a) => {
-      const full: AuditLog = { ...a, id: uid(), createdAt: nowStr() };
-      setAudit((prev) => [full, ...prev]);
-      if (backend === 'supabase') {
-        insertAudit(supabase(), full).catch((e) => reportErr('Sync audit failed', e));
-      }
-    },
+    pushNotification,
+    pushAudit,
     signUp,
+    approveFaculty,
+    rejectFaculty,
+    addLeadership,
+    removeUser,
     resetDemo: () => {
       localStorage.removeItem('docworm:proposals');
       localStorage.removeItem('docworm:tasks');

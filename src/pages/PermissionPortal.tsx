@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   FileText, Plus, CheckCircle2, XCircle, Clock,
   Search, Printer, ShieldCheck, Building2,
@@ -432,8 +433,49 @@ export function PermissionPortal() {
           <p className="text-xs sm:text-sm text-ink-muted mt-0.5">{panelInfo.desc}</p>
         </div>
 
-        {/* Role switcher (local/demo only) */}
-        <RoleSwitcherBar currentRole={role} users={users} setCurrentUserId={setCurrentUserId} />
+        {/* Real institutional actions */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {role === 'Principal' && (
+            <Link
+              to="/settings?tab=leadership"
+              className="px-3.5 py-2 text-xs font-bold rounded-lg border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100 transition-colors flex items-center gap-1.5 shadow-xs"
+            >
+              <Crown size={14} className="text-violet-600" />
+              Manage Leadership & Faculty
+              {users.filter((u) => u.status === 'pending_approval').length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-extrabold ml-1 animate-pulse">
+                  {users.filter((u) => u.status === 'pending_approval').length}
+                </span>
+              )}
+            </Link>
+          )}
+
+          {canCreate && (
+            <button
+              onClick={() => {
+                setFormData({
+                  eventName: '',
+                  department: currentUser.department || 'IT',
+                  organizingBody: `Department of ${currentUser.department || 'IT'}`,
+                  startDate: new Date(Date.now() + 864e5 * 3).toISOString().slice(0, 10),
+                  endDate: new Date(Date.now() + 864e5 * 3).toISOString().slice(0, 10),
+                  startTime: '10:00',
+                  endTime: '16:00',
+                  venue: 'Seminar Hall 1',
+                  participants: 100,
+                  purpose: '',
+                  budgetAmount: '',
+                  budgetFunding: 'College Budget Head',
+                });
+                setIsNewModalOpen(true);
+              }}
+              className="px-3.5 py-2 text-xs font-bold rounded-lg bg-primary hover:bg-primary-dark text-white shadow-xs transition-colors flex items-center gap-1.5"
+            >
+              <Plus size={15} />
+              New Permission Request
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── ROLE-SPECIFIC CONTEXT CARD ──────────────────────── */}
@@ -757,14 +799,18 @@ export function PermissionPortal() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Department / Cell</label>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Department / Cell *</label>
                   <select
                     value={formData.department}
                     onChange={(e) => setFormData({ ...formData, department: e.target.value, organizingBody: `Department of ${e.target.value}` })}
                     className={inputCls}
-                    disabled={role === 'Faculty'} // Faculty locked to their dept
+                    required
                   >
-                    {['IT', 'CMPN', 'EXTC', 'ECS', 'MECH', 'CIVIL', 'HAS', 'Cultural Committee', 'Student Council'].map((d) => (
+                    {[
+                      'IT', 'CMPN', 'EXTC', 'ECS', 'MECH', 'CIVIL', 'HAS',
+                      'Cultural Committee', 'Student Council', 'Sports Committee',
+                      'E-Cell', 'NSS', 'Training & Placement', 'Rotaract Club', 'Technical Committee',
+                    ].map((d) => (
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>

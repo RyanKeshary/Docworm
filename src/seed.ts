@@ -1,11 +1,10 @@
 import type { Proposal, Task, User, ProposalComment, Notification, AuditLog } from './types';
 
-// Baseline institutional accounts for initial login and testing.
+// Baseline institutional administration accounts.
 export const SEED_USERS: User[] = [
-  { id: 'u-principal', name: 'Principal Office', designation: 'Principal & Head of Institution', department: 'HAS', email: 'principal@slrtce.in', phone: '', role: 'Principal', password: 'password123' },
-  { id: 'u-dean', name: 'Dean (Student Welfare)', designation: 'Dean, SWDC', department: 'HAS', email: 'dean@slrtce.in', phone: '', role: 'Dean', password: 'password123' },
-  { id: 'u-hod-it', name: 'HOD (Information Technology)', designation: 'Head of Department, IT', department: 'IT', email: 'hod.it@slrtce.in', phone: '', role: 'HOD', password: 'password123' },
-  { id: 'u-fac-1', name: 'Faculty Coordinator', designation: 'Assistant Professor', department: 'IT', email: 'faculty@slrtce.in', phone: '', role: 'Faculty', password: 'password123' },
+  { id: 'u-principal', name: 'Principal Office', designation: 'Principal & Head of Institution', department: 'HAS', email: 'principal@slrtce.in', phone: '+91 22 2812 1234', role: 'Principal', password: 'password123', status: 'active', registeredAt: '2026-01-01 09:00' },
+  { id: 'u-dean', name: 'Dean (Student Welfare)', designation: 'Dean, Student Welfare', department: 'HAS', email: 'dean@slrtce.in', phone: '', role: 'Dean', password: 'password123', status: 'active', registeredAt: '2026-01-01 09:00' },
+  { id: 'u-hod-it', name: 'HOD (Information Technology)', designation: 'Head of Department, IT', department: 'IT', email: 'hod.it@slrtce.in', phone: '', role: 'HOD', password: 'password123', status: 'active', registeredAt: '2026-01-01 09:00' },
 ];
 
 // Clean workspace: no dummy proposals, tasks, comments, notifications, or audit logs.
