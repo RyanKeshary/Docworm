@@ -2,7 +2,14 @@
 // All requests use credentials: 'include' for secure httpOnly cookies.
 
 export async function apiFetch<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const url = endpoint.startsWith('/') ? endpoint : `/api/${endpoint}`;
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const apiPath = cleanEndpoint.startsWith('/api') ? cleanEndpoint : `/api${cleanEndpoint}`;
+
+  // If running in browser and current port is not 3001 (e.g. Vite dev on 5173/5174),
+  // target backend on :3001 directly to prevent any static proxy 405 Method Not Allowed issues.
+  const isClientDev = typeof window !== 'undefined' && window.location.port && window.location.port !== '3001';
+  const backendBase = isClientDev ? `${window.location.protocol}//${window.location.hostname}:3001` : '';
+  const primaryUrl = `${backendBase}${apiPath}`;
 
   const defaultHeaders: Record<string, string> = {
     'Accept': 'application/json',
@@ -12,49 +19,70 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
     defaultHeaders['Content-Type'] = 'application/json';
   }
 
-  const res = await fetch(url, {
-    credentials: 'include',
-    ...options,
-    headers: {
-      ...defaultHeaders,
-      ...options.headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(primaryUrl, {
+      credentials: 'include',
+      ...options,
+      headers: {
+        ...defaultHeaders,
+        ...options.headers,
+      },
+    });
+  } catch (err: any) {
+    // If direct call to :3001 had network error, fallback to relative proxy
+    if (backendBase) {
+      res = await fetch(apiPath, {
+        credentials: 'include',
+        ...options,
+        headers: {
+          ...defaultHeaders,
+          ...options.headers,
+        },
+      });
+    } else {
+      throw err;
+    }
+  }
 
   if (res.status === 204) {
     return {} as T;
   }
 
+  // Handle 405 specifically (if a static server returned 405 for POST)
   if (res.status === 405) {
-    // Fallback: If dev proxy returned 405, attempt direct backend call
+    const directUrl = `${window.location.protocol}//${window.location.hostname}:3001${apiPath}`;
     try {
-      const fallbackUrl = `${window.location.protocol}//${window.location.hostname}:3001${url}`;
-      const retryRes = await fetch(fallbackUrl, {
+      const directRes = await fetch(directUrl, {
         credentials: 'include',
         ...options,
         headers: { ...defaultHeaders, ...options.headers },
       });
-      const data = await retryRes.json();
-      if (!retryRes.ok) throw new Error(data.error || data.message || `Request failed with status ${retryRes.status}`);
-      return data;
-    } catch {
-      // Proceed with normal error handling
+      const directData = await directRes.json().catch(() => ({}));
+      if (!directRes.ok) {
+        throw new Error(directData.error || directData.message || `Authentication failed (${directRes.status})`);
+      }
+      return directData as T;
+    } catch (directErr: any) {
+      throw new Error(directErr.message || 'Unable to connect to authentication server.');
     }
   }
 
   const contentType = res.headers.get('content-type') || '';
-  if (!contentType.includes('application/json')) {
-    const text = await res.text();
-    if (!res.ok) throw new Error(text || `Server returned HTTP ${res.status}`);
-    return text as unknown as T;
+  if (contentType.includes('application/json')) {
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || data.message || `Request failed with status ${res.status}`);
+    }
+    return data;
   }
 
-  const data = await res.json();
+  const text = await res.text();
   if (!res.ok) {
-    throw new Error(data.error || data.message || `Request failed with status ${res.status}`);
+    throw new Error(text || `Server returned HTTP ${res.status}`);
   }
 
-  return data;
+  return text as unknown as T;
 }
 
 export const api = {

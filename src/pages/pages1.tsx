@@ -10,7 +10,7 @@ import { Badge, Drawer, EmptyState, ExportMenu, btnGhost, btnPrimary, inputCls }
 import { computedTaskStatus, detectClashes, exportCSV, exportPDF, exportXLSX, flattenProposal } from '../utils';
 import { api } from '../lib/api';
 
-type AuthMode = 'signin' | 'register' | 'forgot' | 'reset' | 'force_change';
+type AuthMode = 'signin' | 'forgot' | 'reset' | 'force_change';
 
 function getPasswordStrength(pass: string): { score: number; label: string; color: string } {
   if (!pass) return { score: 0, label: 'Empty', color: 'bg-slate-200' };
@@ -28,7 +28,7 @@ function getPasswordStrength(pass: string): { score: number; label: string; colo
 }
 
 export function Login() {
-  const { signIn, signUp, isAuthenticated, currentUser, refresh, letterhead } = useData();
+  const { signIn, isAuthenticated, refresh, letterhead } = useData();
   const nav = useNavigate();
   const [params] = useSearchParams();
 
@@ -39,18 +39,11 @@ export function Login() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [resetToken, setResetToken] = useState('');
 
-  // Register fields
-  const [name, setName] = useState('');
-  const [department, setDepartment] = useState('IT');
-  const [designation, setDesignation] = useState('Assistant Professor');
-  const [phone, setPhone] = useState('');
-
   // UI state
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
   const [busy, setBusy] = useState(false);
-  const [registeredSuccess, setRegisteredSuccess] = useState<{ name: string; dept: string } | null>(null);
 
   // Check for reset token in query string (?token=...)
   useEffect(() => {
@@ -86,26 +79,6 @@ export function Login() {
         }
         nav('/');
         return;
-      } else if (mode === 'register') {
-        if (!name.trim()) throw new Error('Full name is required.');
-        if (!email.trim()) throw new Error('Institutional email is required.');
-        if (password.length < 8) throw new Error('Password must be at least 8 characters long.');
-
-        const err = await signUp({
-          name: name.trim(),
-          email: email.trim(),
-          password,
-          role: 'Faculty',
-          department,
-          designation: designation.trim() || 'Faculty Coordinator',
-          phone: phone.trim(),
-        });
-        if (err) throw new Error(err);
-
-        setRegisteredSuccess({ name: name.trim(), dept: department });
-        setName('');
-        setPassword('');
-        setPhone('');
       } else if (mode === 'forgot') {
         if (!email.trim()) throw new Error('Please enter your institutional email.');
         const res = await api.auth.forgotPassword(email.trim());
@@ -142,7 +115,7 @@ export function Login() {
       <div className="w-full max-w-4xl grid md:grid-cols-5 gap-0 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
         {/* Left institutional hero panel */}
         <div className="md:col-span-2 bg-[#1B365D] text-white p-7 sm:p-9 flex flex-col justify-between">
-          <div>
+          <div className="space-y-6">
             <div className="flex items-center gap-3">
               <span className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 text-white flex items-center justify-center">
                 <Landmark size={22} className="text-white" />
@@ -153,343 +126,207 @@ export function Login() {
               </div>
             </div>
 
-            <div className="mt-8 space-y-2">
+            <div>
               <h1 className="text-xl sm:text-2xl font-bold leading-snug tracking-tight text-white">
                 {letterhead.collegeName || 'Shree L.R. Tiwari College of Engineering'}
               </h1>
-              <p className="text-xs text-blue-100 leading-relaxed">
-                Autonomous Institute • Approved by AICTE • Affiliated to University of Mumbai
-              </p>
             </div>
-
-            <div className="mt-6 pt-6 border-t border-white/15 space-y-3 text-xs text-blue-100">
-              <p className="font-semibold text-white uppercase text-[11px] tracking-wider">Academic Workflow</p>
-              <div className="space-y-1.5 text-[11px] text-blue-200/90 leading-relaxed">
-                <p>1. Faculty initiates proposals & leave requests</p>
-                <p>2. Department Head verifies & recommends</p>
-                <p>3. Dean provides institutional review</p>
-                <p>4. Principal grants official digital sanction</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-8 pt-4 border-t border-white/15 text-[11px] text-blue-200/70">
-            Official academic sanction & faculty leave governance system.
           </div>
         </div>
 
         {/* Right authentication panel */}
-        <div className="md:col-span-3 p-6 sm:p-10 flex flex-col justify-between bg-white">
+        <div className="md:col-span-3 p-6 sm:p-10 flex flex-col justify-center bg-white">
           <div>
-            {/* Header Tabs */}
-            {mode !== 'force_change' && (
-              <div className="flex items-center border-b border-slate-200 pb-3 mb-6">
-                <div className="flex gap-2">
+            {/* Mode Headings */}
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-slate-900 tracking-tight">
+                {mode === 'signin' && 'Sign In to Your Account'}
+                {mode === 'forgot' && 'Reset Your Password'}
+                {mode === 'reset' && 'Set New Permanent Password'}
+                {mode === 'force_change' && 'First-Login Password Change'}
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">
+                {mode === 'signin' && 'Enter your institutional credentials to access your portal.'}
+                {mode === 'forgot' && 'Enter your registered email to receive reset instructions.'}
+                {mode === 'reset' && 'Enter your security token and select a new password.'}
+                {mode === 'force_change' && 'Change your temporary password before proceeding.'}
+              </p>
+            </div>
+
+            {/* Alerts */}
+            {error && (
+              <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-start gap-2.5 animate-fade-in">
+                <AlertCircle size={16} className="shrink-0 mt-0.5 text-rose-600" />
+                <span>{error}</span>
+              </div>
+            )}
+            {infoMessage && (
+              <div className="mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-start gap-2.5 animate-fade-in">
+                <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-emerald-600" />
+                <span>{infoMessage}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Force Change Password: Current Password */}
+              {mode === 'force_change' && (
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-700">Current Temporary Password *</span>
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Current password"
+                    className={`${inputCls} mt-1`}
+                    required
+                  />
+                </label>
+              )}
+
+              {/* Reset Password: Token input */}
+              {mode === 'reset' && (
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-700">Reset Security Token *</span>
+                  <input
+                    value={resetToken}
+                    onChange={(e) => setResetToken(e.target.value)}
+                    placeholder="Paste reset token from email"
+                    className={`${inputCls} mt-1 font-mono text-xs`}
+                    required
+                  />
+                </label>
+              )}
+
+              {/* Email Field (for signin, forgot) */}
+              {(mode === 'signin' || mode === 'forgot') && (
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+                    <span>Institutional Email *</span>
+                    {mode === 'signin' && (
+                      <span className="text-[11px] text-slate-400 font-normal">Domain: @slrtce.in</span>
+                    )}
+                  </span>
+                  <div className="relative mt-1">
+                    <input
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="name@slrtce.in"
+                      className={`${inputCls} pl-9`}
+                      type="email"
+                      required
+                    />
+                    <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
+                </label>
+              )}
+
+              {/* Password Field (for signin, reset, force_change) */}
+              {(mode === 'signin' || mode === 'reset' || mode === 'force_change') && (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-700">
+                      {mode === 'force_change' || mode === 'reset' ? 'New Password *' : 'Password *'}
+                    </span>
+                    {mode === 'signin' && (
+                      <button
+                        type="button"
+                        onClick={() => { setMode('forgot'); setError(''); setInfoMessage(''); }}
+                        className="text-[11px] text-primary hover:underline font-medium"
+                      >
+                        Forgot Password?
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative mt-1">
+                    <input
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className={`${inputCls} pl-9 pr-10`}
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                    />
+                    <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+
+                  {/* Password strength meter for new passwords */}
+                  {(mode === 'reset' || mode === 'force_change') && password && (
+                    <div className="mt-2 space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-500">Strength: <b className="text-slate-700">{strength.label}</b></span>
+                        <span className="text-slate-400">Min 8 chars, numbers & uppercase</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden flex">
+                        <div
+                          className={`h-full transition-all duration-300 ${strength.color}`}
+                          style={{ width: `${(strength.score / 4) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Confirm Password (for reset and force_change) */}
+              {(mode === 'reset' || mode === 'force_change') && (
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-700">Confirm New Password *</span>
+                  <div className="relative mt-1">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repeat new password"
+                      className={`${inputCls} pl-9`}
+                      required
+                    />
+                    <KeyRound size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
+                </label>
+              )}
+
+              {/* Submit Button */}
+              <button
+                className={`${btnPrimary} w-full justify-center py-2.5 text-sm !mt-5 shadow-sm`}
+                type="submit"
+                disabled={busy}
+              >
+                {busy ? (
+                  <span className="flex items-center gap-2">
+                    <RefreshCw size={15} className="animate-spin" />
+                    <span>Processing...</span>
+                  </span>
+                ) : (
+                  <>
+                    {mode === 'signin' && 'Sign In'}
+                    {mode === 'forgot' && 'Send Password Reset Link'}
+                    {mode === 'reset' && 'Update Password & Sign In'}
+                    {mode === 'force_change' && 'Save New Password & Continue'}
+                  </>
+                )}
+              </button>
+
+              {/* Back to signin button when in forgot or reset */}
+              {(mode === 'forgot' || mode === 'reset') && (
+                <div className="text-center pt-2">
                   <button
                     type="button"
                     onClick={() => { setMode('signin'); setError(''); setInfoMessage(''); }}
-                    className={`pb-2 px-3 text-sm font-semibold border-b-2 transition-colors ${
-                      mode === 'signin' || mode === 'forgot' || mode === 'reset'
-                        ? 'border-[#1B365D] text-[#1B365D]'
-                        : 'border-transparent text-slate-500 hover:text-slate-800'
-                    }`}
+                    className="text-xs text-slate-500 hover:text-slate-800 font-medium"
                   >
-                    Sign In
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setMode('register'); setError(''); setInfoMessage(''); }}
-                    className={`pb-2 px-3 text-sm font-semibold border-b-2 transition-colors ${
-                      mode === 'register'
-                        ? 'border-[#1B365D] text-[#1B365D]'
-                        : 'border-transparent text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    Faculty Registration
+                    ← Return to Sign In
                   </button>
                 </div>
-              </div>
-            )}
-
-            {/* Registration Success */}
-            {registeredSuccess ? (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center space-y-4 animate-fade-in">
-                <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto text-xl">
-                  ✓
-                </div>
-                <h3 className="font-bold text-lg text-emerald-950">Registration Submitted</h3>
-                <p className="text-xs text-emerald-800 leading-relaxed">
-                  Welcome, <span className="font-bold">{registeredSuccess.name}</span>. Your application for <span className="font-bold">Dept of {registeredSuccess.dept}</span> has been securely submitted.
-                </p>
-                <div className="p-3 bg-white rounded-lg border border-emerald-200 text-xs text-slate-600 text-left">
-                  <p className="font-semibold text-slate-800 mb-1">Principal Verification Required</p>
-                  <p>In accordance with institutional guidelines, all faculty registrations require one-time approval by the Principal Office before sign in is granted.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { setRegisteredSuccess(null); setMode('signin'); }}
-                  className="w-full py-2.5 bg-[#1B365D] hover:bg-[#152a48] text-white rounded-lg text-xs font-semibold transition-colors"
-                >
-                  Return to Sign In
-                </button>
-              </div>
-            ) : (
-              <div>
-                {/* Mode Headings */}
-                <div className="mb-5">
-                  <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-                    {mode === 'signin' && 'Sign In to Your Account'}
-                    {mode === 'register' && 'Faculty Registration'}
-                    {mode === 'forgot' && 'Reset Your Password'}
-                    {mode === 'reset' && 'Set New Permanent Password'}
-                    {mode === 'force_change' && 'First-Login Password Change'}
-                  </h2>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {mode === 'signin' && 'Enter your institutional credentials to access your portal.'}
-                    {mode === 'register' && 'Register your official profile to submit activity proposals.'}
-                    {mode === 'forgot' && 'Enter your registered email to receive reset instructions.'}
-                    {mode === 'reset' && 'Enter your security token and select a new password.'}
-                    {mode === 'force_change' && 'Change your temporary password before proceeding.'}
-                  </p>
-                </div>
-
-                {/* Alerts */}
-                {error && (
-                  <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-start gap-2.5 animate-fade-in">
-                    <AlertCircle size={16} className="shrink-0 mt-0.5 text-rose-600" />
-                    <span>{error}</span>
-                  </div>
-                )}
-                {infoMessage && (
-                  <div className="mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-start gap-2.5 animate-fade-in">
-                    <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-emerald-600" />
-                    <span>{infoMessage}</span>
-                  </div>
-                )}
-
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Register Fields */}
-                  {mode === 'register' && (
-                    <>
-                      <label className="block">
-                        <span className="text-xs font-semibold text-slate-700">Full Name *</span>
-                        <input
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          placeholder="e.g. Prof. Rajesh Sharma"
-                          className={`${inputCls} mt-1`}
-                          required
-                        />
-                      </label>
-
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <label className="block">
-                          <span className="text-xs font-semibold text-slate-700">Department / Cell *</span>
-                          <select
-                            value={department}
-                            onChange={(e) => setDepartment(e.target.value)}
-                            className={`${inputCls} mt-1`}
-                            required
-                          >
-                            {[
-                              'IT', 'CMPN', 'EXTC', 'ECS', 'MECH', 'CIVIL', 'HAS',
-                              'Cultural Committee', 'Student Council', 'Sports Committee',
-                              'E-Cell', 'NSS', 'Training & Placement', 'Rotaract Club', 'Technical Committee',
-                            ].map((d) => (
-                              <option key={d} value={d}>{d}</option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label className="block">
-                          <span className="text-xs font-semibold text-slate-700">Designation</span>
-                          <input
-                            value={designation}
-                            onChange={(e) => setDesignation(e.target.value)}
-                            placeholder="e.g. Assistant Professor"
-                            className={`${inputCls} mt-1`}
-                          />
-                        </label>
-                      </div>
-
-                      <label className="block">
-                        <span className="text-xs font-semibold text-slate-700">Phone Number (optional)</span>
-                        <input
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value)}
-                          placeholder="+91 98765 43210"
-                          className={`${inputCls} mt-1`}
-                        />
-                      </label>
-                    </>
-                  )}
-
-                  {/* Force Change Password: Current Password */}
-                  {mode === 'force_change' && (
-                    <label className="block">
-                      <span className="text-xs font-semibold text-slate-700">Current Temporary Password *</span>
-                      <input
-                        type="password"
-                        value={currentPassword}
-                        onChange={(e) => setCurrentPassword(e.target.value)}
-                        placeholder="Current password"
-                        className={`${inputCls} mt-1`}
-                        required
-                      />
-                    </label>
-                  )}
-
-                  {/* Reset Password: Token input */}
-                  {mode === 'reset' && (
-                    <label className="block">
-                      <span className="text-xs font-semibold text-slate-700">Reset Security Token *</span>
-                      <input
-                        value={resetToken}
-                        onChange={(e) => setResetToken(e.target.value)}
-                        placeholder="Paste reset token from email"
-                        className={`${inputCls} mt-1 font-mono text-xs`}
-                        required
-                      />
-                    </label>
-                  )}
-
-                  {/* Email Field (for signin, register, forgot) */}
-                  {(mode === 'signin' || mode === 'register' || mode === 'forgot') && (
-                    <label className="block">
-                      <span className="text-xs font-semibold text-slate-700 flex items-center justify-between">
-                        <span>Institutional Email *</span>
-                        {mode === 'signin' && (
-                          <span className="text-[11px] text-slate-400 font-normal">Domain: @slrtce.in</span>
-                        )}
-                      </span>
-                      <div className="relative mt-1">
-                        <input
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          placeholder="name@slrtce.in"
-                          className={`${inputCls} pl-9`}
-                          type="email"
-                          required
-                        />
-                        <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                      </div>
-                    </label>
-                  )}
-
-                  {/* Password Field (for signin, register, reset, force_change) */}
-                  {(mode === 'signin' || mode === 'register' || mode === 'reset' || mode === 'force_change') && (
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-slate-700">
-                          {mode === 'force_change' || mode === 'reset' ? 'New Password *' : 'Password *'}
-                        </span>
-                        {mode === 'signin' && (
-                          <button
-                            type="button"
-                            onClick={() => { setMode('forgot'); setError(''); setInfoMessage(''); }}
-                            className="text-[11px] text-primary hover:underline font-medium"
-                          >
-                            Forgot Password?
-                          </button>
-                        )}
-                      </div>
-                      <div className="relative mt-1">
-                        <input
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          placeholder="••••••••"
-                          className={`${inputCls} pl-9 pr-10`}
-                          type={showPassword ? 'text' : 'password'}
-                          required
-                        />
-                        <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-                          tabIndex={-1}
-                        >
-                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
-                      </div>
-
-                      {/* Password strength meter for new passwords */}
-                      {(mode === 'register' || mode === 'reset' || mode === 'force_change') && password && (
-                        <div className="mt-2 space-y-1.5">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-slate-500">Strength: <b className="text-slate-700">{strength.label}</b></span>
-                            <span className="text-slate-400">Min 8 chars, numbers & uppercase</span>
-                          </div>
-                          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden flex">
-                            <div
-                              className={`h-full transition-all duration-300 ${strength.color}`}
-                              style={{ width: `${(strength.score / 4) * 100}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Confirm Password (for reset and force_change) */}
-                  {(mode === 'reset' || mode === 'force_change') && (
-                    <label className="block">
-                      <span className="text-xs font-semibold text-slate-700">Confirm New Password *</span>
-                      <div className="relative mt-1">
-                        <input
-                          type={showPassword ? 'text' : 'password'}
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          placeholder="Repeat new password"
-                          className={`${inputCls} pl-9`}
-                          required
-                        />
-                        <KeyRound size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                      </div>
-                    </label>
-                  )}
-
-                  {/* Submit Button */}
-                  <button
-                    className={`${btnPrimary} w-full justify-center py-2.5 text-sm !mt-5 shadow-md`}
-                    type="submit"
-                    disabled={busy}
-                  >
-                    {busy ? (
-                      <span className="flex items-center gap-2">
-                        <RefreshCw size={15} className="animate-spin" />
-                        <span>Processing...</span>
-                      </span>
-                    ) : (
-                      <>
-                        {mode === 'signin' && 'Sign In'}
-                        {mode === 'register' && 'Submit Registration for Principal Approval'}
-                        {mode === 'forgot' && 'Send Password Reset Link'}
-                        {mode === 'reset' && 'Update Password & Sign In'}
-                        {mode === 'force_change' && 'Save New Password & Continue'}
-                      </>
-                    )}
-                  </button>
-
-                  {/* Back to signin button when in forgot or reset */}
-                  {(mode === 'forgot' || mode === 'reset') && (
-                    <div className="text-center pt-2">
-                      <button
-                        type="button"
-                        onClick={() => { setMode('signin'); setError(''); setInfoMessage(''); }}
-                        className="text-xs text-slate-500 hover:text-slate-800 font-medium"
-                      >
-                        ← Return to Sign In
-                      </button>
-                    </div>
-                  )}
-                </form>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-8 pt-4 border-t border-gray-100 text-center text-xs text-slate-400">
-            {letterhead.collegeName || 'Shree L.R. Tiwari College of Engineering'} • Docworm Permission Portal
+              )}
+            </form>
           </div>
         </div>
       </div>
