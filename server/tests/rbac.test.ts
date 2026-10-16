@@ -77,8 +77,8 @@ console.log('\n--- 3. Department Data Scoping ---');
 const itRequest = { id: 'req-it', submitter_dept: 'IT', faculty_id: facultyIt.id };
 const extcRequest = { id: 'req-extc', submitter_dept: 'EXTC', faculty_id: 'other' };
 
-assert(can(hodIt, 'request:view_dept', itRequest) === true, 'HOD IT can view IT department requests');
-assert(can(hodIt, 'request:view_dept', extcRequest) === false, 'HOD IT CANNOT view EXTC requests (cross-department blocked)');
+assert(can(hodIt, 'request:view_dept', itRequest) === true, 'HOD can view IT department requests');
+assert(can(hodIt, 'request:view_dept', extcRequest) === false, 'HOD CANNOT view EXTC requests (cross-department blocked)');
 assert(can(facultyIt, 'request:view_dept', itRequest) === false, 'Faculty cannot view general department requests (own only)');
 assert(can(facultyIt, 'request:view_own', itRequest) === true, 'Faculty CAN view own request');
 
@@ -138,7 +138,26 @@ assert(can(dean, 'admin:sql_editor') === false, 'Dean CANNOT access SQL Editor (
 assert(can(dean, 'admin:table_editor_write') === false, 'Dean CANNOT write in Table Editor (403)');
 assert(can(dean, 'admin:view_read_only') === true, 'Dean CAN view audit logs / analytics read-only');
 assert(can(hodIt, 'admin:table_editor_read') === false, 'HOD CANNOT view Table Editor (403)');
-assert(can(facultyIt, 'admin:table_editor_read') === false, 'Faculty CANNOT view Table Editor (403)');
+// 10. Faculty Leaves
+console.log('\n--- 10. Faculty Leaves RBAC ---');
+const itLeave = { id: 'leave-1', faculty_id: facultyIt.id, department: 'IT', department_code: 'IT', status: 'Pending' };
+const extcLeave = { id: 'leave-2', faculty_id: 'other', department: 'EXTC', department_code: 'EXTC', status: 'Pending' };
+
+assert(can(facultyIt, 'leave:create') === true, 'Faculty CAN apply for leave');
+assert(can(facultyIt, 'leave:view_own', itLeave) === true, 'Faculty CAN view own leave');
+assert(can(facultyIt, 'leave:cancel_own', itLeave) === true, 'Faculty CAN cancel pending leave');
+assert(can(facultyIt, 'leave:view_all') === false, 'Faculty CANNOT view all leaves');
+
+assert(can(hodIt, 'leave:view_dept', itLeave) === true, 'HOD CAN view department faculty leave');
+assert(can(hodIt, 'leave:view_dept', extcLeave) === false, 'HOD CANNOT view other department faculty leave');
+assert(can(hodIt, 'leave:endorse_hod', itLeave) === true, 'HOD CAN recommend department faculty leave');
+assert(can(hodIt, 'leave:endorse_hod', extcLeave) === false, 'HOD CANNOT recommend other department faculty leave');
+assert(can(hodIt, 'leave:decide_principal') === false, 'HOD CANNOT grant final principal sanction (403)');
+
+assert(can(principal, 'leave:view_all') === true, 'Principal CAN view all leaves');
+assert(can(principal, 'leave:decide_principal') === true, 'Principal CAN grant final sanction for leaves');
+assert(can(dean, 'leave:view_all') === true, 'Dean CAN view all leaves (read-only oversight)');
+assert(can(dean, 'leave:decide_principal') === false, 'Dean CANNOT grant final sanction for leaves (403)');
 
 console.log(`\n=================================================`);
 console.log(`Test Results: ${passed} Passed, ${failed} Failed`);

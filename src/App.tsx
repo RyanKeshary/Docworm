@@ -5,6 +5,7 @@ import { Layout } from './components';
 import { PermissionPortal } from './pages/PermissionPortal';
 import { Login } from './pages/pages1';
 import { SettingsPage, NotificationsCenter } from './pages/pages3';
+import { FacultyLeavePortal } from './pages/FacultyLeavePortal';
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, authLoading } = useData();
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/requests" element={<Guard><PermissionPortal /></Guard>} />
           <Route path="/proposals" element={<Guard><PermissionPortal /></Guard>} />
           <Route path="/faculty" element={<Guard><PermissionPortal /></Guard>} />
+          <Route path="/leaves" element={<Guard><FacultyLeavePortal /></Guard>} />
           <Route path="/notifications" element={<Guard><NotificationsCenter /></Guard>} />
           <Route path="/settings" element={<Guard><SettingsPage /></Guard>} />
           <Route path="*" element={<Guard><PermissionPortal /></Guard>} />

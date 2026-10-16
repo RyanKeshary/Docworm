@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
-  FileText, Bell, Settings,
+  FileText, Bell, Settings, Calendar,
   Menu, X, Search, LogOut, ChevronLeft, User, Database, Shield, Crown, GraduationCap, Building2, Users,
 } from 'lucide-react';
 import { useData } from './store';
@@ -143,6 +143,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   // Role-specific navigation
   const allLinks = [
     { to: '/', label: 'Permission Requests', icon: <FileText size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
+    { to: '/leaves', label: 'Faculty Leaves', icon: <Calendar size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
     { to: '/notifications', label: 'Notifications', icon: <Bell size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
     { to: '/settings', label: 'Settings & Admin', icon: <Settings size={18} />, roles: ['Principal'] },
     { to: '/settings', label: 'Settings', icon: <Settings size={18} />, roles: ['Dean', 'HOD', 'Faculty'] },

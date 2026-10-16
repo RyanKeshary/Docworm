@@ -179,3 +179,51 @@ export interface LetterheadSettings {
   phone: string;
   email: string;
 }
+
+export type LeaveType =
+  | 'Casual Leave'
+  | 'Medical Leave'
+  | 'On Duty (OD)'
+  | 'Earned Leave'
+  | 'Compensatory Off';
+
+export type LeaveStatus =
+  | 'Pending'
+  | 'Recommended'
+  | 'Approved'
+  | 'Rejected'
+  | 'Cancelled';
+
+export interface FacultyLeave {
+  id: string;
+  ref_no: string;
+  faculty_id: string;
+  faculty_name: string;
+  faculty_email?: string;
+  faculty_phone?: string;
+  department_id?: string;
+  department: string;
+  leave_type: LeaveType;
+  start_date: string;
+  end_date: string;
+  total_days: number;
+  is_half_day: boolean;
+  half_day_session: 'Morning' | 'Afternoon' | 'Full Day';
+  reason: string;
+  alternate_faculty: string;
+  lecture_adjustments: string;
+  contact_phone: string;
+  attachment_url: string;
+  status: LeaveStatus;
+  hod_id?: string;
+  hod_name?: string;
+  hod_remark?: string;
+  hod_acted_at?: string;
+  principal_id?: string;
+  principal_name?: string;
+  principal_remark?: string;
+  principal_acted_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+

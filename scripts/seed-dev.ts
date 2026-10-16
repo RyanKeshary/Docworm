@@ -116,7 +116,7 @@ async function seedDev() {
       console.log(`  👤 Seeded ${u.role}: ${u.name} (${u.email})`);
     }
 
-    // 3. Sample Proposal (Under Review: IT Faculty -> HOD IT -> Dean -> Principal)
+    // 3. Sample Proposal (Under Review: IT Faculty -> HOD -> Dean -> Principal)
     const facultyItId = userMap['prof.sharma@slrtce.in'];
     const hodItId = userMap['hod.it@slrtce.in'];
     const deanId = userMap['dean@slrtce.in'];

@@ -1210,6 +1210,243 @@ app.post('/api/push/subscribe', authenticate, async (req, res) => {
 });
 
 // ====================================================================
+// 6.5. FACULTY LEAVES MANAGEMENT
+// Full workflow: Faculty application -> HOD recommendation -> Principal approval
+// ====================================================================
+
+// List Leaves (Scoped by role)
+app.get('/api/leaves', authenticate, async (req, res) => {
+  const user = req.user!;
+  try {
+    let leaves: any[];
+    if (can(user, 'leave:view_all')) {
+      leaves = await sql`
+        SELECT l.*, u.email as faculty_email, u.phone as faculty_phone
+        FROM public.faculty_leaves l
+        LEFT JOIN public.users u ON l.faculty_id = u.id
+        ORDER BY l.created_at DESC
+      `;
+    } else if (user.role === 'HOD') {
+      leaves = await sql`
+        SELECT l.*, u.email as faculty_email, u.phone as faculty_phone
+        FROM public.faculty_leaves l
+        LEFT JOIN public.users u ON l.faculty_id = u.id
+        WHERE l.department = ${user.department_code || ''}
+           OR l.department_id = ${user.department_id || ''}
+           OR l.faculty_id = ${user.id}
+        ORDER BY l.created_at DESC
+      `;
+    } else {
+      leaves = await sql`
+        SELECT l.*, u.email as faculty_email, u.phone as faculty_phone
+        FROM public.faculty_leaves l
+        LEFT JOIN public.users u ON l.faculty_id = u.id
+        WHERE l.faculty_id = ${user.id}
+        ORDER BY l.created_at DESC
+      `;
+    }
+    res.json({ leaves });
+  } catch (err: any) {
+    console.error('Fetch leaves error:', err);
+    res.status(500).json({ error: 'Failed to fetch leave applications.' });
+  }
+});
+
+// Create Leave Application
+app.post('/api/leaves', authenticate, async (req, res) => {
+  const user = req.user!;
+  if (!can(user, 'leave:create')) {
+    res.status(403).json({ error: 'Forbidden: You cannot apply for leave.' });
+    return;
+  }
+
+  const schema = z.object({
+    leave_type: z.string().min(2),
+    start_date: z.string().min(10),
+    end_date: z.string().min(10),
+    total_days: z.number().positive(),
+    is_half_day: z.boolean().optional().default(false),
+    half_day_session: z.string().optional().default('Full Day'),
+    reason: z.string().min(3),
+    alternate_faculty: z.string().optional().default(''),
+    lecture_adjustments: z.string().optional().default(''),
+    contact_phone: z.string().optional().default(''),
+    attachment_url: z.string().optional().default(''),
+  });
+
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid leave application data.' });
+    return;
+  }
+
+  const d = parsed.data;
+  const deptCode = user.department_code || 'GEN';
+  const yearStr = new Date().getFullYear().toString();
+  const counterVal = Math.floor(1000 + Math.random() * 9000);
+  const refNo = `LV/${deptCode}/${yearStr}/${counterVal}`;
+
+  try {
+    const inserted = await sql`
+      INSERT INTO public.faculty_leaves (
+        ref_no, faculty_id, faculty_name, department_id, department,
+        leave_type, start_date, end_date, total_days, is_half_day,
+        half_day_session, reason, alternate_faculty, lecture_adjustments,
+        contact_phone, attachment_url, status
+      ) VALUES (
+        ${refNo}, ${user.id}, ${user.name}, ${user.department_id}, ${deptCode},
+        ${d.leave_type}, ${d.start_date}, ${d.end_date}, ${d.total_days}, ${d.is_half_day},
+        ${d.half_day_session}, ${d.reason}, ${d.alternate_faculty}, ${d.lecture_adjustments},
+        ${d.contact_phone}, ${d.attachment_url}, 'Pending'
+      )
+      RETURNING *
+    `;
+
+    await logAudit(user.id, user.name, 'LEAVE_APPLIED', `faculty_leaves:${inserted[0].id}`, {
+      refNo,
+      leaveType: d.leave_type,
+      totalDays: d.total_days,
+    });
+
+    res.status(201).json({ ok: true, leave: inserted[0] });
+  } catch (err: any) {
+    console.error('Leave create error:', err);
+    res.status(500).json({ error: 'Failed to submit leave application.' });
+  }
+});
+
+// Decide on Leave (HOD Recommend/Reject or Principal Approve/Reject)
+app.post('/api/leaves/:id/decide', authenticate, async (req, res) => {
+  const user = req.user!;
+  const leaveId = req.params.id;
+
+  const schema = z.object({
+    action: z.enum(['Recommend', 'Approve', 'Reject']),
+    remark: z.string().optional().default(''),
+  });
+
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid decision action.' });
+    return;
+  }
+
+  const { action, remark } = parsed.data;
+
+  try {
+    const existing = await sql`SELECT * FROM public.faculty_leaves WHERE id = ${leaveId}`;
+    if (!existing.length) {
+      res.status(404).json({ error: 'Leave application not found.' });
+      return;
+    }
+    const leave = existing[0];
+
+    if (user.role === 'HOD') {
+      if (!can(user, 'leave:endorse_hod', leave)) {
+        res.status(403).json({ error: 'Forbidden: You can only recommend leaves for faculty in your department.' });
+        return;
+      }
+
+      if (action === 'Approve') {
+        res.status(403).json({ error: 'HOD can only Recommend or Reject. Final sanction is reserved for the Principal.' });
+        return;
+      }
+
+      const newStatus = action === 'Recommend' ? 'Recommended' : 'Rejected';
+      const updated = await sql`
+        UPDATE public.faculty_leaves
+        SET
+          status = ${newStatus},
+          hod_id = ${user.id},
+          hod_name = ${user.name},
+          hod_remark = ${remark},
+          hod_acted_at = NOW(),
+          updated_at = NOW()
+        WHERE id = ${leaveId}
+        RETURNING *
+      `;
+
+      await logAudit(user.id, user.name, `LEAVE_HOD_${action.toUpperCase()}`, `faculty_leaves:${leaveId}`, {
+        refNo: leave.ref_no,
+        action,
+        remark,
+      });
+
+      res.json({ ok: true, leave: updated[0] });
+      return;
+    }
+
+    if (user.role === 'Principal') {
+      if (!can(user, 'leave:decide_principal')) {
+        res.status(403).json({ error: 'Forbidden.' });
+        return;
+      }
+
+      const newStatus = action === 'Approve' ? 'Approved' : 'Rejected';
+      const updated = await sql`
+        UPDATE public.faculty_leaves
+        SET
+          status = ${newStatus},
+          principal_id = ${user.id},
+          principal_name = ${user.name},
+          principal_remark = ${remark},
+          principal_acted_at = NOW(),
+          updated_at = NOW()
+        WHERE id = ${leaveId}
+        RETURNING *
+      `;
+
+      await logAudit(user.id, user.name, `LEAVE_PRINCIPAL_${action.toUpperCase()}`, `faculty_leaves:${leaveId}`, {
+        refNo: leave.ref_no,
+        action,
+        remark,
+      });
+
+      res.json({ ok: true, leave: updated[0] });
+      return;
+    }
+
+    res.status(403).json({ error: 'Forbidden: You do not have approval authority for leaves.' });
+  } catch (err: any) {
+    console.error('Leave decide error:', err);
+    res.status(500).json({ error: 'Failed to record leave decision.' });
+  }
+});
+
+// Cancel Leave Application (Faculty Pending cancellation)
+app.delete('/api/leaves/:id', authenticate, async (req, res) => {
+  const user = req.user!;
+  const leaveId = req.params.id;
+
+  try {
+    const existing = await sql`SELECT * FROM public.faculty_leaves WHERE id = ${leaveId}`;
+    if (!existing.length) {
+      res.status(404).json({ error: 'Leave application not found.' });
+      return;
+    }
+    const leave = existing[0];
+
+    if (!can(user, 'leave:cancel_own', leave) && user.role !== 'Principal') {
+      res.status(403).json({ error: 'Forbidden: You can only cancel your own pending leave applications.' });
+      return;
+    }
+
+    const updated = await sql`
+      UPDATE public.faculty_leaves
+      SET status = 'Cancelled', updated_at = NOW()
+      WHERE id = ${leaveId}
+      RETURNING *
+    `;
+
+    await logAudit(user.id, user.name, 'LEAVE_CANCELLED', `faculty_leaves:${leaveId}`, { refNo: leave.ref_no });
+    res.json({ ok: true, message: 'Leave application cancelled.', leave: updated[0] });
+  } catch (err: any) {
+    console.error('Leave cancel error:', err);
+    res.status(500).json({ error: 'Failed to cancel leave application.' });
+  }
+});
+
+// ====================================================================
 // 7. ACADEMIC OPTIONS & RESTRICTED INPUTS (Phase 6)
 // ====================================================================
 
@@ -1700,6 +1937,14 @@ app.get('/api/export/csv/:table', authenticate, async (req, res) => {
         rows = await sql`SELECT ref_no, academic_year, event_name, event_category, start_date, end_date, submitter_name, submitter_dept, opening_balance, status FROM public.permission_requests WHERE submitter_dept = ${user.department_code || ''}`;
       } else {
         rows = await sql`SELECT ref_no, academic_year, event_name, event_category, start_date, end_date, submitter_name, submitter_dept, opening_balance, status FROM public.permission_requests WHERE faculty_id = ${user.id}`;
+      }
+    } else if (tableName === 'faculty_leaves' || tableName === 'leaves') {
+      if (can(user, 'leave:view_all')) {
+        rows = await sql`SELECT ref_no, faculty_name, department, leave_type, start_date, end_date, total_days, reason, alternate_faculty, status, hod_name, hod_remark, principal_name, principal_remark, created_at FROM public.faculty_leaves ORDER BY created_at DESC`;
+      } else if (user.role === 'HOD') {
+        rows = await sql`SELECT ref_no, faculty_name, department, leave_type, start_date, end_date, total_days, reason, alternate_faculty, status, hod_name, hod_remark, principal_name, principal_remark, created_at FROM public.faculty_leaves WHERE department = ${user.department_code || ''} OR faculty_id = ${user.id} ORDER BY created_at DESC`;
+      } else {
+        rows = await sql`SELECT ref_no, faculty_name, department, leave_type, start_date, end_date, total_days, reason, alternate_faculty, status, hod_name, hod_remark, principal_name, principal_remark, created_at FROM public.faculty_leaves WHERE faculty_id = ${user.id} ORDER BY created_at DESC`;
       }
     } else {
       if (!can(user, 'admin:table_editor_read')) {

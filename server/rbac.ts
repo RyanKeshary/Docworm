@@ -48,6 +48,15 @@ export type Action =
   | 'admin:settings_write'
   | 'admin:view_read_only'
 
+  // Faculty Leaves
+  | 'leave:view_all'
+  | 'leave:view_dept'
+  | 'leave:view_own'
+  | 'leave:create'
+  | 'leave:endorse_hod'
+  | 'leave:decide_principal'
+  | 'leave:cancel_own'
+
   // Reports & Exports
   | 'report:export_excel'
   | 'report:export_csv';
@@ -173,14 +182,47 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
       return role === 'Principal' || role === 'Dean';
 
     // ----------------------------------------------------
-    // 5. Reports & Exports
+    // 5. Faculty Leaves
+    // ----------------------------------------------------
+    case 'leave:view_all':
+      return role === 'Principal' || role === 'Dean';
+
+    case 'leave:view_dept':
+      if (role === 'Principal' || role === 'Dean') return true;
+      if (role === 'HOD') {
+        if (!resource) return true;
+        const resDept = resource.department_code || resource.department_id || resource.department;
+        return resDept === user.department_code || resDept === user.department_id;
+      }
+      return false;
+
+    case 'leave:view_own':
+      if (role === 'Principal' || role === 'Dean') return true;
+      if (!resource) return true;
+      return resource.faculty_id === user.id;
+
+    case 'leave:create':
+      return role === 'Faculty' || role === 'HOD';
+
+    case 'leave:endorse_hod': {
+      if (role !== 'HOD') return false;
+      if (!resource) return true;
+      const leaveDept = resource.department_code || resource.department_id || resource.department;
+      return leaveDept === user.department_code || leaveDept === user.department_id;
+    }
+
+    case 'leave:decide_principal':
+      return role === 'Principal';
+
+    case 'leave:cancel_own':
+      if (!resource) return role === 'Faculty' || role === 'HOD';
+      return resource.faculty_id === user.id && (resource.status === 'Pending' || resource.status === 'Draft');
+
+    // ----------------------------------------------------
+    // 6. Reports & Exports
     // ----------------------------------------------------
     case 'report:export_excel':
     case 'report:export_csv':
-      // All roles can export reports, but data scoping is strictly enforced:
-      // - Principal & Dean: Full institution
-      // - HOD: Own department only
-      // - Faculty: Own records only
       return true;
 
     default:

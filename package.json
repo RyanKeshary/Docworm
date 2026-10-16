@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -p \"[{name}]\" -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"tsx server/index.ts\" \"vite\"",
-    "dev:server": "tsx server/index.ts",
+    "dev": "concurrently -k -p \"[{name}]\" -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"tsx watch server/index.ts\" \"vite\"",
+    "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite",
-    "server": "tsx server/index.ts",
+    "server": "tsx watch server/index.ts",
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
     "bootstrap": "tsx scripts/bootstrap.ts",

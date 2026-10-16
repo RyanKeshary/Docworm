@@ -83,6 +83,16 @@ export const api = {
       apiFetch(`/api/permission-requests/${id}/decide`, { method: 'POST', body: JSON.stringify(payload) }),
   },
 
+  leaves: {
+    list: () => apiFetch('/api/leaves'),
+    create: (data: any) =>
+      apiFetch('/api/leaves', { method: 'POST', body: JSON.stringify(data) }),
+    decide: (id: string, payload: { action: 'Recommend' | 'Approve' | 'Reject'; remark?: string }) =>
+      apiFetch(`/api/leaves/${id}/decide`, { method: 'POST', body: JSON.stringify(payload) }),
+    cancel: (id: string) =>
+      apiFetch(`/api/leaves/${id}`, { method: 'DELETE' }),
+  },
+
   announcements: {
     list: () => apiFetch('/api/announcements'),
     create: (data: { title: string; body: string; priority?: string; audience_dept?: string | null }) =>

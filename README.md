@@ -123,16 +123,16 @@ grep -rn "sb_secret" dist/
 
 ## 👥 Default Accounts (from `seed:dev`)
 
-All passwords for dev accounts are `Docworm@2026!`:
+All default accounts use `password@67` (modifiable anytime in the Settings panel):
 
 | Role | Email | Scope |
 |---|---|---|
 | **Principal** | `principal@slrtce.in` | Master administrator, final sanction, staff management |
 | **Dean** | `dean@slrtce.in` | Read-only across all departments |
-| **HOD IT** | `hod.it@slrtce.in` | IT department proposals, room approvals |
-| **HOD EXTC** | `hod.extc@slrtce.in` | EXTC department proposals |
-| **Faculty (IT)** | `prof.sharma@slrtce.in` | Personal proposals and tasks |
-| **Faculty (EXTC)**| `prof.patil@slrtce.in` | Personal proposals and tasks |
+| **HOD** | `hod.it@slrtce.in` | Department proposals, endorsements, room & leave approvals |
+| **HOD** | `hod.extc@slrtce.in` | Department proposals, endorsements, room & leave approvals |
+| **Faculty (IT)** | `prof.sharma@slrtce.in` | Personal proposals, leave applications, tasks |
+| **Faculty (EXTC)**| `prof.patil@slrtce.in` | Personal proposals, leave applications, tasks |
 
 ---
 

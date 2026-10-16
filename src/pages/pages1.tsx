@@ -283,7 +283,7 @@ export function Login() {
                       {[
                         { role: 'Principal', email: 'principal@slrtce.in', label: 'Principal', icon: '👑' },
                         { role: 'Dean', email: 'dean@slrtce.in', label: 'Dean', icon: '🏛️' },
-                        { role: 'HOD', email: 'hod.it@slrtce.in', label: 'HOD IT', icon: '🏢' },
+                        { role: 'HOD', email: 'hod.it@slrtce.in', label: 'HOD', icon: '🏢' },
                         { role: 'Faculty', email: 'prof.sharma@slrtce.in', label: 'Faculty', icon: '👨‍🏫' },
                       ].map((item) => (
                         <button
