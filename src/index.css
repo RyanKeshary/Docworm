@@ -96,42 +96,6 @@ body {
   box-shadow: 0 8px 24px -4px rgba(57, 117, 183, 0.12), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
 }
 
-/* ─── 3D Voxel Character Animation ────────────────────────────────────────── */
-@keyframes voxelFloat {
-  0%, 100% {
-    transform: translateY(0px) rotate(0deg);
-  }
-  50% {
-    transform: translateY(-7px) rotate(1deg);
-  }
-}
-
-@keyframes speechBob {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-3px);
-  }
-}
-
-.animate-voxel-float {
-  animation: voxelFloat 3.5s ease-in-out infinite;
-}
-
-.animate-speech-bob {
-  animation: speechBob 2.8s ease-in-out infinite;
-}
-
-.character-hover-target {
-  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.35s ease;
-}
-
-.character-hover-target:hover {
-  transform: translateY(-14px) scale(1.08) rotate(-2.5deg);
-  filter: drop-shadow(0 22px 32px rgba(0, 0, 0, 0.48));
-}
-
 /* ─── Print ──────────────────────────────────────────────────────────────── */
 @media print {
   .print-hidden { display: none !important; }
