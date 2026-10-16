@@ -257,7 +257,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           department: res.user.role === 'Principal' ? null : res.user.department,
         });
         setIsAuthenticated(true);
-        await refresh();
+        // Refresh workspace data concurrently in background so navigation is instant
+        refresh().catch(console.error);
         return null;
       }
       return 'Authentication failed.';

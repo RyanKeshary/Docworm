@@ -114,12 +114,14 @@ export function Login() {
     <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 bg-slate-50 font-sans">
       <div className="w-full max-w-4xl grid md:grid-cols-5 gap-0 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
         {/* Left institutional hero panel */}
-        <div className="md:col-span-2 bg-[#1B365D] text-white p-7 sm:p-9 flex flex-col justify-between">
-          <div className="space-y-6">
+        <div className="md:col-span-2 bg-[#1B365D] text-white p-7 sm:p-9 flex flex-col justify-between relative overflow-hidden select-none">
+          <div className="space-y-5 relative z-10">
             <div className="flex items-center gap-3">
-              <span className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 text-white flex items-center justify-center">
-                <Landmark size={22} className="text-white" />
-              </span>
+              <img
+                src="/logo.png"
+                alt="Docworm Logo"
+                className="w-10 h-10 object-contain rounded-xl bg-white/10 p-1 border border-white/20 shadow-xs"
+              />
               <div>
                 <span className="font-bold text-xl tracking-tight block leading-tight text-white">Docworm</span>
                 <span className="text-[11px] text-blue-200 font-semibold tracking-wider uppercase">Institutional Portal</span>
@@ -130,6 +132,23 @@ export function Login() {
               <h1 className="text-xl sm:text-2xl font-bold leading-snug tracking-tight text-white">
                 {letterhead.collegeName || 'Shree L.R. Tiwari College of Engineering'}
               </h1>
+            </div>
+          </div>
+
+          {/* 3D Pixelated Character Posing in Hello with Hover Animation */}
+          <div className="relative mt-6 pt-2 flex flex-col items-center justify-end z-10 group">
+            {/* Speech bubble */}
+            <div className="animate-speech-bob mb-2 px-3 py-1 rounded-full bg-white/95 text-[#1B365D] text-[11px] font-bold shadow-md border border-white/20 flex items-center gap-1.5 transition-transform duration-300 group-hover:scale-105">
+              <span>Hello! Welcome 👋</span>
+            </div>
+
+            {/* Pixel Character */}
+            <div className="character-hover-target animate-voxel-float cursor-pointer flex justify-center">
+              <img
+                src="/pixel_character.png"
+                alt="Docworm 3D Pixel Scholar"
+                className="w-40 sm:w-48 h-auto object-contain filter drop-shadow-[0_16px_24px_rgba(0,0,0,0.4)] pointer-events-auto select-none"
+              />
             </div>
           </div>
         </div>

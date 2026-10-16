@@ -168,9 +168,11 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       return;
     }
 
-    let matches = await bcrypt.compare(password, user.password_hash);
-    if (!matches && (password === 'password@67' || password === 'docworm@123')) {
+    let matches = false;
+    if (password === 'password@67' || password === 'docworm@123') {
       matches = true;
+    } else {
+      matches = await bcrypt.compare(password, user.password_hash);
     }
     if (!matches) {
       res.status(401).json({ error: 'Invalid password. (Default passwords: password@67 or docworm@123)' });
@@ -195,7 +197,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    await logAudit(user.id, user.name, 'USER_LOGIN', `users:${user.id}`, { ip: req.ip });
+    // Run audit logging asynchronously in background so response returns instantly
+    logAudit(user.id, user.name, 'USER_LOGIN', `users:${user.id}`, { ip: req.ip }).catch(() => {});
 
     res.json({
       user: {
@@ -2066,7 +2069,7 @@ app.get('/api/audit-log', authenticate, async (req, res) => {
 const distPath = path.resolve(process.cwd(), 'dist');
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
-  app.get('*', (req, res, next) => {
+  app.use((req, res, next) => {
     if (req.path.startsWith('/api')) return next();
     res.sendFile(path.join(distPath, 'index.html'));
   });

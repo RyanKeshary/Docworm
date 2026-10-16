@@ -183,9 +183,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {/* App logo */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-primary-border">
         <Link to="/" className="flex items-center gap-2.5">
-          <span className="w-9 h-9 rounded-xl bg-[#1B365D] text-white flex items-center justify-center shadow-xs">
-            <FileText size={19} />
-          </span>
+          <img src="/logo.png" alt="Docworm" className="w-9 h-9 rounded-xl object-contain shadow-xs" />
           {!collapsed && (
             <div>
               <span className="font-bold text-lg text-ink tracking-tight block">Docworm</span>

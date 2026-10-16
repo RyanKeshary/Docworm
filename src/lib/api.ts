@@ -5,12 +5,6 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   const apiPath = cleanEndpoint.startsWith('/api') ? cleanEndpoint : `/api${cleanEndpoint}`;
 
-  // If running in browser and current port is not 3001 (e.g. Vite dev on 5173/5174),
-  // target backend on :3001 directly to prevent any static proxy 405 Method Not Allowed issues.
-  const isClientDev = typeof window !== 'undefined' && window.location.port && window.location.port !== '3001';
-  const backendBase = isClientDev ? `${window.location.protocol}//${window.location.hostname}:3001` : '';
-  const primaryUrl = `${backendBase}${apiPath}`;
-
   const defaultHeaders: Record<string, string> = {
     'Accept': 'application/json',
   };
@@ -19,9 +13,15 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
     defaultHeaders['Content-Type'] = 'application/json';
   }
 
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1';
+  const protocol = typeof window !== 'undefined' ? window.location.protocol : 'http:';
+  const directBase = `${protocol}//${hostname}:3001`;
+
+  // Prefer same-origin `/api` (handled by Vite proxy or backend static server) to avoid CORS preflight latency.
+  // If running directly on port 3001, apiPath is already direct.
   let res: Response;
   try {
-    res = await fetch(primaryUrl, {
+    res = await fetch(apiPath, {
       credentials: 'include',
       ...options,
       headers: {
@@ -29,10 +29,10 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
         ...options.headers,
       },
     });
-  } catch (err: any) {
-    // If direct call to :3001 had network error, fallback to relative proxy
-    if (backendBase) {
-      res = await fetch(apiPath, {
+
+    // If a static server served index.html or returned 405 Method Not Allowed for POST, switch to direct backend
+    if (res.status === 405 || (res.status === 200 && res.headers.get('content-type')?.includes('text/html') && !apiPath.includes('health'))) {
+      res = await fetch(`${directBase}${apiPath}`, {
         credentials: 'include',
         ...options,
         headers: {
@@ -40,31 +40,20 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
           ...options.headers,
         },
       });
-    } else {
-      throw err;
     }
-  }
-
-  if (res.status === 204) {
-    return {} as T;
-  }
-
-  // Handle 405 specifically (if a static server returned 405 for POST)
-  if (res.status === 405) {
-    const directUrl = `${window.location.protocol}//${window.location.hostname}:3001${apiPath}`;
+  } catch (err: any) {
+    // If relative fetch failed, try direct connection to port 3001
     try {
-      const directRes = await fetch(directUrl, {
+      res = await fetch(`${directBase}${apiPath}`, {
         credentials: 'include',
         ...options,
-        headers: { ...defaultHeaders, ...options.headers },
+        headers: {
+          ...defaultHeaders,
+          ...options.headers,
+        },
       });
-      const directData = await directRes.json().catch(() => ({}));
-      if (!directRes.ok) {
-        throw new Error(directData.error || directData.message || `Authentication failed (${directRes.status})`);
-      }
-      return directData as T;
-    } catch (directErr: any) {
-      throw new Error(directErr.message || 'Unable to connect to authentication server.');
+    } catch {
+      throw new Error('Unable to connect to server. Please verify backend is running on port 3001.');
     }
   }
 
