@@ -12,13 +12,16 @@ export interface User {
   id: string;
   name: string;
   designation: string;
-  department: string;
+  department: string | null;
+  department_id?: string | null;
   email: string;
   phone: string;
   role: Role;
-  password: string;
-  status?: 'active' | 'pending_approval' | 'rejected';
+  photo_url?: string;
+  status?: 'active' | 'pending_approval' | 'rejected' | 'terminated';
+  must_change_password?: boolean;
   registeredAt?: string;
+  password?: string;
 }
 
 export interface ResourceRow {

@@ -1285,7 +1285,7 @@ function RoleContextCard({
   role: string;
   stats: { total: number; pending: number; approved: number; rejected: number; awaitingMe: number };
   proposals: Proposal[];
-  currentUser: { id: string; name: string; department: string; designation: string };
+  currentUser: { id: string; name: string; department?: string | null; designation: string };
 }) {
   if (role === 'Principal') {
     return (
@@ -1349,7 +1349,7 @@ function RoleContextCard({
 
   if (role === 'HOD') {
     const deptProposals = proposals.filter(
-      (p) => p.submitterDept === currentUser.department || (p.departments || []).includes(currentUser.department)
+      (p) => currentUser.department ? (p.submitterDept === currentUser.department || (p.departments || []).includes(currentUser.department)) : false
     );
     return (
       <div className="bg-gradient-to-r from-emerald-50/90 via-white to-emerald-50/40 border border-emerald-200 rounded-card p-4 sm:p-5 shadow-xs">

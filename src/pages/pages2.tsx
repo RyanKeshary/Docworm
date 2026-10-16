@@ -135,7 +135,7 @@ export function ProposalForm() {
       attachments: [],
       submitterId: currentUser.id,
       submitterName: currentUser.name,
-      submitterDept: currentUser.department,
+      submitterDept: currentUser.department ?? '',
       status,
       approvalChain: [
         { id: 's1', role: 'Submitter', userId: currentUser.id, userName: currentUser.name, action: status === 'Draft' ? 'Pending' : 'Approved', actedAt: status === 'Draft' ? undefined : nowStr(), remark: status === 'Draft' ? undefined : 'Submitted for approval' },

@@ -1,191 +1,330 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   FileText, Clock, CheckCircle2, AlertTriangle, ListTodo, Search, Plus,
   GraduationCap, Building2, Landmark, Briefcase, Zap, User, ArrowRight,
-  ShieldCheck, Sparkles, Check,
+  ShieldCheck, Sparkles, Check, Eye, EyeOff, Lock, Mail, KeyRound, AlertCircle, RefreshCw
 } from 'lucide-react';
 import { useData } from '../store';
 import { Badge, Drawer, EmptyState, ExportMenu, btnGhost, btnPrimary, inputCls } from '../components';
 import { computedTaskStatus, detectClashes, exportCSV, exportPDF, exportXLSX, flattenProposal } from '../utils';
+import { api } from '../lib/api';
 
-type RolePortal = 'Faculty' | 'HOD' | 'Dean' | 'Principal';
+type AuthMode = 'signin' | 'register' | 'forgot' | 'reset' | 'force_change';
+
+function getPasswordStrength(pass: string): { score: number; label: string; color: string } {
+  if (!pass) return { score: 0, label: 'Empty', color: 'bg-slate-200' };
+  let score = 0;
+  if (pass.length >= 8) score++;
+  if (/[A-Z]/.test(pass)) score++;
+  if (/[0-9]/.test(pass)) score++;
+  if (/[^A-Za-z0-9]/.test(pass)) score++;
+
+  if (score === 1) return { score: 1, label: 'Weak', color: 'bg-rose-500' };
+  if (score === 2) return { score: 2, label: 'Fair', color: 'bg-amber-500' };
+  if (score === 3) return { score: 3, label: 'Good', color: 'bg-blue-500' };
+  if (score === 4) return { score: 4, label: 'Strong', color: 'bg-emerald-500' };
+  return { score: 0, label: 'Very Weak', color: 'bg-rose-400' };
+}
 
 export function Login() {
-  const { signIn, signUp, backend, isAuthenticated } = useData();
+  const { signIn, signUp, isAuthenticated, currentUser, refresh, letterhead } = useData();
   const nav = useNavigate();
-  const [tab, setTab] = useState<'signin' | 'register'>('signin');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [params] = useSearchParams();
+
+  const [mode, setMode] = useState<AuthMode>('signin');
+  const [email, setEmail] = useState('principal@slrtce.in');
+  const [password, setPassword] = useState('password@67');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [resetToken, setResetToken] = useState('');
+
+  // Register fields
   const [name, setName] = useState('');
   const [department, setDepartment] = useState('IT');
   const [designation, setDesignation] = useState('Assistant Professor');
   const [phone, setPhone] = useState('');
+
+  // UI state
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [infoMessage, setInfoMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [registeredSuccess, setRegisteredSuccess] = useState<{ name: string; dept: string } | null>(null);
 
-  React.useEffect(() => {
-    if (isAuthenticated) nav('/');
+  // Check for reset token in query string (?token=...)
+  useEffect(() => {
+    const t = params.get('token');
+    if (t) {
+      setResetToken(t);
+      setMode('reset');
+    }
+  }, [params]);
+
+  // If already authenticated, redirect to dashboard
+  useEffect(() => {
+    if (isAuthenticated) {
+      nav('/');
+    }
   }, [isAuthenticated, nav]);
 
-  const submit = async (e: React.FormEvent) => {
+  const strength = useMemo(() => getPasswordStrength(password), [password]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError('');
+    setInfoMessage('');
 
-    if (tab === 'register') {
-      if (!name.trim()) { setError('Full name is required.'); setBusy(false); return; }
-      if (!email.trim()) { setError('Institutional email is required.'); setBusy(false); return; }
-      if (!password || password.length < 6) { setError('Password must be at least 6 characters.'); setBusy(false); return; }
-      
-      const err = await signUp({
-        name: name.trim(),
-        email: email.trim(),
-        password,
-        role: 'Faculty', // Faculty registers directly
-        department,
-        designation: designation.trim() || 'Faculty Coordinator',
-        phone: phone.trim(),
-      });
+    try {
+      if (mode === 'signin') {
+        const err = await signIn(email.trim(), password);
+        if (err) {
+          setError(err);
+          setBusy(false);
+          return;
+        }
+        nav('/');
+        return;
+      } else if (mode === 'register') {
+        if (!name.trim()) throw new Error('Full name is required.');
+        if (!email.trim()) throw new Error('Institutional email is required.');
+        if (password.length < 8) throw new Error('Password must be at least 8 characters long.');
+
+        const err = await signUp({
+          name: name.trim(),
+          email: email.trim(),
+          password,
+          role: 'Faculty',
+          department,
+          designation: designation.trim() || 'Faculty Coordinator',
+          phone: phone.trim(),
+        });
+        if (err) throw new Error(err);
+
+        setRegisteredSuccess({ name: name.trim(), dept: department });
+        setName('');
+        setPassword('');
+        setPhone('');
+      } else if (mode === 'forgot') {
+        if (!email.trim()) throw new Error('Please enter your institutional email.');
+        const res = await api.auth.forgotPassword(email.trim());
+        setInfoMessage(res.message || 'If an account exists with this email, password reset instructions have been dispatched.');
+      } else if (mode === 'reset') {
+        if (!resetToken.trim()) throw new Error('Reset token is missing or invalid.');
+        if (password.length < 8) throw new Error('Password must be at least 8 characters long.');
+        if (password !== confirmPassword) throw new Error('Passwords do not match.');
+
+        const res = await api.auth.resetPassword({ token: resetToken.trim(), password });
+        setInfoMessage(res.message || 'Password successfully updated! You may now sign in.');
+        setPassword('');
+        setConfirmPassword('');
+        setResetToken('');
+        setMode('signin');
+      } else if (mode === 'force_change') {
+        if (!currentPassword) throw new Error('Current temporary password is required.');
+        if (password.length < 8) throw new Error('New password must be at least 8 characters long.');
+        if (password !== confirmPassword) throw new Error('Passwords do not match.');
+
+        await api.auth.changePassword({ current_password: currentPassword, new_password: password });
+        await refresh();
+        nav('/');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Operation failed. Please try again.');
+    } finally {
       setBusy(false);
-      if (err) { setError(err); return; }
-      setRegisteredSuccess({ name: name.trim(), dept: department });
-      setName('');
-      setPassword('');
-      setPhone('');
-      return;
     }
-
-    const err = await signIn(email, password);
-    setBusy(false);
-    if (err) {
-      setError(err);
-      return;
-    }
-    nav('/');
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 bg-gradient-to-br from-slate-100 via-sky-50/50 to-blue-50/30">
-      <div className="w-full max-w-4xl grid md:grid-cols-5 gap-0 bg-white border border-gray-200/80 rounded-2xl overflow-hidden shadow-xl">
+    <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 font-sans selection:bg-primary-light selection:text-white">
+      <div className="w-full max-w-4xl grid md:grid-cols-5 gap-0 bg-white border border-slate-700/40 rounded-3xl overflow-hidden shadow-2xl relative">
         {/* Left institutional hero panel */}
-        <div className="md:col-span-2 bg-gradient-to-br from-primary-dark via-primary to-primary-hover text-white p-7 sm:p-9 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <span className="w-10 h-10 rounded-xl bg-white text-primary flex items-center justify-center shadow-md">
-                <FileText size={22} />
+        <div className="md:col-span-2 bg-gradient-to-br from-slate-900 via-primary-dark to-primary text-white p-7 sm:p-9 flex flex-col justify-between relative overflow-hidden">
+          <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none" />
+
+          <div className="relative z-10">
+            <div className="flex items-center gap-3">
+              <span className="w-11 h-11 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-white flex items-center justify-center shadow-lg">
+                <Landmark size={24} className="text-emerald-300" />
               </span>
               <div>
-                <span className="font-bold text-2xl tracking-tight block">Docworm</span>
-                <span className="text-xs text-white/80 font-medium">College Permission System</span>
+                <span className="font-extrabold text-2xl tracking-tight block leading-tight text-white">Docworm</span>
+                <span className="text-[11px] text-emerald-200/90 font-medium tracking-wide uppercase">Institutional Portal</span>
               </div>
             </div>
 
-            <h1 className="mt-8 text-2xl sm:text-3xl font-extrabold leading-snug">
-              Digital permission letters & approval workflows.
-            </h1>
-            <p className="mt-3 text-white/85 text-xs sm:text-sm leading-relaxed">
-              Institutional hierarchy: Faculty submits requests, HOD endorses, Dean recommends, and the Principal officially sanctions.
-            </p>
+            <div className="mt-8">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/10 text-emerald-200 border border-white/15 backdrop-blur-xs mb-3">
+                <ShieldCheck size={13} /> Secure College Sanction System
+              </span>
+              <h1 className="text-2xl sm:text-3xl font-extrabold leading-snug tracking-tight text-white">
+                {letterhead.collegeName || 'Shree L.R. Tiwari College of Engineering'}
+              </h1>
+              <p className="mt-3 text-white/80 text-xs sm:text-sm leading-relaxed">
+                Single unified portal for digital permission letters, multi-tier approvals, venue allocations, and budget governance.
+              </p>
+            </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-white/15 space-y-3">
-            <div className="flex items-center gap-2.5 text-xs text-white/90">
-              <ShieldCheck size={16} className="text-emerald-300 shrink-0" />
-              <span>Hierarchical routing: HOD → Dean → Principal</span>
+          <div className="relative z-10 mt-8 pt-6 border-t border-white/15 space-y-3">
+            <div className="flex items-center gap-3 text-xs text-white/90">
+              <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0">
+                <Check size={14} />
+              </div>
+              <span>Exclusive Principal sanction & budget clearance</span>
             </div>
-            <div className="flex items-center gap-2.5 text-xs text-white/90">
-              <CheckCircle2 size={16} className="text-emerald-300 shrink-0" />
-              <span>Exclusive Principal sanction authority</span>
+            <div className="flex items-center gap-3 text-xs text-white/90">
+              <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0">
+                <Check size={14} />
+              </div>
+              <span>Automated HOD & Dean recommendation chain</span>
             </div>
-            <div className="flex items-center gap-2.5 text-xs text-white/90">
-              <GraduationCap size={16} className="text-emerald-300 shrink-0" />
-              <span>Direct faculty registration with Principal approval</span>
+            <div className="flex items-center gap-3 text-xs text-white/90">
+              <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0">
+                <Check size={14} />
+              </div>
+              <span>Audit-logged, real-time venue conflict detection</span>
             </div>
           </div>
         </div>
 
-        {/* Right login & registration panel */}
-        <div className="md:col-span-3 p-6 sm:p-9 flex flex-col justify-between">
+        {/* Right authentication panel */}
+        <div className="md:col-span-3 p-6 sm:p-10 flex flex-col justify-between bg-white">
           <div>
-            {/* Tabs */}
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-6">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { setTab('signin'); setError(''); setRegisteredSuccess(null); }}
-                  className={`pb-2 px-3 text-sm font-semibold border-b-2 transition-all ${
-                    tab === 'signin'
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  Sign In
-                </button>
-                <button
-                  onClick={() => { setTab('register'); setError(''); setRegisteredSuccess(null); }}
-                  className={`pb-2 px-3 text-sm font-semibold border-b-2 transition-all ${
-                    tab === 'register'
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  Faculty Registration
-                </button>
+            {/* Header Tabs */}
+            {mode !== 'force_change' && (
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-6">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setMode('signin'); setError(''); setInfoMessage(''); }}
+                    className={`pb-2 px-3 text-sm font-semibold border-b-2 transition-all ${
+                      mode === 'signin' || mode === 'forgot' || mode === 'reset'
+                        ? 'border-primary text-primary'
+                        : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setMode('register'); setError(''); setInfoMessage(''); }}
+                    className={`pb-2 px-3 text-sm font-semibold border-b-2 transition-all ${
+                      mode === 'register'
+                        ? 'border-primary text-primary'
+                        : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Faculty Registration
+                  </button>
+                </div>
+
+                <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  PostgreSQL Live
+                </span>
               </div>
+            )}
 
-              <span className="text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
-                {backend === 'supabase' ? 'Cloud Supabase' : 'College Local Storage'}
-              </span>
-            </div>
-
-            {/* Registration Success Banner */}
+            {/* Registration Success */}
             {registeredSuccess ? (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-card p-6 text-center space-y-3.5 animate-fade-in">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center space-y-4 animate-fade-in">
                 <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto text-xl shadow-xs">
                   ✓
                 </div>
                 <h3 className="font-bold text-lg text-emerald-950">Registration Submitted!</h3>
                 <p className="text-xs text-emerald-800 leading-relaxed">
-                  Welcome, <span className="font-bold">{registeredSuccess.name}</span>. Your registration for <span className="font-bold">Dept of {registeredSuccess.dept}</span> has been forwarded to the Principal Office.
+                  Welcome, <span className="font-bold">{registeredSuccess.name}</span>. Your application for <span className="font-bold">Dept of {registeredSuccess.dept}</span> has been securely recorded.
                 </p>
-                <div className="p-3 bg-white rounded-lg border border-emerald-200 text-xs text-slate-600 text-left space-y-1">
-                  <p className="font-bold text-slate-800">👑 Principal Approval Required</p>
-                  <p>In accordance with college regulations, faculty registrations must be approved by the Principal. Once approved, you can immediately sign in with your email and password.</p>
+                <div className="p-3.5 bg-white rounded-xl border border-emerald-200 text-xs text-slate-600 text-left space-y-1">
+                  <p className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <span>👑</span> Principal Verification Required
+                  </p>
+                  <p>In accordance with institutional guidelines, all faculty registrations require one-time approval by the Principal Office before sign in is granted.</p>
                 </div>
                 <button
-                  onClick={() => { setRegisteredSuccess(null); setTab('signin'); setEmail(email); }}
-                  className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-colors shadow-xs"
+                  type="button"
+                  onClick={() => { setRegisteredSuccess(null); setMode('signin'); }}
+                  className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-md"
                 >
-                  Proceed to Sign In
+                  Return to Sign In
                 </button>
               </div>
             ) : (
               <div>
-                <div className="mb-4">
-                  <h2 className="text-lg font-bold text-slate-900">
-                    {tab === 'signin' ? 'Sign In to Your Account' : 'Faculty Coordinator Registration'}
+                {/* Mode Headings */}
+                <div className="mb-5">
+                  <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
+                    {mode === 'signin' && 'Sign In to Your Account'}
+                    {mode === 'register' && 'Faculty Coordinator Registration'}
+                    {mode === 'forgot' && 'Reset Your Password'}
+                    {mode === 'reset' && 'Set New Permanent Password'}
+                    {mode === 'force_change' && 'Mandatory First-Login Password Change'}
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {tab === 'signin'
-                      ? 'Enter your institutional email address and password.'
-                      : 'Create your faculty coordinator profile. Requires Principal verification.'}
+                  <p className="text-xs text-slate-500 mt-1">
+                    {mode === 'signin' && 'Enter your institutional email address and credentials.'}
+                    {mode === 'register' && 'Create your official profile to submit and coordinate proposals.'}
+                    {mode === 'forgot' && 'Enter your registered email and we will send a password reset link.'}
+                    {mode === 'reset' && 'Enter your security token and select a new secure password.'}
+                    {mode === 'force_change' && 'Institutional policy requires changing your temporary password on initial login.'}
                   </p>
                 </div>
 
-                {tab === 'register' && (
-                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 space-y-0.5">
-                    <p className="font-bold flex items-center gap-1.5 text-amber-800">
-                      <span>🏛️</span> Principal Verification Policy
-                    </p>
-                    <p className="text-[11px] text-amber-800/90 leading-relaxed">
-                      Faculty members can register directly here. Your account will be activated once approved by the Principal. (HODs and Deans are appointed by the Principal Office).
-                    </p>
+                {/* Quick Role Access for Testing */}
+                {mode === 'signin' && (
+                  <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                      <span>Quick Select (Default Password: <code className="text-primary font-bold">password@67</code>)</span>
+                      <span className="text-emerald-700 font-semibold text-[10px]">Changeable in Settings</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                      {[
+                        { role: 'Principal', email: 'principal@slrtce.in', label: 'Principal', icon: '👑' },
+                        { role: 'Dean', email: 'dean@slrtce.in', label: 'Dean', icon: '🏛️' },
+                        { role: 'HOD', email: 'hod.it@slrtce.in', label: 'HOD IT', icon: '🏢' },
+                        { role: 'Faculty', email: 'prof.sharma@slrtce.in', label: 'Faculty', icon: '👨‍🏫' },
+                      ].map((item) => (
+                        <button
+                          key={item.role}
+                          type="button"
+                          onClick={() => {
+                            setEmail(item.email);
+                            setPassword('password@67');
+                            setError('');
+                          }}
+                          className={`px-2 py-1.5 rounded-lg text-xs font-semibold border text-left transition-all flex items-center gap-1.5 ${
+                            email === item.email
+                              ? 'bg-primary text-white border-primary shadow-xs'
+                              : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <span>{item.icon}</span>
+                          <span className="truncate">{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                <form onSubmit={submit} className="space-y-3.5">
-                  {tab === 'register' && (
+                {/* Alerts */}
+                {error && (
+                  <div className="mb-4 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-start gap-2.5">
+                    <AlertCircle size={16} className="shrink-0 mt-0.5 text-rose-600" />
+                    <span>{error}</span>
+                  </div>
+                )}
+                {infoMessage && (
+                  <div className="mb-4 p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-start gap-2.5">
+                    <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-emerald-600" />
+                    <span>{infoMessage}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  {/* Register Fields */}
+                  {mode === 'register' && (
                     <>
                       <label className="block">
                         <span className="text-xs font-semibold text-slate-700">Full Name *</span>
@@ -240,52 +379,172 @@ export function Login() {
                     </>
                   )}
 
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-700">Institutional Email *</span>
-                    <input
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="name@slrtce.in"
-                      className={`${inputCls} mt-1`}
-                      type="email"
-                      required
-                    />
-                  </label>
+                  {/* Force Change Password: Current Password */}
+                  {mode === 'force_change' && (
+                    <label className="block">
+                      <span className="text-xs font-semibold text-slate-700">Current Temporary Password *</span>
+                      <input
+                        type="password"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        placeholder="Current password"
+                        className={`${inputCls} mt-1`}
+                        required
+                      />
+                    </label>
+                  )}
 
-                  <label className="block">
-                    <span className="text-xs font-semibold text-slate-700">Password *</span>
-                    <input
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className={`${inputCls} mt-1`}
-                      type="password"
-                      required
-                    />
-                  </label>
+                  {/* Reset Password: Token input */}
+                  {mode === 'reset' && (
+                    <label className="block">
+                      <span className="text-xs font-semibold text-slate-700">Reset Security Token *</span>
+                      <input
+                        value={resetToken}
+                        onChange={(e) => setResetToken(e.target.value)}
+                        placeholder="Paste reset token from email"
+                        className={`${inputCls} mt-1 font-mono text-xs`}
+                        required
+                      />
+                    </label>
+                  )}
 
-                  {error && (
-                    <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium leading-relaxed">
-                      {error}
+                  {/* Email Field (for signin, register, forgot) */}
+                  {(mode === 'signin' || mode === 'register' || mode === 'forgot') && (
+                    <label className="block">
+                      <span className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+                        <span>Institutional Email *</span>
+                        {mode === 'signin' && (
+                          <span className="text-[11px] text-slate-400 font-normal">Domain: @slrtce.in</span>
+                        )}
+                      </span>
+                      <div className="relative mt-1">
+                        <input
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          placeholder="name@slrtce.in"
+                          className={`${inputCls} pl-9`}
+                          type="email"
+                          required
+                        />
+                        <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      </div>
+                    </label>
+                  )}
+
+                  {/* Password Field (for signin, register, reset, force_change) */}
+                  {(mode === 'signin' || mode === 'register' || mode === 'reset' || mode === 'force_change') && (
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-700">
+                          {mode === 'force_change' || mode === 'reset' ? 'New Password *' : 'Password *'}
+                        </span>
+                        {mode === 'signin' && (
+                          <button
+                            type="button"
+                            onClick={() => { setMode('forgot'); setError(''); setInfoMessage(''); }}
+                            className="text-[11px] text-primary hover:underline font-medium"
+                          >
+                            Forgot Password?
+                          </button>
+                        )}
+                      </div>
+                      <div className="relative mt-1">
+                        <input
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className={`${inputCls} pl-9 pr-10`}
+                          type={showPassword ? 'text' : 'password'}
+                          required
+                        />
+                        <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                          tabIndex={-1}
+                        >
+                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+
+                      {/* Password strength meter for new passwords */}
+                      {(mode === 'register' || mode === 'reset' || mode === 'force_change') && password && (
+                        <div className="mt-2 space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-slate-500">Strength: <b className="text-slate-700">{strength.label}</b></span>
+                            <span className="text-slate-400">Min 8 chars, numbers & uppercase</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden flex">
+                            <div
+                              className={`h-full transition-all duration-300 ${strength.color}`}
+                              style={{ width: `${(strength.score / 4) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
+                  {/* Confirm Password (for reset and force_change) */}
+                  {(mode === 'reset' || mode === 'force_change') && (
+                    <label className="block">
+                      <span className="text-xs font-semibold text-slate-700">Confirm New Password *</span>
+                      <div className="relative mt-1">
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          placeholder="Repeat new password"
+                          className={`${inputCls} pl-9`}
+                          required
+                        />
+                        <KeyRound size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      </div>
+                    </label>
+                  )}
+
+                  {/* Submit Button */}
                   <button
-                    className={`${btnPrimary} w-full justify-center py-2.5 text-sm !mt-4`}
+                    className={`${btnPrimary} w-full justify-center py-2.5 text-sm !mt-5 shadow-md`}
                     type="submit"
                     disabled={busy}
                   >
-                    {busy
-                      ? (tab === 'signin' ? 'Signing in...' : 'Submitting registration...')
-                      : (tab === 'signin' ? 'Sign In' : 'Submit Registration for Principal Approval')}
+                    {busy ? (
+                      <span className="flex items-center gap-2">
+                        <RefreshCw size={15} className="animate-spin" />
+                        <span>Processing...</span>
+                      </span>
+                    ) : (
+                      <>
+                        {mode === 'signin' && 'Sign In'}
+                        {mode === 'register' && 'Submit Registration for Principal Approval'}
+                        {mode === 'forgot' && 'Send Password Reset Link'}
+                        {mode === 'reset' && 'Update Password & Sign In'}
+                        {mode === 'force_change' && 'Save New Password & Continue'}
+                      </>
+                    )}
                   </button>
+
+                  {/* Back to signin button when in forgot or reset */}
+                  {(mode === 'forgot' || mode === 'reset') && (
+                    <div className="text-center pt-2">
+                      <button
+                        type="button"
+                        onClick={() => { setMode('signin'); setError(''); setInfoMessage(''); }}
+                        className="text-xs text-slate-500 hover:text-slate-800 font-medium"
+                      >
+                        ← Return to Sign In
+                      </button>
+                    </div>
+                  )}
                 </form>
               </div>
             )}
           </div>
 
-          <div className="mt-6 pt-4 border-t border-gray-100 text-center text-xs text-slate-400">
-            Shree L.R. Tiwari College of Engineering • Docworm Permission Portal
+          <div className="mt-8 pt-4 border-t border-gray-100 text-center text-xs text-slate-400">
+            {letterhead.collegeName || 'Shree L.R. Tiwari College of Engineering'} • Docworm Permission Portal
           </div>
         </div>
       </div>

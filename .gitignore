@@ -5,9 +5,9 @@ node_modules/
 dist/
 
 # Env (never commit keys)
-.env
-.env.local
-.env.*.local
+.env*
+!.env.example
+
 
 # Logs
 *.log

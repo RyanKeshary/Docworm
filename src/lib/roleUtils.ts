@@ -160,7 +160,7 @@ export function getProposalsForRole<T extends {
   approvalChain?: { id: string; role: string; userId?: string; action: string }[];
 }>(
   proposals: T[],
-  user: { id: string; role: Role; department?: string },
+  user: { id: string; role: Role; department?: string | null },
 ): T[] {
   if (user.role === 'Principal' || user.role === 'Dean') {
     return proposals;

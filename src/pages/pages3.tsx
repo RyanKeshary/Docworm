@@ -1,14 +1,26 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Plus, Database, Server, ExternalLink, RefreshCw, Trash2,
   Shield, CheckCircle2, Copy, Check, Info, User as UserIcon, Lock,
-  Crown, CheckCircle, XCircle, UserCheck, AlertTriangle,
+  Crown, CheckCircle, XCircle, UserCheck, AlertTriangle, FileSpreadsheet,
+  Play, Send, Bell, Key, Edit2, Sliders, Wrench, Mail, Terminal, SlidersHorizontal,
+  Download, Eye, AlertCircle
 } from 'lucide-react';
 import { useData, nowStr } from '../store';
 import { Badge, Drawer, EmptyState, ExportMenu, Field, Modal, btnGhost, btnPrimary, inputCls } from '../components';
 import { REPORT_COLS, computedTaskStatus, detectClashes, exportCSV, exportPDF, exportXLSX, flattenProposal, flattenReport, flattenTask, budgetTotals, exportLetterPDF } from '../utils';
 import type { Task, User } from '../types';
+import { api } from '../lib/api';
+import {
+  CloudTableEditorPanel,
+  SqlEditorPanel,
+  MitigationToolsPanel,
+  AcademicOptionsPanel,
+  SmtpSettingsPanel,
+  UserProfilePanel,
+  EditStaffModal,
+} from './AdminPanels';
 
 export function TasksList() {
   const { tasks, users, currentUser, saveTasks, pushNotification, pushAudit } = useData();
@@ -438,6 +450,25 @@ export function Reports() {
               <button onClick={() => bulkExport('PDF')} className={btnGhost}>PDF</button>
               <button onClick={zipLetters} className={btnPrimary}>Approved letters PDF</button>
             </div>
+            <div className="pt-3 border-t border-gray-100 flex flex-col gap-1.5">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Polished Excel Reports (Server Formatted)</span>
+              <div className="flex flex-wrap gap-2">
+                <a
+                  href={`/api/export/excel/permission-requests?from=${range.from}&to=${range.to}&status=${status}&department=${dept}`}
+                  download
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs"
+                >
+                  <FileSpreadsheet size={14} /> Requests Excel (.xlsx)
+                </a>
+                <a
+                  href="/api/export/excel/staff-directory"
+                  download
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 shadow-xs"
+                >
+                  <FileSpreadsheet size={14} /> Staff Directory (.xlsx)
+                </a>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -513,27 +544,359 @@ export function Reports() {
 }
 
 export function NotificationsCenter() {
-  const { notifications, saveNotifications, currentUser } = useData();
+  const { notifications, saveNotifications, currentUser, options } = useData();
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [loadingAnnouncements, setLoadingAnnouncements] = useState(false);
+  const [pushStatus, setPushStatus] = useState<'idle' | 'subscribed' | 'unsupported' | 'denied'>('idle');
+  const [pushFeedback, setPushFeedback] = useState('');
+
+  // Announcement composer state (Principal only)
+  const isPrincipal = currentUser.role === 'Principal';
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [priority, setPriority] = useState<'normal' | 'high' | 'urgent'>('normal');
+  const [audience, setAudience] = useState<string>('all');
+  const [sendingBroadcast, setSendingBroadcast] = useState(false);
+  const [broadcastFeedback, setBroadcastFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  // Load announcements from server
+  const loadAnnouncements = async () => {
+    try {
+      setLoadingAnnouncements(true);
+      const res = await api.announcements.list();
+      if (res.announcements) setAnnouncements(res.announcements);
+    } catch (err: any) {
+      console.error('Failed to load announcements:', err);
+    } finally {
+      setLoadingAnnouncements(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAnnouncements();
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setPushStatus('unsupported');
+    } else if (Notification.permission === 'granted') {
+      setPushStatus('subscribed');
+    } else if (Notification.permission === 'denied') {
+      setPushStatus('denied');
+    }
+  }, []);
+
+  // Web Push Subscription flow
+  const handleEnablePush = async () => {
+    try {
+      setPushFeedback('Requesting notification permission...');
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setPushStatus('denied');
+        setPushFeedback('Notification permission denied by browser.');
+        return;
+      }
+
+      setPushFeedback('Registering service worker and fetching VAPID keys...');
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+
+      const { publicKey } = await api.push.getVapidKey();
+      if (!publicKey) throw new Error('VAPID public key unavailable from server.');
+
+      const padding = '='.repeat((4 - (publicKey.length % 4)) % 4);
+      const base64 = (publicKey + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: outputArray,
+      });
+
+      await api.push.subscribe(sub.toJSON());
+      setPushStatus('subscribed');
+      setPushFeedback('Push notifications activated successfully! You will receive institutional alerts.');
+    } catch (err: any) {
+      console.error('Push error:', err);
+      setPushFeedback(`Push subscription error: ${err.message}`);
+    }
+  };
+
+  // Submit broadcast announcement (Principal only)
+  const handleSendBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !body.trim()) {
+      setBroadcastFeedback({ type: 'error', msg: 'Title and message body are required.' });
+      return;
+    }
+
+    try {
+      setSendingBroadcast(true);
+      setBroadcastFeedback(null);
+      const res = await api.announcements.create({
+        title: title.trim(),
+        body: body.trim(),
+        priority,
+        audience_dept: audience === 'all' ? null : audience,
+      });
+
+      setBroadcastFeedback({
+        type: 'success',
+        msg: `Broadcast sent! Dispatched to ${res.recipientsCount} faculty accounts via Email, Push, and In-App Bell.`,
+      });
+      setTitle('');
+      setBody('');
+      setPriority('normal');
+      setAudience('all');
+      await loadAnnouncements();
+    } catch (err: any) {
+      setBroadcastFeedback({ type: 'error', msg: err.message || 'Failed to dispatch broadcast.' });
+    } finally {
+      setSendingBroadcast(false);
+    }
+  };
+
   const mine = notifications.filter((n) => n.userId === currentUser.id);
+
   return (
-    <div className="space-y-4 max-w-3xl">
-      <div className="flex items-center gap-2">
-        <div><p className="text-xs text-slate-500">Inbox</p><h1 className="text-2xl font-bold">Notifications ({mine.filter((n) => !n.read).length} unread)</h1></div>
-        <div className="flex-1" />
-        <button onClick={() => saveNotifications(notifications.map((n) => n.userId === currentUser.id ? { ...n, read: true } : n))} className={btnGhost}>Mark all read</button>
+    <div className="space-y-6 max-w-4xl animate-fade-in">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-primary">Communications & Alerts</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mt-0.5">Announcements & Notification Hub</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+            Real-time institutional broadcasts dispatched via Email, Browser Web Push, and In-App Bell.
+          </p>
+        </div>
+
+        <div>
+          {pushStatus === 'subscribed' ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <CheckCircle2 size={14} className="text-emerald-600" /> Web Push Active
+            </span>
+          ) : (
+            <button
+              onClick={handleEnablePush}
+              disabled={pushStatus === 'unsupported'}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card text-xs font-semibold bg-primary text-white hover:bg-primary-dark transition-colors shadow-xs"
+            >
+              <Bell size={14} /> Enable Browser Push Notifications
+            </button>
+          )}
+        </div>
       </div>
-      {mine.length === 0 && <EmptyState title="No notifications" hint="Status changes, assignments, and reminders will appear here." />}
-      <div className="space-y-2">
-        {mine.map((n) => (
-          <div key={n.id} className={`bg-white border rounded-card p-4 text-sm ${n.read ? 'border-gray-200' : 'border-primary-border'}`}>
-            <p className="font-semibold">{n.title} <span className="text-xs font-normal text-slate-400">{n.createdAt}</span></p>
-            <p className="text-slate-600 mt-0.5">{n.body}</p>
-            <div className="mt-2 flex gap-2">
-              {n.link && <Link to={n.link} className="text-primary font-semibold text-xs">Open linked item</Link>}
-              {!n.read && <button onClick={() => saveNotifications(notifications.map((x) => x.id === n.id ? { ...x, read: true } : x))} className="text-xs text-slate-500 underline">Mark read</button>}
+
+      {pushFeedback && (
+        <div className="p-3 bg-slate-50 border border-slate-200 text-xs text-slate-700 rounded-card flex items-center justify-between">
+          <span>{pushFeedback}</span>
+          <button onClick={() => setPushFeedback('')} className="text-slate-400 hover:text-slate-600 font-bold ml-2">×</button>
+        </div>
+      )}
+
+      {/* 1. PRINCIPAL BROADCAST COMPOSER */}
+      {isPrincipal && (
+        <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
+          <div className="flex items-center gap-2 pb-3 border-b border-gray-100">
+            <span className="w-8 h-8 rounded-lg bg-primary-pale text-primary flex items-center justify-center">
+              <Send size={16} />
+            </span>
+            <div>
+              <h2 className="font-bold text-slate-900 text-base">New Institutional Broadcast (Principal Only)</h2>
+              <p className="text-xs text-slate-500">Delivered immediately via Email, Web Push, and In-App Notifications.</p>
             </div>
           </div>
-        ))}
+
+          {broadcastFeedback && (
+            <div className={`p-3.5 rounded-card text-xs font-medium flex items-center gap-2 ${
+              broadcastFeedback.type === 'success'
+                ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                : 'bg-rose-50 border border-rose-200 text-rose-800'
+            }`}>
+              {broadcastFeedback.type === 'success' ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <AlertCircle size={16} className="text-rose-600 shrink-0" />}
+              <span>{broadcastFeedback.msg}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSendBroadcast} className="space-y-4">
+            <div className="grid sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2">
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Announcement Title *</label>
+                <input
+                  required
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Urgent Faculty Meeting Regarding NAAC Documentation"
+                  className={inputCls}
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Priority</label>
+                <select
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value as any)}
+                  className={inputCls}
+                >
+                  <option value="normal">Normal</option>
+                  <option value="high">High Priority</option>
+                  <option value="urgent">Urgent / Immediate</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Target Audience</label>
+              <select
+                value={audience}
+                onChange={(e) => setAudience(e.target.value)}
+                className={inputCls}
+              >
+                <option value="all">All Faculty & Staff (Institution-wide)</option>
+                {options.departments.map((d) => (
+                  <option key={d} value={d}>Department of {d} Only</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Message Body *</label>
+              <textarea
+                required
+                rows={4}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Write the full institutional message or directive here..."
+                className={inputCls}
+              />
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="submit"
+                disabled={sendingBroadcast}
+                className={`${btnPrimary} !px-5`}
+              >
+                {sendingBroadcast ? (
+                  <span className="flex items-center gap-1.5">
+                    <RefreshCw size={14} className="animate-spin" /> Dispatching Broadcast...
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <Send size={14} /> Send Broadcast to Faculty
+                  </span>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* 2. RECENT BROADCASTS & DELIVERY REPORTS */}
+      <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+          <div>
+            <h2 className="font-bold text-slate-900 text-base">Broadcast Announcements History</h2>
+            <p className="text-xs text-slate-500">Official directives and circulars published to faculty.</p>
+          </div>
+          <button onClick={loadAnnouncements} className="text-xs font-semibold text-primary hover:underline flex items-center gap-1">
+            <RefreshCw size={12} className={loadingAnnouncements ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
+
+        <div className="divide-y divide-gray-100">
+          {announcements.map((a) => (
+            <div key={a.id} className="py-4 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                    a.priority === 'urgent' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
+                    a.priority === 'high' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                    'bg-slate-100 text-slate-700 border border-slate-300'
+                  }`}>
+                    {a.priority}
+                  </span>
+                  <h3 className="font-bold text-slate-900 text-sm">{a.title}</h3>
+                </div>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  {String(a.created_at || '').slice(0, 16).replace('T', ' ')}
+                </span>
+              </div>
+
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">{a.body}</p>
+
+              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 pt-1">
+                <span>By: <b className="text-slate-700">{a.creator_name || 'Principal Office'}</b></span>
+                <span>Audience: <b className="text-slate-700">{a.target_department ? `Dept of ${a.target_department}` : 'All Faculty'}</b></span>
+
+                {isPrincipal && (
+                  <span className="ml-auto inline-flex items-center gap-2 text-[11px] bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md">
+                    <span>Delivered: <b>{a.receipts_count ?? 1}</b></span>
+                    <span>Read: <b className="text-emerald-700">{a.read_count ?? 1}</b></span>
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {announcements.length === 0 && !loadingAnnouncements && (
+            <EmptyState title="No broadcasts published" hint="Institutional broadcasts sent by the Principal will appear here." />
+          )}
+        </div>
+      </div>
+
+      {/* 3. IN-APP NOTIFICATIONS INBOX */}
+      <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+          <div>
+            <h2 className="font-bold text-slate-900 text-base">
+              Personal Notifications ({mine.filter((n) => !n.read).length} Unread)
+            </h2>
+            <p className="text-xs text-slate-500">Status updates, assigned tasks, and review queries.</p>
+          </div>
+          <button
+            onClick={() => saveNotifications(notifications.map((n) => n.userId === currentUser.id ? { ...n, read: true } : n))}
+            className={btnGhost}
+          >
+            Mark all read
+          </button>
+        </div>
+
+        {mine.length === 0 && (
+          <EmptyState title="No notifications" hint="Status changes, assignments, and reminders will appear here." />
+        )}
+
+        <div className="space-y-2">
+          {mine.map((n) => (
+            <div
+              key={n.id}
+              className={`border rounded-card p-4 text-sm transition-all ${
+                n.read ? 'border-gray-200 bg-white' : 'border-primary-border bg-primary-pale/20'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-semibold text-slate-900">{n.title}</p>
+                <span className="text-[11px] text-slate-400 font-mono shrink-0">{n.createdAt}</span>
+              </div>
+              <p className="text-slate-600 mt-1 text-xs sm:text-sm">{n.body}</p>
+              <div className="mt-2.5 flex items-center gap-3">
+                {n.link && (
+                  <Link to={n.link} className="text-primary font-semibold text-xs hover:underline">
+                    Open linked item →
+                  </Link>
+                )}
+                {!n.read && (
+                  <button
+                    onClick={() => saveNotifications(notifications.map((x) => x.id === n.id ? { ...x, read: true } : x))}
+                    className="text-xs text-slate-500 hover:text-slate-800 underline"
+                  >
+                    Mark as read
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -568,6 +931,8 @@ export function SettingsPage() {
   const [leadershipFeedback, setLeadershipFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [staffRoleFilter, setStaffRoleFilter] = useState<'All' | 'Principal' | 'Dean' | 'HOD' | 'Faculty'>('All');
   const [staffSearchQuery, setStaffSearchQuery] = useState('');
+  const [editingStaff, setEditingStaff] = useState<User | null>(null);
+  const [dbSubTab, setDbSubTab] = useState<'tables' | 'sql' | 'mitigation' | 'guide'>('tables');
   const [purgeFeedback, setPurgeFeedback] = useState('');
   const [copiedEnv, setCopiedEnv] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -584,8 +949,8 @@ export function SettingsPage() {
       list = list.filter((u) =>
         u.name.toLowerCase().includes(q) ||
         u.email.toLowerCase().includes(q) ||
-        u.department.toLowerCase().includes(q) ||
-        u.designation.toLowerCase().includes(q)
+        (u.department || '').toLowerCase().includes(q) ||
+        (u.designation || '').toLowerCase().includes(q)
       );
     }
     return list;
@@ -595,14 +960,14 @@ export function SettingsPage() {
     saveOptions({ ...options, [key]: val.split(',').map((s) => s.trim()).filter(Boolean) });
   };
 
-  const handleAppointLeadership = (e: React.FormEvent) => {
+  const handleAppointLeadership = async (e: React.FormEvent) => {
     e.preventDefault();
     setLeadershipFeedback(null);
     if (!leadershipForm.name.trim() || !leadershipForm.email.trim()) {
       setLeadershipFeedback({ type: 'error', msg: 'Full name and institutional email are required.' });
       return;
     }
-    const err = addLeadership({
+    const err = await addLeadership({
       name: leadershipForm.name.trim(),
       email: leadershipForm.email.trim(),
       password: leadershipForm.password || 'password123',
@@ -722,11 +1087,12 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
             badge: pendingFaculty.length > 0 ? `${pendingFaculty.length} Pending` : null,
             icon: <Crown size={15} />,
           },
-          { id: 'database', label: 'Database & Backend', icon: <Database size={15} /> },
+          { id: 'database', label: 'Database & SQL', icon: <Database size={15} /> },
+          { id: 'options', label: 'Academic Options', icon: null },
+          { id: 'smtp', label: 'Email & SMTP', icon: <Mail size={15} /> },
           { id: 'profile', label: 'My Profile', icon: <UserIcon size={15} /> },
           { id: 'auth', label: 'Role Permissions', icon: <Shield size={15} /> },
           { id: 'letterhead', label: 'College Letterhead', icon: null },
-          { id: 'options', label: 'Academic Options', icon: null },
           { id: 'audit', label: `Audit Log (${audit.length})`, icon: null },
         ].map((t) => (
           <button
@@ -1058,6 +1424,15 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {isPrincipal && (
+                        <button
+                          onClick={() => setEditingStaff(u)}
+                          className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 transition-colors flex items-center gap-1"
+                          title="Edit staff profile"
+                        >
+                          <Edit2 size={12} /> Edit
+                        </button>
+                      )}
                       {isPrincipal && u.role !== 'Principal' && !isMe && (
                         <button
                           onClick={() => handleRemoveUser(u)}
@@ -1073,205 +1448,181 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
               })}
             </div>
           </div>
+
+          {editingStaff && (
+            <EditStaffModal
+              user={editingStaff}
+              onClose={() => setEditingStaff(null)}
+              onSaved={handleRefresh}
+            />
+          )}
         </div>
       )}
 
       {/* 1. DATABASE & BACKEND TAB */}
       {currentTab === 'database' && (
         <div className="space-y-6 animate-fade-in">
-          {/* Active Backend Status Banner */}
-          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-gray-100">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className={`w-3 h-3 rounded-full ${backend === 'supabase' ? (syncState === 'live' ? 'bg-emerald-500 animate-pulse-dot' : 'bg-amber-500') : 'bg-primary'}`} />
-                  <span className="font-bold text-base sm:text-lg text-slate-900">
-                    Active Storage: {backend === 'supabase' ? 'Supabase PostgreSQL (Cloud Database)' : 'Local Browser Storage (HTML5 LocalStorage)'}
+          {/* Sub-tab navigation */}
+          <div className="flex gap-2 border-b border-gray-200 pb-2 overflow-x-auto scrollbar-thin">
+            <button
+              onClick={() => setDbSubTab('tables')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                dbSubTab === 'tables' ? 'bg-primary text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              1. Cloud Table Editor
+            </button>
+            <button
+              onClick={() => setDbSubTab('sql')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                dbSubTab === 'sql' ? 'bg-primary text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              2. Interactive SQL Console
+            </button>
+            <button
+              onClick={() => setDbSubTab('mitigation')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                dbSubTab === 'mitigation' ? 'bg-primary text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              3. Local Mitigation & Repair Tools
+            </button>
+            <button
+              onClick={() => setDbSubTab('guide')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                dbSubTab === 'guide' ? 'bg-primary text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              4. Overview & Credentials
+            </button>
+          </div>
+
+          {dbSubTab === 'tables' && <CloudTableEditorPanel />}
+          {dbSubTab === 'sql' && <SqlEditorPanel />}
+          {dbSubTab === 'mitigation' && <MitigationToolsPanel />}
+
+          {dbSubTab === 'guide' && (
+            <div className="space-y-6">
+              {/* Active Backend Status Banner */}
+              <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-gray-100">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse-dot" />
+                      <span className="font-bold text-base sm:text-lg text-slate-900">
+                        Active Storage: Supabase PostgreSQL (Production Database)
+                      </span>
+                    </div>
+                    <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                      Live connection pooler active at aws-0-ap-southeast-2.pooler.supabase.com:5432. All secrets protected server-side.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleRefresh}
+                      disabled={refreshing}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card text-xs font-semibold bg-primary-pale text-primary border border-primary-border hover:bg-primary-light transition-colors"
+                    >
+                      <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+                      {refreshing ? 'Syncing...' : 'Sync Now'}
+                    </button>
+                    <a
+                      href="https://supabase.com/dashboard"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs transition-colors"
+                    >
+                      <ExternalLink size={14} /> Supabase Console
+                    </a>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid md:grid-cols-3 gap-4">
+                  <div className="bg-slate-50 border border-slate-200 rounded-card p-4">
+                    <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm">
+                      <Server size={16} className="text-primary" />
+                      <span>1. Cloud Table Editor</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                      Use the built-in <b>Table Editor</b> above to view, filter, sort, and export records with UTF-8 BOM CSV format.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 rounded-card p-4">
+                    <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm">
+                      <Database size={16} className="text-primary" />
+                      <span>2. SQL Console</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                      Execute parameterized SELECT and admin queries with read-only safety guardrails and destructive confirmation prompts.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 rounded-card p-4">
+                    <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm">
+                      <Shield size={16} className="text-primary" />
+                      <span>3. Migrations</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                      Tracked in <code>supabase/migrations/</code>. Applied automatically through verified migration runners.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Database Tables Overview */}
+              <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
+                <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+                  <div>
+                    <h2 className="font-bold text-slate-900 text-base">Production Database Schema</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">Tables created in public schema of your database</p>
+                  </div>
+                  <span className="text-xs font-semibold bg-primary-pale text-primary border border-primary-border px-2.5 py-1 rounded-full">
+                    {tables.length} Tables
                   </span>
                 </div>
-                <p className="text-xs sm:text-sm text-slate-500 mt-1">
-                  {backend === 'supabase'
-                    ? `Live Realtime synchronization active. Last synced at: ${lastSyncedAt ?? 'Initial sync'}.`
-                    : 'Currently storing all proposals, tasks, and users in your browser storage. Connect Supabase to enable cloud persistence across devices.'}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {backend === 'supabase' && (
-                  <button
-                    onClick={handleRefresh}
-                    disabled={refreshing}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card text-xs font-semibold bg-primary-pale text-primary border border-primary-border hover:bg-primary-light transition-colors"
-                  >
-                    <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-                    {refreshing ? 'Syncing...' : 'Sync Now'}
-                  </button>
-                )}
-                <a
-                  href="https://supabase.com/dashboard"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs transition-colors"
-                >
-                  <ExternalLink size={14} /> Open Supabase Console
-                </a>
-              </div>
-            </div>
-
-            {/* Where to access the database */}
-            <div className="mt-5 grid md:grid-cols-3 gap-4">
-              <div className="bg-slate-50 border border-slate-200 rounded-card p-4">
-                <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm">
-                  <Server size={16} className="text-primary" />
-                  <span>1. Cloud Table Editor</span>
+                <div className="mt-4 overflow-x-auto scrollbar-thin">
+                  <table className="w-full text-left text-xs sm:text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-slate-50/70 text-slate-600">
+                        <th className="py-2.5 px-3 font-semibold">Table Name</th>
+                        <th className="py-2.5 px-3 font-semibold">Description</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-slate-700">
+                      {tables.map((t) => (
+                        <tr key={t.name} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-2.5 px-3 font-mono font-medium text-primary-dark">{t.name}</td>
+                          <td className="py-2.5 px-3 text-slate-500">{t.desc}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                  Go to <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer" className="text-primary underline font-medium">Supabase Dashboard</a> &rarr; <b>Table Editor</b> to directly view, filter, insert, or edit rows in any table.
-                </p>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-200 rounded-card p-4">
-                <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm">
-                  <Database size={16} className="text-primary" />
-                  <span>2. SQL Editor / Direct DB</span>
-                </div>
-                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                  Connect via <b>pgAdmin</b>, <b>DBeaver</b>, or <b>psql</b> using the Postgres connection string in your <code>DATABASE_URL</code> (Port 5432).
-                </p>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-200 rounded-card p-4">
-                <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm">
-                  <Shield size={16} className="text-primary" />
-                  <span>3. Local Migrations</span>
-                </div>
-                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                  SQL migrations live in <code>supabase/migrations/</code>. Run <code>npm run db:migrate</code> to apply changes or add tables anytime.
-                </p>
               </div>
             </div>
-          </div>
-
-          {/* Database Tables Overview */}
-          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
-            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
-              <div>
-                <h2 className="font-bold text-slate-900 text-base">PostgreSQL Database Schema & Tables</h2>
-                <p className="text-xs text-slate-500 mt-0.5">Tables created in public schema of your database</p>
-              </div>
-              <span className="text-xs font-semibold bg-primary-pale text-primary border border-primary-border px-2.5 py-1 rounded-full">
-                10 Tables
-              </span>
-            </div>
-
-            <div className="mt-4 overflow-x-auto scrollbar-thin">
-              <table className="w-full text-left text-xs sm:text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-slate-50/70 text-slate-600">
-                    <th className="py-2.5 px-3 font-semibold">Table Name</th>
-                    <th className="py-2.5 px-3 font-semibold">Current Count</th>
-                    <th className="py-2.5 px-3 font-semibold">Description</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 text-slate-700">
-                  {tables.map((t) => (
-                    <tr key={t.name} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-2.5 px-3 font-mono font-medium text-primary-dark">{t.name}</td>
-                      <td className="py-2.5 px-3 font-semibold text-slate-900">{t.count}</td>
-                      <td className="py-2.5 px-3 text-slate-500">{t.desc}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Configuration Guide */}
-          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-bold text-slate-900 text-base">Environment Configuration (.env)</h2>
-                <p className="text-xs text-slate-500">Configure these keys to connect Docworm directly to your Supabase instance.</p>
-              </div>
-              <button
-                onClick={copyEnv}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-card text-xs font-semibold border border-gray-300 hover:bg-slate-50 text-slate-700 transition-colors"
-              >
-                {copiedEnv ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
-                {copiedEnv ? 'Copied' : 'Copy Sample .env'}
-              </button>
-            </div>
-            <pre className="p-4 bg-slate-900 text-slate-100 rounded-card text-xs font-mono overflow-x-auto">
-              {sampleEnvText}
-            </pre>
-          </div>
+          )}
         </div>
       )}
 
       {/* 2. PROFILE TAB */}
       {currentTab === 'profile' && (
-        <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-5 animate-fade-in">
-          <div>
-            <h2 className="font-bold text-slate-900 text-base">Logged-in Staff Profile</h2>
-            <p className="text-xs text-slate-500">Your institutional credentials and current authorization role.</p>
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="border border-gray-200 rounded-card p-4 bg-slate-50">
-              <span className="text-xs text-slate-500 block">Full Name</span>
-              <span className="text-base font-semibold text-slate-900 block mt-0.5">{currentUser.name}</span>
-            </div>
-            <div className="border border-gray-200 rounded-card p-4 bg-slate-50">
-              <span className="text-xs text-slate-500 block">Institutional Email</span>
-              <span className="text-base font-semibold text-slate-900 block mt-0.5">{currentUser.email || 'None registered'}</span>
-            </div>
-            <div className="border border-gray-200 rounded-card p-4 bg-slate-50">
-              <span className="text-xs text-slate-500 block">Authorization Role</span>
-              <span className="text-base font-semibold text-primary block mt-0.5">{currentUser.role}</span>
-            </div>
-            <div className="border border-gray-200 rounded-card p-4 bg-slate-50">
-              <span className="text-xs text-slate-500 block">Department</span>
-              <span className="text-base font-semibold text-slate-900 block mt-0.5">{currentUser.department}</span>
-            </div>
-            <div className="border border-gray-200 rounded-card p-4 bg-slate-50">
-              <span className="text-xs text-slate-500 block">Designation</span>
-              <span className="text-base font-semibold text-slate-900 block mt-0.5">{currentUser.designation || currentUser.role}</span>
-            </div>
-            <div className="border border-gray-200 rounded-card p-4 bg-slate-50">
-              <span className="text-xs text-slate-500 block">Contact Phone</span>
-              <span className="text-base font-semibold text-slate-900 block mt-0.5">{currentUser.phone || 'Not specified'}</span>
-            </div>
-          </div>
-
+        <div className="space-y-6 animate-fade-in">
+          <UserProfilePanel currentUser={currentUser} onUpdate={handleRefresh} />
         </div>
       )}
 
       {/* 3. OPTIONS TAB */}
       {currentTab === 'options' && (
-        <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4 animate-fade-in">
-          <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-            <div>
-              <h2 className="font-bold text-slate-900 text-base">Academic & Proposal Dropdown Lists</h2>
-              <p className="text-xs text-slate-500">Comma-separated entries. Changes apply across all forms immediately.</p>
-            </div>
-            {!isAdmin && (
-              <span className="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full font-medium">
-                <Lock size={12} /> Admin Managed
-              </span>
-            )}
-          </div>
+        <div className="space-y-6 animate-fade-in">
+          <AcademicOptionsPanel />
+        </div>
+      )}
 
-          {(['departments', 'eventCategories', 'organizingBodies', 'taskTypes', 'budgetHeads', 'resourceTypes', 'academicYears'] as const).map((k) => (
-            <Field key={k} label={k.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase())}>
-              <textarea
-                value={(options[k] as string[]).join(', ')}
-                onChange={(e) => isAdmin && editList(k, e.target.value)}
-                disabled={!isAdmin}
-                className={`${inputCls} ${!isAdmin ? 'bg-slate-50 text-slate-600 cursor-not-allowed' : ''}`}
-                rows={2}
-              />
-            </Field>
-          ))}
+      {/* 4. SMTP SETTINGS TAB */}
+      {currentTab === 'smtp' && (
+        <div className="space-y-6 animate-fade-in">
+          <SmtpSettingsPanel />
         </div>
       )}
 

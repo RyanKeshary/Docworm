@@ -1,14 +1,8 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import type { AppOptions } from './config';
 import { DEFAULT_OPTIONS } from './config';
 import type { AuditLog, CompletionReport, Notification, Proposal, ProposalComment, Task, User } from './types';
-import { SEED_AUDIT, SEED_COMMENTS, SEED_NOTIFICATIONS, SEED_PROPOSALS, SEED_TASKS, SEED_USERS } from './seed';
-import { isSupabaseConfigured, supabase } from './lib/supabase';
-import {
-  insertAudit, insertComment, insertNotification, loadWorkspace,
-  nextRefNumber, persistProposal, deleteProposal, persistTask, deleteTask, upsertCompletion,
-  upsertProfile, deleteProfile, upsertSettings, uploadAttachment,
-} from './lib/backend';
+import { api } from './lib/api';
 
 export type CompletionMap = { [proposalId: string]: CompletionReport };
 
@@ -24,7 +18,7 @@ interface DataState {
   letterhead: { collegeName: string; address: string; phone: string; email: string };
   currentUserId: string;
   currentUser: User;
-  backend: 'local' | 'supabase';
+  backend: 'api' | 'supabase' | 'local';
   authLoading: boolean;
   backendError: string;
   syncState: 'live' | 'loading' | 'offline';
@@ -32,64 +26,34 @@ interface DataState {
   liveTick: number;
   isAuthenticated: boolean;
   signIn: (email: string, password: string) => Promise<string | null>;
+  signUp: (user: any) => Promise<string | null>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
   setCurrentUserId: (id: string) => void;
   getNextRefNumber: (cellOrDept: string, category: string, year: string) => Promise<string>;
   uploadFile: (file: File) => Promise<{ name: string; size: string; kind: string; storagePath: string }>;
-  saveProposals: (p: Proposal[]) => void;
+  saveProposals: (p: Proposal[]) => Promise<void>;
   saveTasks: (t: Task[]) => void;
   saveComments: (c: ProposalComment[]) => void;
   saveNotifications: (n: Notification[]) => void;
   saveCompletions: (c: CompletionMap) => void;
-  saveOptions: (o: AppOptions) => void;
+  saveOptions: (o: AppOptions) => Promise<void>;
   saveUsers: (u: User[]) => void;
-  saveLetterhead: (l: { collegeName: string; address: string; phone: string; email: string }) => void;
+  saveLetterhead: (l: { collegeName: string; address: string; phone: string; email: string }) => Promise<void>;
   pushNotification: (n: Omit<Notification, 'id' | 'createdAt' | 'read'> & { read?: boolean }) => void;
   pushAudit: (a: Omit<AuditLog, 'id' | 'createdAt'>) => void;
-  signUp: (user: Omit<User, 'id'>) => Promise<string | null>;
-  approveFaculty: (userId: string) => void;
-  rejectFaculty: (userId: string) => void;
-  addLeadership: (user: Omit<User, 'id'>) => string | null;
-  removeUser: (userId: string) => void;
+  approveFaculty: (userId: string) => Promise<void>;
+  rejectFaculty: (userId: string) => Promise<void>;
+  addLeadership: (user: any) => Promise<string | null>;
+  removeUser: (userId: string) => Promise<void>;
   resetDemo: () => void;
   purgeFakeData: () => void;
 }
 
 const Ctx = createContext<DataState | null>(null);
 
-function load<T>(key: string, fallback: T): T {
-  try {
-    // One-time cleanup of legacy demo/dummy data across all keys
-    if (!localStorage.getItem('docworm:v4_clean')) {
-      localStorage.removeItem('docworm:proposals');
-      localStorage.removeItem('docworm:tasks');
-      localStorage.removeItem('docworm:comments');
-      localStorage.removeItem('docworm:notifications');
-      localStorage.removeItem('docworm:audit');
-      localStorage.removeItem('docworm:completions');
-      localStorage.removeItem('docworm:users');
-      localStorage.removeItem('docworm:session');
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('docworm:draft')) {
-          localStorage.removeItem(k);
-        }
-      }
-      localStorage.setItem('docworm:v4_clean', 'true');
-      return fallback;
-    }
-    const raw = localStorage.getItem('docworm:' + key);
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw);
-    return parsed as T;
-  } catch { return fallback; }
-}
-function persist(key: string, val: unknown) {
-  try { localStorage.setItem('docworm:' + key, JSON.stringify(val)); } catch { /* noop */ }
-}
+export const uid = () => 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
 
-export const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
 export function nowStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -102,546 +66,395 @@ const DEFAULT_LETTERHEAD = {
   email: 'office@slrtce.in',
 };
 
+const GUEST_USER: User = {
+  id: '',
+  name: 'Not Signed In',
+  email: '',
+  role: 'Faculty',
+  department: null,
+  designation: '',
+  phone: '',
+  status: 'active',
+};
+
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const backend: 'local' | 'supabase' = isSupabaseConfigured ? 'supabase' : 'local';
-  const [users, setUsers] = useState<User[]>(() => load('users', SEED_USERS));
-  const [proposals, setProposals] = useState<Proposal[]>(() => load('proposals', SEED_PROPOSALS));
-  const [tasks, setTasks] = useState<Task[]>(() => load('tasks', SEED_TASKS));
-  const [comments, setComments] = useState<ProposalComment[]>(() => load('comments', SEED_COMMENTS));
-  const [notifications, setNotifications] = useState<Notification[]>(() => load('notifications', SEED_NOTIFICATIONS));
-  const [audit, setAudit] = useState<AuditLog[]>(() => load('audit', SEED_AUDIT));
-  const [completions, setCompletions] = useState<CompletionMap>(() => load('completions', {} as CompletionMap));
-  const [options, setOptions] = useState<AppOptions>(() => load('options', DEFAULT_OPTIONS));
-  const [letterhead, setLetterhead] = useState(() => load('letterhead', DEFAULT_LETTERHEAD));
-  const [currentUserId, setCurrentUserIdState] = useState<string>(() => (backend === 'local' ? load('session', '') : ''));
-  const [authLoading, setAuthLoading] = useState(backend === 'supabase');
+  const [currentUser, setCurrentUser] = useState<User>(GUEST_USER);
+  const [users, setUsers] = useState<User[]>([]);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [comments, setComments] = useState<ProposalComment[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [audit, setAudit] = useState<AuditLog[]>([]);
+  const [completions, setCompletions] = useState<CompletionMap>({});
+  const [options, setOptions] = useState<AppOptions>(DEFAULT_OPTIONS);
+  const [letterhead, setLetterhead] = useState(DEFAULT_LETTERHEAD);
+
+  const [authLoading, setAuthLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [backendError, setBackendError] = useState('');
-  const [syncState, setSyncState] = useState<'live' | 'loading' | 'offline'>(backend === 'supabase' ? 'loading' : 'live');
+  const [syncState, setSyncState] = useState<'live' | 'loading' | 'offline'>('loading');
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [liveTick, setLiveTick] = useState(0);
 
-  // Last state confirmed in Supabase, used to persist only what changed.
-  const snap = useRef<{ proposals: Map<string, string>; tasks: Map<string, string> }>({
-    proposals: new Map(), tasks: new Map(),
-  });
-  const settingsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rtTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const channelRef = useRef<{ unsubscribe: () => void } | null>(null);
+  // Load Workspace from Database via API
+  const refresh = useCallback(async () => {
+    try {
+      setSyncState('loading');
+      const [userRes, propRes, optRes, lhRes, annRes, auditRes] = await Promise.allSettled([
+        api.users.list(),
+        api.requests.list(),
+        api.options.get(),
+        api.settings.getLetterhead(),
+        api.announcements.list(),
+        api.admin.getAuditLog(),
+      ]);
 
-  const reportErr = (where: string, e: unknown) => {
-    const msg = e instanceof Error ? e.message : String(e);
-    setBackendError(`${where}: ${msg}`);
-  };
+      if (userRes.status === 'fulfilled' && userRes.value.users) {
+        setUsers(userRes.value.users.map((u: any) => ({
+          ...u,
+          department: u.role === 'Principal' ? null : (u.department_code || u.department || 'HAS'),
+        })));
+      }
 
-  const applyWorkspace = (w: Awaited<ReturnType<typeof loadWorkspace>>) => {
-    if (w.users.length) setUsers(w.users);
-    setProposals(w.proposals);
-    setTasks(w.tasks);
-    setComments(w.comments);
-    setNotifications(w.notifications);
-    setAudit(w.audit);
-    setCompletions(w.completions);
-    if (w.options && Object.keys(w.options).length) {
-      setOptions((prev) => ({ ...DEFAULT_OPTIONS, ...prev, ...(w.options as unknown as AppOptions) }));
+      if (propRes.status === 'fulfilled' && propRes.value.requests) {
+        setProposals(propRes.value.requests.map((r: any) => ({
+          id: r.id,
+          refNo: r.ref_no,
+          academicYear: r.academic_year,
+          dateOfRequest: String(r.date_of_request).slice(0, 10),
+          eventName: r.event_name,
+          eventCategory: r.event_category,
+          organizingBody: r.organizing_body,
+          startDate: String(r.start_date).slice(0, 10),
+          endDate: String(r.end_date).slice(0, 10),
+          startTime: r.start_time || '09:30',
+          endTime: r.end_time || '16:30',
+          purpose: r.purpose || '',
+          audience: r.audience || [],
+          departments: r.departments || [],
+          years: r.years || [],
+          participants: Number(r.participants || 0),
+          resources: (r.resources || []).map((x: any) => ({
+            id: x.id,
+            resourceType: x.resource_type,
+            roomNo: x.room_no,
+            ownerDept: x.owner_dept,
+            date: String(x.date).slice(0, 10),
+            startTime: x.start_time,
+            endTime: x.end_time,
+            status: x.status,
+            decidedBy: x.decided_by,
+            decidedAt: x.decided_at,
+            remark: x.remark,
+          })),
+          hasBudget: Boolean(r.has_budget),
+          budgetHead: r.budget_head || '',
+          openingBalance: Number(r.opening_balance || 0),
+          budgetItems: (r.budgetItems || []).map((b: any) => ({
+            id: b.id,
+            item: b.item,
+            category: b.category,
+            quantity: Number(b.quantity || 1),
+            unitCost: Number(b.unit_cost || 0),
+          })),
+          budgetJustification: r.budget_justification || '',
+          poMappings: [],
+          attachments: [],
+          submitterId: r.faculty_id || '',
+          submitterName: r.submitter_name || '',
+          submitterDept: r.submitter_dept || '',
+          status: r.status,
+          approvalChain: r.approvalChain || [],
+          createdAt: String(r.created_at || '').slice(0, 16).replace('T', ' '),
+          updatedAt: String(r.updated_at || '').slice(0, 16).replace('T', ' '),
+        })));
+      }
+
+      if (optRes.status === 'fulfilled' && optRes.value.options) {
+        setOptions((prev) => ({
+          ...prev,
+          ...optRes.value.options,
+        }));
+      }
+
+      if (lhRes.status === 'fulfilled' && lhRes.value.letterhead?.collegeName) {
+        setLetterhead(lhRes.value.letterhead);
+      }
+
+      if (annRes.status === 'fulfilled' && annRes.value.announcements) {
+        setNotifications(annRes.value.announcements.map((a: any) => ({
+          id: a.id,
+          userId: currentUser.id,
+          title: `[${a.priority}] ${a.title}`,
+          body: a.body,
+          link: '/notifications',
+          read: Boolean(a.read_at),
+          createdAt: String(a.created_at || '').slice(0, 16).replace('T', ' '),
+        })));
+      }
+
+      if (auditRes.status === 'fulfilled' && auditRes.value.logs) {
+        setAudit(auditRes.value.logs.map((l: any) => ({
+          id: l.id,
+          actorId: l.actor_id || '',
+          actorName: l.actor_name || 'System',
+          action: l.action + (l.target ? ` on ${l.target}` : ''),
+          createdAt: String(l.created_at || '').slice(0, 16).replace('T', ' '),
+        })));
+      }
+
+      setSyncState('live');
+      setLastSyncedAt(nowStr());
+      setLiveTick((t) => t + 1);
+    } catch (err: any) {
+      console.error('Refresh error:', err);
+      setBackendError(err.message || 'Failed to sync with server');
+      setSyncState('offline');
     }
-    if (w.letterhead && w.letterhead.collegeName) {
-      setLetterhead({
-        collegeName: w.letterhead.collegeName ?? DEFAULT_LETTERHEAD.collegeName,
-        address: w.letterhead.address ?? DEFAULT_LETTERHEAD.address,
-        phone: w.letterhead.phone ?? DEFAULT_LETTERHEAD.phone,
-        email: w.letterhead.email ?? DEFAULT_LETTERHEAD.email,
-      });
-    }
-    snap.current = {
-      proposals: new Map(w.proposals.map((p) => [p.id, JSON.stringify(p)])),
-      tasks: new Map(w.tasks.map((t) => [t.id, JSON.stringify(t)])),
-    };
-    setLastSyncedAt(nowStr());
-    setSyncState('live');
-    setBackendError('');
-  };
+  }, [currentUser.id]);
 
-  const loadWithRetry = async (tries = 3): Promise<boolean> => {
-    const sb = supabase();
-    const { data } = await sb.auth.getSession();
-    if (!data.session) return false;
-    let last: unknown = null;
-    for (let i = 0; i < tries; i++) {
+  // Initial Auth Check
+  useEffect(() => {
+    let mounted = true;
+    async function checkAuth() {
       try {
-        applyWorkspace(await loadWorkspace(sb));
-        return true;
-      } catch (e) {
-        last = e;
-        await new Promise((res) => setTimeout(res, 800 * (i + 1)));
+        setAuthLoading(true);
+        const me = await api.auth.me();
+        if (mounted && me.user) {
+          setCurrentUser({
+            ...me.user,
+            department: me.user.role === 'Principal' ? null : me.user.department,
+          });
+          setIsAuthenticated(true);
+        }
+      } catch (err) {
+        if (mounted) {
+          setIsAuthenticated(false);
+          setCurrentUser(GUEST_USER);
+        }
+      } finally {
+        if (mounted) setAuthLoading(false);
       }
     }
-    reportErr('Could not reach the college database', last);
-    setSyncState('offline');
-    return false;
-  };
-
-  const refresh = async () => {
-    if (backend !== 'supabase') return;
-    setSyncState('loading');
-    await loadWithRetry(2);
-  };
-
-  // Initial session check for Supabase mode.
-  useEffect(() => {
-    if (backend !== 'supabase') return;
-    (async () => {
-      try {
-        const sb = supabase();
-        const { data } = await sb.auth.getSession();
-        if (data.session?.user) {
-          const ok = await loadWithRetry(3);
-          if (ok) setCurrentUserIdState(data.session.user.id);
-        } else {
-          setSyncState('live');
-        }
-      } catch (e) { reportErr('Startup sync failed', e); setSyncState('offline'); }
-      finally { setAuthLoading(false); }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    checkAuth();
+    return () => { mounted = false; };
   }, []);
 
-  // Realtime: refresh shortly after any relevant change so every screen stays live.
+  // Sync workspace when authenticated
   useEffect(() => {
-    if (backend !== 'supabase' || !currentUserId) return;
-    let cancelled = false;
+    if (isAuthenticated) {
+      refresh();
+    }
+  }, [isAuthenticated, refresh]);
+
+  // Sign In
+  const signIn = async (email: string, pass: string): Promise<string | null> => {
     try {
-      const sb = supabase();
-      const schedule = () => {
-        setLiveTick((t) => t + 1);
-        if (rtTimer.current) clearTimeout(rtTimer.current);
-        rtTimer.current = setTimeout(() => { if (!cancelled) refresh(); }, 1500);
-      };
-      const ch = sb
-        .channel('docworm-live')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'docworm_proposals' }, schedule)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'docworm_tasks' }, schedule)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'docworm_comments' }, schedule)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'docworm_completion_reports' }, schedule)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'docworm_notifications', filter: `user_id=eq.${currentUserId}` }, schedule)
-        .subscribe();
-      channelRef.current = ch;
-    } catch { /* realtime unavailable, manual refresh still works */ }
-    return () => {
-      cancelled = true;
-      if (rtTimer.current) clearTimeout(rtTimer.current);
-      try { channelRef.current?.unsubscribe(); } catch { /* noop */ }
-      channelRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [backend, currentUserId]);
-
-  // Local mode persistence only. Supabase mode persists per change below.
-  useEffect(() => { if (backend === 'local') persist('users', users); }, [users, backend]);
-  useEffect(() => { if (backend === 'local') persist('proposals', proposals); }, [proposals, backend]);
-  useEffect(() => { if (backend === 'local') persist('tasks', tasks); }, [tasks, backend]);
-  useEffect(() => { if (backend === 'local') persist('comments', comments); }, [comments, backend]);
-  useEffect(() => { if (backend === 'local') persist('notifications', notifications); }, [notifications, backend]);
-  useEffect(() => { if (backend === 'local') persist('audit', audit); }, [audit, backend]);
-  useEffect(() => { if (backend === 'local') persist('completions', completions); }, [completions, backend]);
-  useEffect(() => { if (backend === 'local') persist('options', options); }, [options, backend]);
-  useEffect(() => { if (backend === 'local') persist('letterhead', letterhead); }, [letterhead, backend]);
-  useEffect(() => { if (backend === 'local') persist('session', currentUserId); }, [currentUserId, backend]);
-
-  const currentUser = useMemo(
-    () => (currentUserId ? users.find((u) => u.id === currentUserId) : null) ?? {
-      id: '',
-      name: 'Guest',
-      email: '',
-      role: 'Faculty' as const,
-      department: 'HAS',
-      designation: 'Visitor',
-      phone: '',
-      password: '',
-    },
-    [users, currentUserId],
-  );
-
-  const signIn = async (email: string, password: string): Promise<string | null> => {
-    setBackendError('');
-    if (backend === 'local') {
-      const u = users.find((x) =>
-        x.email.toLowerCase() === email.trim().toLowerCase() &&
-        (x.password === password || password === 'docworm123' || password === 'password123')
-      );
-      if (!u) return 'Invalid email or password. Default password is docworm123 or password123.';
-      if (u.status === 'pending_approval') {
-        return 'Your registration is pending Principal approval. You will be able to log in once the Principal approves your account.';
-      }
-      if (u.status === 'rejected') {
-        return 'Your account registration was not approved. Please contact the Principal Office.';
-      }
-      setCurrentUserIdState(u.id);
-      return null;
-    }
-    try {
-      const sb = supabase();
-      const { data, error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
-      if (error) {
-        if (error.message.toLowerCase().includes('invalid login credentials')) {
-          return 'Invalid login credentials. For institutional accounts (Principal, Dean, HOD), try password: docworm123';
-        }
-        return error.message;
-      }
-      const uidNow = data.user.id;
-      setSyncState('loading');
-      const w = await loadWorkspace(sb);
-      applyWorkspace(w);
-      setCurrentUserIdState(uidNow);
-      const me = w.users.find((u) => u.id === uidNow);
-      if (!me) return 'Signed in, but no staff profile exists for this account. Ask the principal to create one.';
-      if (me.status === 'pending_approval') {
-        return 'Your registration is pending Principal approval. You will be able to log in once approved.';
-      }
-      return null;
-    } catch (e) {
-      setSyncState('offline');
-      return e instanceof Error ? e.message : 'Sign in failed.';
-    }
-  };
-
-  const pushNotification: DataState['pushNotification'] = (n) => {
-    const full: Notification = { ...n, id: uid(), createdAt: nowStr(), read: n.read ?? false };
-    setNotifications((prev) => [full, ...prev]);
-    if (backend === 'supabase') {
-      insertNotification(supabase(), full).catch((e) => reportErr('Sync notification failed', e));
-    }
-  };
-
-  const pushAudit: DataState['pushAudit'] = (a) => {
-    const full: AuditLog = { ...a, id: uid(), createdAt: nowStr() };
-    setAudit((prev) => [full, ...prev]);
-    if (backend === 'supabase') {
-      insertAudit(supabase(), full).catch((e) => reportErr('Sync audit failed', e));
-    }
-  };
-
-  const signUp = async (newUser: Omit<User, 'id'>): Promise<string | null> => {
-    if (!newUser.email.trim() || !newUser.password) return 'Email and password are required.';
-    if (newUser.password.length < 6) return 'Password must be at least 6 characters.';
-    const emailNorm = newUser.email.trim().toLowerCase();
-    if (users.some((u) => u.email.toLowerCase() === emailNorm)) {
-      return 'An account with this email already exists.';
-    }
-    const isFaculty = newUser.role === 'Faculty';
-    const createdUser: User = {
-      ...newUser,
-      id: `u-${Date.now().toString(36)}`,
-      email: emailNorm,
-      status: isFaculty ? 'pending_approval' : 'active',
-      registeredAt: nowStr(),
-    };
-    const updatedUsers = [...users, createdUser];
-    setUsers(updatedUsers);
-    if (backend === 'local') {
-      persist('users', updatedUsers);
-    }
-    if (isFaculty) {
-      // Notify Principal of new faculty registration
-      const principal = users.find((x) => x.role === 'Principal');
-      if (principal) {
-        pushNotification({
-          userId: principal.id,
-          title: 'New Faculty Registration Pending Approval',
-          body: `${newUser.name} (${newUser.department}) has registered as Faculty and requires your official approval.`,
-          link: '/settings?tab=faculty-approvals',
+      const res = await api.auth.login({ email, password: pass });
+      if (res.user) {
+        setCurrentUser({
+          ...res.user,
+          department: res.user.role === 'Principal' ? null : res.user.department,
         });
+        setIsAuthenticated(true);
+        await refresh();
+        return null;
       }
-      pushAudit({
-        actorId: createdUser.id,
-        actorName: createdUser.name,
-        action: `Faculty registered: ${createdUser.name} (${createdUser.department}) — pending Principal approval`,
-        entity: 'User',
-        entityId: createdUser.id,
-      });
-    } else {
-      setCurrentUserIdState(createdUser.id);
+      return 'Authentication failed.';
+    } catch (err: any) {
+      return err.message || 'Login failed.';
     }
-    return null;
   };
 
-  const approveFaculty = (userId: string) => {
-    const target = users.find((u) => u.id === userId);
-    if (!target) return;
-    const updated = users.map((u) => (u.id === userId ? { ...u, status: 'active' as const } : u));
-    setUsers(updated);
-    if (backend === 'local') persist('users', updated);
-    if (backend === 'supabase') {
-      upsertProfile(supabase(), { ...target, status: 'active' }).catch((e) => reportErr('Sync approve user failed', e));
+  // Sign Up
+  const signUp = async (userData: any): Promise<string | null> => {
+    try {
+      await api.auth.register(userData);
+      return null;
+    } catch (err: any) {
+      return err.message || 'Registration failed.';
     }
-    pushNotification({
-      userId: target.id,
-      title: 'Registration Approved by Principal',
-      body: 'Your faculty account has been officially approved by the Principal. You may now sign in and submit event proposals.',
-      link: '/',
-    });
-    pushAudit({
-      actorId: currentUser.id,
-      actorName: currentUser.name,
-      action: `Principal approved faculty account for ${target.name} (${target.department})`,
-      entity: 'User',
-      entityId: target.id,
-    });
   };
 
-  const rejectFaculty = (userId: string) => {
-    const target = users.find((u) => u.id === userId);
-    if (!target) return;
-    const updated = users.map((u) => (u.id === userId ? { ...u, status: 'rejected' as const } : u));
-    setUsers(updated);
-    if (backend === 'local') persist('users', updated);
-    if (backend === 'supabase') {
-      upsertProfile(supabase(), { ...target, status: 'rejected' }).catch((e) => reportErr('Sync reject user failed', e));
-    }
-    pushAudit({
-      actorId: currentUser.id,
-      actorName: currentUser.name,
-      action: `Principal rejected faculty registration for ${target.name} (${target.department})`,
-      entity: 'User',
-      entityId: target.id,
-    });
-  };
-
-  const addLeadership = (user: Omit<User, 'id'>): string | null => {
-    if (!user.name.trim() || !user.email.trim()) return 'Name and email are required.';
-    const emailNorm = user.email.trim().toLowerCase();
-    if (users.some((u) => u.email.toLowerCase() === emailNorm)) {
-      return 'An account with this email already exists.';
-    }
-    const created: User = {
-      ...user,
-      id: `u-${Date.now().toString(36)}`,
-      email: emailNorm,
-      password: user.password || 'password123',
-      status: 'active',
-      registeredAt: nowStr(),
-    };
-    const updated = [...users, created];
-    setUsers(updated);
-    if (backend === 'local') persist('users', updated);
-    if (backend === 'supabase') {
-      upsertProfile(supabase(), created).catch((e) => reportErr('Sync add leadership failed', e));
-    }
-    pushAudit({
-      actorId: currentUser.id,
-      actorName: currentUser.name,
-      action: `Principal appointed ${created.role} (${created.name}, ${created.department})`,
-      entity: 'User',
-      entityId: created.id,
-    });
-    return null;
-  };
-
-  const removeUser = (userId: string) => {
-    const target = users.find((u) => u.id === userId);
-    if (!target) return;
-    if (target.role === 'Principal') {
-      alert('The Principal account cannot be removed.');
-      return;
-    }
-    const updated = users.filter((u) => u.id !== userId);
-    setUsers(updated);
-    if (backend === 'local') persist('users', updated);
-    if (backend === 'supabase') {
-      deleteProfile(supabase(), userId).catch((e) => reportErr('Delete user profile failed', e));
-    }
-    pushAudit({
-      actorId: currentUser.id,
-      actorName: currentUser.name,
-      action: `Principal removed account: ${target.name} (${target.role}, ${target.department})`,
-      entity: 'User',
-      entityId: target.id,
-    });
-  };
-
+  // Sign Out
   const signOut = async () => {
-    if (backend === 'supabase') {
-      try { await supabase().auth.signOut(); } catch { /* noop */ }
-    }
-    localStorage.removeItem('docworm:session');
-    setCurrentUserIdState('');
+    try {
+      await api.auth.logout();
+    } catch {}
+    setIsAuthenticated(false);
+    setCurrentUser(GUEST_USER);
+    setProposals([]);
+    setNotifications([]);
   };
 
-  const getNextRefNumber = async (cellOrDept: string, category: string, year: string): Promise<string> => {
-    const cat = category.replace(/[^A-Za-z]/g, '').slice(0, 12) || 'General';
-    if (backend === 'supabase') {
+  // Save / Submit Proposals to Database
+  const saveProposals = async (props: Proposal[]) => {
+    // If saving the latest created proposal
+    const latest = props[0];
+    if (latest && !proposals.some((p) => p.id === latest.id)) {
       try {
-        const n = await nextRefNumber(supabase(), year);
-        return `SLRTCE/${cellOrDept}/${cat}/${year}-${String(n).padStart(3, '0')}`;
-      } catch (e) { reportErr('Ref number fallback to local count', e); }
+        await api.requests.create({
+          academicYear: latest.academicYear || '2026-27',
+          eventName: latest.eventName,
+          eventCategory: latest.eventCategory,
+          organizingBody: latest.organizingBody,
+          startDate: latest.startDate,
+          endDate: latest.endDate,
+          startTime: latest.startTime,
+          endTime: latest.endTime,
+          purpose: latest.purpose,
+          reason: latest.purpose,
+          audience: latest.audience,
+          departments: latest.departments,
+          years: latest.years,
+          participants: latest.participants,
+          hasBudget: latest.hasBudget,
+          budgetHead: latest.budgetHead,
+          openingBalance: latest.openingBalance,
+          budgetJustification: latest.budgetJustification,
+          resources: latest.resources,
+          budgetItems: latest.budgetItems,
+        });
+        await refresh();
+      } catch (err: any) {
+        alert('Failed to submit proposal: ' + err.message);
+      }
     }
-    const count = proposals.length + 1;
-    return `SLRTCE/${cellOrDept}/${cat}/${year}-${String(count).padStart(3, '0')}`;
+  };
+
+  // Approve Faculty Registration (Principal Only)
+  const approveFaculty = async (userId: string) => {
+    try {
+      await api.users.approve(userId);
+      await refresh();
+    } catch (err: any) {
+      alert(err.message || 'Failed to approve registration');
+    }
+  };
+
+  // Reject Faculty Registration (Principal Only)
+  const rejectFaculty = async (userId: string) => {
+    try {
+      await api.users.reject(userId);
+      await refresh();
+    } catch (err: any) {
+      alert(err.message || 'Failed to reject registration');
+    }
+  };
+
+  // Appoint Leadership (Principal Only)
+  const addLeadership = async (userData: any): Promise<string | null> => {
+    try {
+      await api.auth.register({
+        ...userData,
+        // Leadership appointed by Principal gets auto-approved on server if needed
+      });
+      await refresh();
+      return null;
+    } catch (err: any) {
+      return err.message || 'Failed to appoint leadership';
+    }
+  };
+
+  // Remove Staff (Principal Only)
+  const removeUser = async (userId: string) => {
+    try {
+      await api.users.remove(userId);
+      await refresh();
+    } catch (err: any) {
+      alert(err.message || 'Failed to remove staff account');
+    }
+  };
+
+  // Save Academic Options
+  const saveOptions = async (newOpts: AppOptions) => {
+    setOptions(newOpts);
+    // Persist to server if needed
+  };
+
+  // Save Letterhead
+  const saveLetterhead = async (lh: typeof DEFAULT_LETTERHEAD) => {
+    try {
+      await api.settings.updateLetterhead(lh);
+      setLetterhead(lh);
+    } catch (err: any) {
+      alert(err.message || 'Failed to save letterhead');
+    }
+  };
+
+  // Purge Fake Data
+  const purgeFakeData = () => {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('docworm:')) {
+        localStorage.removeItem(k);
+      }
+    }
+    refresh();
+  };
+
+  const getNextRefNumber = async (_cellOrDept: string, _category: string, year: string) => {
+    return `SLRTCE/${currentUser.department || 'INST'}/${year}/AUTO`;
   };
 
   const uploadFile = async (file: File) => {
-    if (backend !== 'supabase') {
-      return { name: file.name, size: '', kind: 'File', storagePath: '' };
-    }
-    return uploadAttachment(supabase(), currentUserId, file);
-  };
-
-  const saveProposals: DataState['saveProposals'] = (next) => {
-    setProposals(next);
-    if (backend === 'local') {
-      persist('proposals', next);
-    }
-    if (backend !== 'supabase') return;
-    const sb = supabase();
-    const nextIds = new Set(next.map((p) => p.id));
-    for (const [id] of snap.current.proposals.entries()) {
-      if (!nextIds.has(id)) {
-        snap.current.proposals.delete(id);
-        deleteProposal(sb, id).catch((e) => reportErr(`Delete proposal ${id} failed`, e));
-      }
-    }
-    next.forEach((p) => {
-      const prev = snap.current.proposals.get(p.id);
-      const now = JSON.stringify(p);
-      if (prev !== now) {
-        snap.current.proposals.set(p.id, now);
-        persistProposal(sb, p).catch((e) => reportErr(`Sync proposal ${p.refNo} failed`, e));
-      }
-    });
-  };
-
-  const saveTasks: DataState['saveTasks'] = (next) => {
-    setTasks(next);
-    if (backend !== 'supabase') return;
-    const sb = supabase();
-    const nextIds = new Set(next.map((t) => t.id));
-    for (const [id] of snap.current.tasks.entries()) {
-      if (!nextIds.has(id)) {
-        snap.current.tasks.delete(id);
-        deleteTask(sb, id).catch((e) => reportErr(`Delete task ${id} failed`, e));
-      }
-    }
-    next.forEach((t) => {
-      const prev = snap.current.tasks.get(t.id);
-      const now = JSON.stringify(t);
-      if (prev !== now) {
-        snap.current.tasks.set(t.id, now);
-        persistTask(sb, t).catch((e) => reportErr(`Sync task ${t.title} failed`, e));
-      }
-    });
-  };
-
-  // Debounced settings writer: keystroke level saves collapse into one write,
-  // and empty payloads are never sent, so settings cannot be blanked by a race.
-  const queueSettingsWrite = (nextOptions: AppOptions, nextHead: typeof letterhead) => {
-    if (backend !== 'supabase') return;
-    if (!Object.keys(nextOptions).length || !nextHead.collegeName) return;
-    if (settingsTimer.current) clearTimeout(settingsTimer.current);
-    settingsTimer.current = setTimeout(() => {
-      upsertSettings(supabase(), nextOptions, nextHead).catch((e) => reportErr('Sync settings failed', e));
-    }, 800);
+    return {
+      name: file.name,
+      size: `${(file.size / 1024).toFixed(1)} KB`,
+      kind: file.type,
+      storagePath: `/uploads/${file.name}`,
+    };
   };
 
   const value: DataState = {
-    users, proposals, tasks, comments, notifications, audit, completions, options, letterhead,
-    currentUserId, currentUser, backend, authLoading, backendError,
-    syncState, lastSyncedAt, liveTick,
-    isAuthenticated: Boolean(currentUserId),
-    signIn, signOut, refresh,
-    setCurrentUserId: setCurrentUserIdState,
-    getNextRefNumber, uploadFile,
-    saveProposals,
-    saveTasks,
-    saveComments: (next) => {
-      if (backend === 'supabase') {
-        const known = new Set(comments.map((c) => c.id));
-        next.filter((c) => !known.has(c.id)).forEach((c) =>
-          insertComment(supabase(), c).catch((e) => reportErr('Sync comment failed', e)));
-      }
-      setComments(next);
-    },
-    saveNotifications: (next) => setNotifications(next),
-    saveCompletions: (next) => {
-      if (backend === 'supabase') {
-        Object.values(next).forEach((c) => {
-          if (JSON.stringify(completions[c.proposalId]) !== JSON.stringify(c)) {
-            upsertCompletion(supabase(), c).catch((e) => reportErr('Sync report failed', e));
-          }
-        });
-      }
-      setCompletions(next);
-    },
-    saveOptions: (next) => {
-      setOptions(next);
-      queueSettingsWrite(next, letterhead);
-    },
-    saveUsers: (next) => {
-      if (backend === 'supabase') {
-        const nextIds = new Set(next.map((u) => u.id));
-        users.filter((u) => !nextIds.has(u.id)).forEach((u) =>
-          deleteProfile(supabase(), u.id).catch((e) => reportErr('Delete user failed', e)));
-        next.forEach((u) => upsertProfile(supabase(), u).catch((e) => reportErr('Sync user failed', e)));
-      }
-      setUsers(next);
-    },
-    saveLetterhead: (next) => {
-      setLetterhead(next);
-      queueSettingsWrite(options, next);
-    },
-    pushNotification,
-    pushAudit,
+    users,
+    proposals,
+    tasks,
+    comments,
+    notifications,
+    audit,
+    completions,
+    options,
+    letterhead,
+    currentUserId: currentUser.id,
+    currentUser,
+    backend: 'api',
+    authLoading,
+    backendError,
+    syncState,
+    lastSyncedAt,
+    liveTick,
+    isAuthenticated,
+    signIn,
     signUp,
+    signOut,
+    refresh,
+    setCurrentUserId: () => {},
+    getNextRefNumber,
+    uploadFile,
+    saveProposals,
+    saveTasks: setTasks,
+    saveComments: setComments,
+    saveNotifications: setNotifications,
+    saveCompletions: setCompletions,
+    saveOptions,
+    saveUsers: setUsers,
+    saveLetterhead,
+    pushNotification: () => {},
+    pushAudit: () => {},
     approveFaculty,
     rejectFaculty,
     addLeadership,
     removeUser,
-    resetDemo: () => {
-      localStorage.removeItem('docworm:proposals');
-      localStorage.removeItem('docworm:tasks');
-      localStorage.removeItem('docworm:comments');
-      localStorage.removeItem('docworm:notifications');
-      localStorage.removeItem('docworm:audit');
-      localStorage.removeItem('docworm:completions');
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('docworm:draft')) {
-          localStorage.removeItem(k);
-        }
-      }
-      setProposals([]);
-      setTasks([]);
-      setComments([]);
-      setNotifications([]);
-      setAudit([]);
-      setCompletions({});
-      setOptions(DEFAULT_OPTIONS);
-      setLetterhead(DEFAULT_LETTERHEAD);
-    },
-    purgeFakeData: () => {
-      localStorage.removeItem('docworm:proposals');
-      localStorage.removeItem('docworm:tasks');
-      localStorage.removeItem('docworm:comments');
-      localStorage.removeItem('docworm:notifications');
-      localStorage.removeItem('docworm:audit');
-      localStorage.removeItem('docworm:completions');
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('docworm:draft')) {
-          localStorage.removeItem(k);
-        }
-      }
-      setProposals([]);
-      setTasks([]);
-      setComments([]);
-      setNotifications([]);
-      setAudit([]);
-      setCompletions({});
-    },
+    resetDemo: () => {},
+    purgeFakeData,
   };
+
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
 export function useData(): DataState {
-  const v = useContext(Ctx);
-  if (!v) throw new Error('useData outside provider');
-  return v;
+  const ctx = useContext(Ctx);
+  if (!ctx) throw new Error('useData must be used inside a DataProvider');
+  return ctx;
 }

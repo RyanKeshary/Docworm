@@ -9,8 +9,8 @@ for (const line of fs.readFileSync('../.env', 'utf8').split('\n')) {
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
 }
 const sql = postgres(process.env.DATABASE_URL || '', { ssl: 'require', max: 1 });
-const ANON = 'sb_publishable_QMmz5ZNtmwnZssxC6KnH1g_zoRZ6FIr';
-const BASE = 'https://oqqzzyombtcjvlqbjvla.supabase.co';
+const ANON = process.env.SUPABASE_ANON_KEY || '';
+const BASE = process.env.SUPABASE_URL || '';
 
 async function api(path: string, body: unknown) {
   const r = await fetch(BASE + path, {
