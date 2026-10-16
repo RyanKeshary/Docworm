@@ -5,7 +5,7 @@ import {
   Search, Printer, ShieldCheck, Building2,
   Calendar, MapPin, Users, X, Send, Check, AlertCircle,
   Eye, RotateCcw, ChevronRight, Star, Layers, BookOpen, RefreshCw,
-  Crown,
+  Crown, Download,
 } from 'lucide-react';
 import { useData, nowStr } from '../store';
 import { Badge, btnGhost, btnPrimary, inputCls } from '../components';
@@ -427,7 +427,6 @@ export function PermissionPortal() {
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${meta.badge}`}>
               <span>{meta.icon}</span> {role}
             </span>
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-dot" />
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-ink mt-0.5">{panelInfo.label}</h1>
           <p className="text-xs sm:text-sm text-ink-muted mt-0.5">{panelInfo.desc}</p>
@@ -435,6 +434,16 @@ export function PermissionPortal() {
 
         {/* Real institutional actions */}
         <div className="flex items-center gap-2 flex-wrap">
+          <a
+            href="/api/export/csv/permission_requests"
+            download="permission_requests.csv"
+            className="px-3.5 py-2 text-xs font-bold rounded-lg border border-primary-border bg-white text-ink hover:bg-slate-50 shadow-xs transition-colors flex items-center gap-1.5"
+            title="Export full permission requests report in clean Excel CSV format"
+          >
+            <Download size={14} className="text-primary" />
+            Export CSV
+          </a>
+
           {role === 'Principal' && (
             <Link
               to="/settings?tab=leadership"
@@ -1289,7 +1298,7 @@ function RoleContextCard({
 }) {
   if (role === 'Principal') {
     return (
-      <div className="bg-gradient-to-r from-violet-50/90 via-white to-violet-50/40 border border-violet-200 rounded-card p-4 sm:p-5 shadow-xs">
+      <div className="bg-white border border-violet-200 rounded-card p-4 sm:p-5 shadow-xs">
         <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
           <div className="w-11 h-11 rounded-xl bg-violet-100 border border-violet-200 flex items-center justify-center text-xl shrink-0">🏛️</div>
           <div className="flex-1 min-w-0">
@@ -1301,13 +1310,13 @@ function RoleContextCard({
               Complete institutional oversight across all departments, HODs, and faculty. You hold the <b>exclusive final sanction & approval authority</b> that generates official signed permission letters.
             </p>
             <div className="mt-3.5 flex flex-wrap gap-2 text-xs">
-              <span className="font-semibold text-violet-900 bg-violet-100/90 border border-violet-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              <span className="font-semibold text-violet-900 bg-violet-50 border border-violet-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
                 <Crown size={13} className="text-violet-700" /> {stats.awaitingMe} awaiting final sanction
               </span>
-              <span className="font-semibold text-emerald-900 bg-emerald-100/90 border border-emerald-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              <span className="font-semibold text-emerald-900 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
                 <CheckCircle2 size={13} className="text-emerald-700" /> {stats.approved} total approved
               </span>
-              <span className="font-semibold text-slate-800 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              <span className="font-semibold text-slate-800 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
                 <Building2 size={13} className="text-slate-600" /> All departments & faculties visible ({proposals.length} total)
               </span>
             </div>
@@ -1319,7 +1328,7 @@ function RoleContextCard({
 
   if (role === 'Dean') {
     return (
-      <div className="bg-gradient-to-r from-blue-50/90 via-white to-blue-50/40 border border-blue-200 rounded-card p-4 sm:p-5 shadow-xs">
+      <div className="bg-white border border-blue-200 rounded-card p-4 sm:p-5 shadow-xs">
         <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
           <div className="w-11 h-11 rounded-xl bg-blue-100 border border-blue-200 flex items-center justify-center text-xl shrink-0">🎓</div>
           <div className="flex-1 min-w-0">
@@ -1331,10 +1340,10 @@ function RoleContextCard({
               Cross-department student welfare & academic oversight. You see <b>all HODs, faculties, and proposals across the entire institution</b>. You review and recommend proposals to the Principal (final sanction stays with Principal).
             </p>
             <div className="mt-3.5 flex flex-wrap gap-2 text-xs">
-              <span className="font-semibold text-blue-900 bg-blue-100/90 border border-blue-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              <span className="font-semibold text-blue-900 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
                 <Send size={13} className="text-blue-700" /> {stats.awaitingMe} proposals awaiting Dean review
               </span>
-              <span className="font-semibold text-slate-800 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              <span className="font-semibold text-slate-800 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
                 <Building2 size={13} className="text-slate-600" /> Overseeing all college departments ({proposals.length} total requests)
               </span>
               <span className="font-medium text-amber-900 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg">
@@ -1352,7 +1361,7 @@ function RoleContextCard({
       (p) => currentUser.department ? (p.submitterDept === currentUser.department || (p.departments || []).includes(currentUser.department)) : false
     );
     return (
-      <div className="bg-gradient-to-r from-emerald-50/90 via-white to-emerald-50/40 border border-emerald-200 rounded-card p-4 sm:p-5 shadow-xs">
+      <div className="bg-white border border-emerald-200 rounded-card p-4 sm:p-5 shadow-xs">
         <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
           <div className="w-11 h-11 rounded-xl bg-emerald-100 border border-emerald-200 flex items-center justify-center text-xl shrink-0">🏢</div>
           <div className="flex-1 min-w-0">
@@ -1364,13 +1373,13 @@ function RoleContextCard({
               Department Head authority. You see <b>everything in your department</b>: all faculty submissions, event requests, and venue bookings. You verify and endorse proposals to forward to the Dean (final sanction stays with Principal).
             </p>
             <div className="mt-3.5 flex flex-wrap gap-2 text-xs">
-              <span className="font-semibold text-emerald-900 bg-emerald-100/90 border border-emerald-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              <span className="font-semibold text-emerald-900 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
                 <Building2 size={13} className="text-emerald-700" /> {deptProposals.length} total department proposals
               </span>
-              <span className="font-semibold text-amber-900 bg-amber-100/90 border border-amber-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              <span className="font-semibold text-amber-900 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
                 <Clock size={13} className="text-amber-700" /> {stats.awaitingMe} awaiting your endorsement
               </span>
-              <span className="font-medium text-slate-700 bg-slate-100 border border-slate-200 px-2.5 py-1.5 rounded-lg">
+              <span className="font-medium text-slate-700 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg">
                 🔒 Forwards to Dean &rarr; Principal for final sanction
               </span>
             </div>
@@ -1384,7 +1393,7 @@ function RoleContextCard({
   const myProposals = proposals.filter((p) => p.submitterId === currentUser.id);
   const myApproved = myProposals.filter((p) => p.status === 'Approved').length;
   return (
-    <div className="bg-gradient-to-r from-amber-50/90 via-white to-amber-50/40 border border-amber-200 rounded-card p-4 sm:p-5 shadow-xs">
+    <div className="bg-white border border-amber-200 rounded-card p-4 sm:p-5 shadow-xs">
       <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
         <div className="w-11 h-11 rounded-xl bg-amber-100 border border-amber-200 flex items-center justify-center text-xl shrink-0">👤</div>
         <div className="flex-1 min-w-0">
@@ -1396,10 +1405,10 @@ function RoleContextCard({
             Submit activity & event permission requests. Track real-time progress through the 3-step institutional approval chain: <b>HOD &rarr; Dean &rarr; Principal</b>.
           </p>
           <div className="mt-3.5 flex flex-wrap gap-2 text-xs">
-            <span className="font-semibold text-amber-900 bg-amber-100/90 border border-amber-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+            <span className="font-semibold text-amber-900 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
               <FileText size={13} className="text-amber-700" /> {myProposals.length} my submitted requests
             </span>
-            <span className="font-semibold text-emerald-900 bg-emerald-100/90 border border-emerald-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+            <span className="font-semibold text-emerald-900 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
               <CheckCircle2 size={13} className="text-emerald-700" /> {myApproved} sanctioned by Principal
             </span>
           </div>

@@ -1959,9 +1959,39 @@ app.get('/api/export/csv/:table', authenticate, async (req, res) => {
       return;
     }
 
+    const COLUMN_LABELS: Record<string, string> = {
+      ref_no: 'Reference Number',
+      academic_year: 'Academic Year',
+      event_name: 'Event Title',
+      event_category: 'Category',
+      start_date: 'Start Date',
+      end_date: 'End Date',
+      submitter_name: 'Organizing Faculty',
+      submitter_dept: 'Department',
+      opening_balance: 'Budget (INR)',
+      status: 'Current Status',
+      faculty_name: 'Faculty Member',
+      department: 'Department',
+      leave_type: 'Leave Type',
+      total_days: 'Total Days',
+      reason: 'Reason for Leave',
+      alternate_faculty: 'Lecture Adjustment Faculty',
+      hod_name: 'HOD Name',
+      hod_remark: 'HOD Remark',
+      principal_name: 'Principal Name',
+      principal_remark: 'Principal Remark',
+      name: 'Full Name',
+      email: 'Institutional Email',
+      role: 'Portal Role',
+      designation: 'Designation',
+      phone: 'Phone Number',
+      created_at: 'Created Date',
+    };
+
     const headers = Object.keys(rows[0]).filter((k) => !['password_hash', 'token_hash'].includes(k));
+    const headerDisplay = headers.map((h) => `"${(COLUMN_LABELS[h] || h).replace(/"/g, '""')}"`);
     const csvLines = [
-      headers.join(','),
+      headerDisplay.join(','),
       ...rows.map((r) =>
         headers
           .map((h) => {
@@ -2030,8 +2060,8 @@ app.get('/api/audit-log', authenticate, async (req, res) => {
 
 // Start Server
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log(`🚀 Docworm Production Server listening on http://localhost:${PORT}`);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Docworm Production Server listening on http://0.0.0.0:${PORT}`);
   });
 }
 

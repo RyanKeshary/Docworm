@@ -25,10 +25,27 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
     return {} as T;
   }
 
+  if (res.status === 405) {
+    // Fallback: If dev proxy returned 405, attempt direct backend call
+    try {
+      const fallbackUrl = `${window.location.protocol}//${window.location.hostname}:3001${url}`;
+      const retryRes = await fetch(fallbackUrl, {
+        credentials: 'include',
+        ...options,
+        headers: { ...defaultHeaders, ...options.headers },
+      });
+      const data = await retryRes.json();
+      if (!retryRes.ok) throw new Error(data.error || data.message || `Request failed with status ${retryRes.status}`);
+      return data;
+    } catch {
+      // Proceed with normal error handling
+    }
+  }
+
   const contentType = res.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
     const text = await res.text();
-    if (!res.ok) throw new Error(text || `HTTP error ${res.status}`);
+    if (!res.ok) throw new Error(text || `Server returned HTTP ${res.status}`);
     return text as unknown as T;
   }
 

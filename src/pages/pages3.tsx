@@ -911,11 +911,11 @@ export function SettingsPage() {
   } = useData();
 
   const [params, setParams] = useSearchParams();
-  const currentTab = params.get('tab') ?? 'leadership';
-  const setTab = (t: string) => setParams({ tab: t });
-
   const isPrincipal = currentUser.role === 'Principal';
   const isAdmin = currentUser.role === 'Principal' || currentUser.role === 'Dean';
+  const rawTab = params.get('tab');
+  const currentTab = (!rawTab || rawTab === 'database') ? (isAdmin ? 'leadership' : 'profile') : rawTab;
+  const setTab = (t: string) => setParams({ tab: t });
 
   const pendingFaculty = useMemo(() => users.filter((u) => u.status === 'pending_approval'), [users]);
 
@@ -1053,20 +1053,13 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
               </span>
             )}
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mt-0.5">Settings & Database</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mt-0.5">Settings & Administration</h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Access database connection, institutional options, letterhead, and staff directory.
+            Manage institutional leadership, academic options, letterhead, and staff directory.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={handlePurgeFakeData}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-card text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition-colors shadow-xs"
-            title="Wipe any old demo proposals, tasks, or fake records"
-          >
-            <Trash2 size={14} /> Purge All Fake Data
-          </button>
           <button onClick={() => nav('/')} className={btnGhost}>Dashboard</button>
         </div>
       </div>
@@ -1081,18 +1074,21 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
       {/* Tabs navigation - clean, responsive pills */}
       <div className="flex gap-1.5 bg-slate-100/80 p-1.5 rounded-card border border-slate-200/60 overflow-x-auto scrollbar-thin">
         {[
-          {
-            id: 'leadership',
-            label: 'Leadership & Staff',
-            badge: pendingFaculty.length > 0 ? `${pendingFaculty.length} Pending` : null,
-            icon: <Crown size={15} />,
-          },
-          { id: 'database', label: 'Database & SQL', icon: <Database size={15} /> },
-          { id: 'options', label: 'Academic Options', icon: null },
-          { id: 'smtp', label: 'Email & SMTP', icon: <Mail size={15} /> },
+          ...(isAdmin
+            ? [
+                {
+                  id: 'leadership',
+                  label: 'Leadership & Staff',
+                  badge: pendingFaculty.length > 0 ? `${pendingFaculty.length} Pending` : null,
+                  icon: <Crown size={15} />,
+                },
+              ]
+            : []),
           { id: 'profile', label: 'My Profile', icon: <UserIcon size={15} /> },
-          { id: 'auth', label: 'Role Permissions', icon: <Shield size={15} /> },
+          { id: 'options', label: 'Academic Options', icon: null },
           { id: 'letterhead', label: 'College Letterhead', icon: null },
+          { id: 'auth', label: 'Role Permissions', icon: <Shield size={15} /> },
+          ...(isPrincipal ? [{ id: 'smtp', label: 'Email & SMTP', icon: <Mail size={15} /> }] : []),
           { id: 'audit', label: `Audit Log (${audit.length})`, icon: null },
         ].map((t) => (
           <button
@@ -1119,9 +1115,9 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
       {currentTab === 'leadership' && (
         <div className="space-y-6 animate-fade-in">
           {/* Top Info Banner */}
-          <div className="bg-gradient-to-r from-violet-50/90 via-white to-violet-50/30 border border-violet-200 rounded-card p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="bg-white border border-slate-200 rounded-card p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-start gap-3">
-              <span className="w-10 h-10 rounded-xl bg-violet-100 border border-violet-200 flex items-center justify-center text-xl shrink-0">🏛️</span>
+              <span className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-xl shrink-0">🏛️</span>
               <div>
                 <h2 className="font-bold text-base text-slate-900">Institutional Leadership & Faculty Administration</h2>
                 <p className="text-xs text-slate-600 mt-0.5">
@@ -1459,151 +1455,6 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
         </div>
       )}
 
-      {/* 1. DATABASE & BACKEND TAB */}
-      {currentTab === 'database' && (
-        <div className="space-y-6 animate-fade-in">
-          {/* Sub-tab navigation */}
-          <div className="flex gap-2 border-b border-gray-200 pb-2 overflow-x-auto scrollbar-thin">
-            <button
-              onClick={() => setDbSubTab('tables')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
-                dbSubTab === 'tables' ? 'bg-primary text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              1. Cloud Table Editor
-            </button>
-            <button
-              onClick={() => setDbSubTab('sql')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
-                dbSubTab === 'sql' ? 'bg-primary text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              2. Interactive SQL Console
-            </button>
-            <button
-              onClick={() => setDbSubTab('mitigation')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
-                dbSubTab === 'mitigation' ? 'bg-primary text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              3. Local Mitigation & Repair Tools
-            </button>
-            <button
-              onClick={() => setDbSubTab('guide')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
-                dbSubTab === 'guide' ? 'bg-primary text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              4. Overview & Credentials
-            </button>
-          </div>
-
-          {dbSubTab === 'tables' && <CloudTableEditorPanel />}
-          {dbSubTab === 'sql' && <SqlEditorPanel />}
-          {dbSubTab === 'mitigation' && <MitigationToolsPanel />}
-
-          {dbSubTab === 'guide' && (
-            <div className="space-y-6">
-              {/* Active Backend Status Banner */}
-              <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-gray-100">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse-dot" />
-                      <span className="font-bold text-base sm:text-lg text-slate-900">
-                        Active Storage: Supabase PostgreSQL (Production Database)
-                      </span>
-                    </div>
-                    <p className="text-xs sm:text-sm text-slate-500 mt-1">
-                      Live connection pooler active at aws-0-ap-southeast-2.pooler.supabase.com:5432. All secrets protected server-side.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleRefresh}
-                      disabled={refreshing}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card text-xs font-semibold bg-primary-pale text-primary border border-primary-border hover:bg-primary-light transition-colors"
-                    >
-                      <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-                      {refreshing ? 'Syncing...' : 'Sync Now'}
-                    </button>
-                    <a
-                      href="https://supabase.com/dashboard"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs transition-colors"
-                    >
-                      <ExternalLink size={14} /> Supabase Console
-                    </a>
-                  </div>
-                </div>
-
-                <div className="mt-5 grid md:grid-cols-3 gap-4">
-                  <div className="bg-slate-50 border border-slate-200 rounded-card p-4">
-                    <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm">
-                      <Server size={16} className="text-primary" />
-                      <span>1. Cloud Table Editor</span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                      Use the built-in <b>Table Editor</b> above to view, filter, sort, and export records with UTF-8 BOM CSV format.
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-200 rounded-card p-4">
-                    <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm">
-                      <Database size={16} className="text-primary" />
-                      <span>2. SQL Console</span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                      Execute parameterized SELECT and admin queries with read-only safety guardrails and destructive confirmation prompts.
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-200 rounded-card p-4">
-                    <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm">
-                      <Shield size={16} className="text-primary" />
-                      <span>3. Migrations</span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                      Tracked in <code>supabase/migrations/</code>. Applied automatically through verified migration runners.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Database Tables Overview */}
-              <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
-                <div className="flex items-center justify-between pb-4 border-b border-gray-100">
-                  <div>
-                    <h2 className="font-bold text-slate-900 text-base">Production Database Schema</h2>
-                    <p className="text-xs text-slate-500 mt-0.5">Tables created in public schema of your database</p>
-                  </div>
-                  <span className="text-xs font-semibold bg-primary-pale text-primary border border-primary-border px-2.5 py-1 rounded-full">
-                    {tables.length} Tables
-                  </span>
-                </div>
-                <div className="mt-4 overflow-x-auto scrollbar-thin">
-                  <table className="w-full text-left text-xs sm:text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-200 bg-slate-50/70 text-slate-600">
-                        <th className="py-2.5 px-3 font-semibold">Table Name</th>
-                        <th className="py-2.5 px-3 font-semibold">Description</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 text-slate-700">
-                      {tables.map((t) => (
-                        <tr key={t.name} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-2.5 px-3 font-mono font-medium text-primary-dark">{t.name}</td>
-                          <td className="py-2.5 px-3 text-slate-500">{t.desc}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* 2. PROFILE TAB */}
       {currentTab === 'profile' && (

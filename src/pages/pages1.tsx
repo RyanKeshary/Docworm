@@ -33,8 +33,8 @@ export function Login() {
   const [params] = useSearchParams();
 
   const [mode, setMode] = useState<AuthMode>('signin');
-  const [email, setEmail] = useState('principal@slrtce.in');
-  const [password, setPassword] = useState('password@67');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [resetToken, setResetToken] = useState('');
@@ -138,55 +138,43 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 font-sans selection:bg-primary-light selection:text-white">
-      <div className="w-full max-w-4xl grid md:grid-cols-5 gap-0 bg-white border border-slate-700/40 rounded-3xl overflow-hidden shadow-2xl relative">
+    <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 bg-slate-50 font-sans">
+      <div className="w-full max-w-4xl grid md:grid-cols-5 gap-0 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
         {/* Left institutional hero panel */}
-        <div className="md:col-span-2 bg-gradient-to-br from-slate-900 via-primary-dark to-primary text-white p-7 sm:p-9 flex flex-col justify-between relative overflow-hidden">
-          <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none" />
-
-          <div className="relative z-10">
+        <div className="md:col-span-2 bg-[#1B365D] text-white p-7 sm:p-9 flex flex-col justify-between">
+          <div>
             <div className="flex items-center gap-3">
-              <span className="w-11 h-11 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-white flex items-center justify-center shadow-lg">
-                <Landmark size={24} className="text-emerald-300" />
+              <span className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 text-white flex items-center justify-center">
+                <Landmark size={22} className="text-white" />
               </span>
               <div>
-                <span className="font-extrabold text-2xl tracking-tight block leading-tight text-white">Docworm</span>
-                <span className="text-[11px] text-emerald-200/90 font-medium tracking-wide uppercase">Institutional Portal</span>
+                <span className="font-bold text-xl tracking-tight block leading-tight text-white">Docworm</span>
+                <span className="text-[11px] text-blue-200 font-semibold tracking-wider uppercase">Institutional Portal</span>
               </div>
             </div>
 
-            <div className="mt-8">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/10 text-emerald-200 border border-white/15 backdrop-blur-xs mb-3">
-                <ShieldCheck size={13} /> Secure College Sanction System
-              </span>
-              <h1 className="text-2xl sm:text-3xl font-extrabold leading-snug tracking-tight text-white">
+            <div className="mt-8 space-y-2">
+              <h1 className="text-xl sm:text-2xl font-bold leading-snug tracking-tight text-white">
                 {letterhead.collegeName || 'Shree L.R. Tiwari College of Engineering'}
               </h1>
-              <p className="mt-3 text-white/80 text-xs sm:text-sm leading-relaxed">
-                Single unified portal for digital permission letters, multi-tier approvals, venue allocations, and budget governance.
+              <p className="text-xs text-blue-100 leading-relaxed">
+                Autonomous Institute • Approved by AICTE • Affiliated to University of Mumbai
               </p>
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-white/15 space-y-3 text-xs text-blue-100">
+              <p className="font-semibold text-white uppercase text-[11px] tracking-wider">Academic Workflow</p>
+              <div className="space-y-1.5 text-[11px] text-blue-200/90 leading-relaxed">
+                <p>1. Faculty initiates proposals & leave requests</p>
+                <p>2. Department Head verifies & recommends</p>
+                <p>3. Dean provides institutional review</p>
+                <p>4. Principal grants official digital sanction</p>
+              </div>
             </div>
           </div>
 
-          <div className="relative z-10 mt-8 pt-6 border-t border-white/15 space-y-3">
-            <div className="flex items-center gap-3 text-xs text-white/90">
-              <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0">
-                <Check size={14} />
-              </div>
-              <span>Exclusive Principal sanction & budget clearance</span>
-            </div>
-            <div className="flex items-center gap-3 text-xs text-white/90">
-              <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0">
-                <Check size={14} />
-              </div>
-              <span>Automated HOD & Dean recommendation chain</span>
-            </div>
-            <div className="flex items-center gap-3 text-xs text-white/90">
-              <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center shrink-0">
-                <Check size={14} />
-              </div>
-              <span>Audit-logged, real-time venue conflict detection</span>
-            </div>
+          <div className="mt-8 pt-4 border-t border-white/15 text-[11px] text-blue-200/70">
+            Official academic sanction & faculty leave governance system.
           </div>
         </div>
 
@@ -195,14 +183,14 @@ export function Login() {
           <div>
             {/* Header Tabs */}
             {mode !== 'force_change' && (
-              <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-6">
+              <div className="flex items-center border-b border-slate-200 pb-3 mb-6">
                 <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={() => { setMode('signin'); setError(''); setInfoMessage(''); }}
-                    className={`pb-2 px-3 text-sm font-semibold border-b-2 transition-all ${
+                    className={`pb-2 px-3 text-sm font-semibold border-b-2 transition-colors ${
                       mode === 'signin' || mode === 'forgot' || mode === 'reset'
-                        ? 'border-primary text-primary'
+                        ? 'border-[#1B365D] text-[#1B365D]'
                         : 'border-transparent text-slate-500 hover:text-slate-800'
                     }`}
                   >
@@ -211,43 +199,36 @@ export function Login() {
                   <button
                     type="button"
                     onClick={() => { setMode('register'); setError(''); setInfoMessage(''); }}
-                    className={`pb-2 px-3 text-sm font-semibold border-b-2 transition-all ${
+                    className={`pb-2 px-3 text-sm font-semibold border-b-2 transition-colors ${
                       mode === 'register'
-                        ? 'border-primary text-primary'
+                        ? 'border-[#1B365D] text-[#1B365D]'
                         : 'border-transparent text-slate-500 hover:text-slate-800'
                     }`}
                   >
                     Faculty Registration
                   </button>
                 </div>
-
-                <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  PostgreSQL Live
-                </span>
               </div>
             )}
 
             {/* Registration Success */}
             {registeredSuccess ? (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center space-y-4 animate-fade-in">
-                <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto text-xl shadow-xs">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center space-y-4 animate-fade-in">
+                <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto text-xl">
                   ✓
                 </div>
-                <h3 className="font-bold text-lg text-emerald-950">Registration Submitted!</h3>
+                <h3 className="font-bold text-lg text-emerald-950">Registration Submitted</h3>
                 <p className="text-xs text-emerald-800 leading-relaxed">
-                  Welcome, <span className="font-bold">{registeredSuccess.name}</span>. Your application for <span className="font-bold">Dept of {registeredSuccess.dept}</span> has been securely recorded.
+                  Welcome, <span className="font-bold">{registeredSuccess.name}</span>. Your application for <span className="font-bold">Dept of {registeredSuccess.dept}</span> has been securely submitted.
                 </p>
-                <div className="p-3.5 bg-white rounded-xl border border-emerald-200 text-xs text-slate-600 text-left space-y-1">
-                  <p className="font-bold text-slate-800 flex items-center gap-1.5">
-                    <span>👑</span> Principal Verification Required
-                  </p>
+                <div className="p-3 bg-white rounded-lg border border-emerald-200 text-xs text-slate-600 text-left">
+                  <p className="font-semibold text-slate-800 mb-1">Principal Verification Required</p>
                   <p>In accordance with institutional guidelines, all faculty registrations require one-time approval by the Principal Office before sign in is granted.</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => { setRegisteredSuccess(null); setMode('signin'); }}
-                  className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-md"
+                  className="w-full py-2.5 bg-[#1B365D] hover:bg-[#152a48] text-white rounded-lg text-xs font-semibold transition-colors"
                 >
                   Return to Sign In
                 </button>
@@ -256,67 +237,31 @@ export function Login() {
               <div>
                 {/* Mode Headings */}
                 <div className="mb-5">
-                  <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
+                  <h2 className="text-xl font-bold text-slate-900 tracking-tight">
                     {mode === 'signin' && 'Sign In to Your Account'}
-                    {mode === 'register' && 'Faculty Coordinator Registration'}
+                    {mode === 'register' && 'Faculty Registration'}
                     {mode === 'forgot' && 'Reset Your Password'}
                     {mode === 'reset' && 'Set New Permanent Password'}
-                    {mode === 'force_change' && 'Mandatory First-Login Password Change'}
+                    {mode === 'force_change' && 'First-Login Password Change'}
                   </h2>
                   <p className="text-xs text-slate-500 mt-1">
-                    {mode === 'signin' && 'Enter your institutional email address and credentials.'}
-                    {mode === 'register' && 'Create your official profile to submit and coordinate proposals.'}
-                    {mode === 'forgot' && 'Enter your registered email and we will send a password reset link.'}
-                    {mode === 'reset' && 'Enter your security token and select a new secure password.'}
-                    {mode === 'force_change' && 'Institutional policy requires changing your temporary password on initial login.'}
+                    {mode === 'signin' && 'Enter your institutional credentials to access your portal.'}
+                    {mode === 'register' && 'Register your official profile to submit activity proposals.'}
+                    {mode === 'forgot' && 'Enter your registered email to receive reset instructions.'}
+                    {mode === 'reset' && 'Enter your security token and select a new password.'}
+                    {mode === 'force_change' && 'Change your temporary password before proceeding.'}
                   </p>
                 </div>
 
-                {/* Quick Role Access for Testing */}
-                {mode === 'signin' && (
-                  <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
-                      <span>Quick Select (Default Password: <code className="text-primary font-bold">password@67</code>)</span>
-                      <span className="text-emerald-700 font-semibold text-[10px]">Changeable in Settings</span>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                      {[
-                        { role: 'Principal', email: 'principal@slrtce.in', label: 'Principal', icon: '👑' },
-                        { role: 'Dean', email: 'dean@slrtce.in', label: 'Dean', icon: '🏛️' },
-                        { role: 'HOD', email: 'hod.it@slrtce.in', label: 'HOD', icon: '🏢' },
-                        { role: 'Faculty', email: 'prof.sharma@slrtce.in', label: 'Faculty', icon: '👨‍🏫' },
-                      ].map((item) => (
-                        <button
-                          key={item.role}
-                          type="button"
-                          onClick={() => {
-                            setEmail(item.email);
-                            setPassword('password@67');
-                            setError('');
-                          }}
-                          className={`px-2 py-1.5 rounded-lg text-xs font-semibold border text-left transition-all flex items-center gap-1.5 ${
-                            email === item.email
-                              ? 'bg-primary text-white border-primary shadow-xs'
-                              : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-                          }`}
-                        >
-                          <span>{item.icon}</span>
-                          <span className="truncate">{item.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Alerts */}
                 {error && (
-                  <div className="mb-4 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-start gap-2.5">
+                  <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-start gap-2.5 animate-fade-in">
                     <AlertCircle size={16} className="shrink-0 mt-0.5 text-rose-600" />
                     <span>{error}</span>
                   </div>
                 )}
                 {infoMessage && (
-                  <div className="mb-4 p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-start gap-2.5">
+                  <div className="mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-start gap-2.5 animate-fade-in">
                     <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-emerald-600" />
                     <span>{infoMessage}</span>
                   </div>
@@ -599,12 +544,12 @@ export function Dashboard() {
   const clashes = detectClashes(proposals);
 
   const tiles = [
-    { key: 'Pending Approvals', value: pendingApprovals, icon: <Clock size={19} />, color: 'from-amber-500 to-amber-600', sub: `${awaiting.length} awaiting you` },
-    { key: 'Approved This Month', value: approvedMonth, icon: <CheckCircle2 size={19} />, color: 'from-emerald-500 to-emerald-600', sub: 'across departments' },
-    { key: 'Rejected', value: rejected, icon: <FileText size={19} />, color: 'from-rose-500 to-rose-600', sub: 'needs resubmission' },
-    { key: 'Pending Reports', value: pendingReports, icon: <AlertTriangle size={19} />, color: 'from-orange-500 to-orange-600', sub: 'past event date' },
-    { key: 'Open Tasks', value: openTasks, icon: <ListTodo size={19} />, color: 'from-primary to-primary-hover', sub: `${myTasks.length} assigned to you` },
-    { key: 'Overdue Tasks', value: overdueTasks, icon: <AlertTriangle size={19} />, color: 'from-rose-500 to-pink-600', sub: 'needs attention' },
+    { key: 'Pending Approvals', value: pendingApprovals, icon: <Clock size={19} />, color: 'bg-amber-600', sub: `${awaiting.length} awaiting you` },
+    { key: 'Approved This Month', value: approvedMonth, icon: <CheckCircle2 size={19} />, color: 'bg-emerald-700', sub: 'across departments' },
+    { key: 'Rejected', value: rejected, icon: <FileText size={19} />, color: 'bg-rose-700', sub: 'needs resubmission' },
+    { key: 'Pending Reports', value: pendingReports, icon: <AlertTriangle size={19} />, color: 'bg-orange-600', sub: 'past event date' },
+    { key: 'Open Tasks', value: openTasks, icon: <ListTodo size={19} />, color: 'bg-primary', sub: `${myTasks.length} assigned to you` },
+    { key: 'Overdue Tasks', value: overdueTasks, icon: <AlertTriangle size={19} />, color: 'bg-rose-800', sub: 'needs attention' },
   ];
 
   const panelList = (key: string) => {
@@ -657,7 +602,7 @@ export function Dashboard() {
             className="text-left bg-white border border-gray-200/90 rounded-card p-4 hover:border-primary-border card-hover shadow-xs transition-all relative overflow-hidden group"
           >
             <div className="flex items-center justify-between">
-              <span className={`w-9 h-9 rounded-xl bg-gradient-to-tr ${t.color} text-white flex items-center justify-center shadow-xs`}>
+              <span className={`w-9 h-9 rounded-xl ${t.color} text-white flex items-center justify-center shadow-xs`}>
                 {t.icon}
               </span>
               <span className="text-2xl font-extrabold text-slate-900 tracking-tight">{t.value}</span>

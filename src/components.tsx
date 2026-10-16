@@ -3,9 +3,11 @@ import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
   FileText, Bell, Settings, Calendar,
   Menu, X, Search, LogOut, ChevronLeft, User, Database, Shield, Crown, GraduationCap, Building2, Users,
+  HelpCircle,
 } from 'lucide-react';
 import { useData } from './store';
 import { ROLE_META, PERMISSIONS } from './lib/roleUtils';
+import { OnboardingGuideModal } from './components/OnboardingGuideModal';
 
 export const STATUS_STYLE: Record<string, string> = {
   Approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -135,10 +137,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [q, setQ] = useState('');
+  const [guideOpen, setGuideOpen] = useState(false);
   const nav = useNavigate();
   const unread = notifications.filter((n) => n.userId === currentUser.id && !n.read).length;
   const role = currentUser.role;
   const roleMeta = ROLE_META[role] ?? ROLE_META.Faculty;
+
+  // Auto-show guide for first-time login
+  useEffect(() => {
+    if (currentUser?.id) {
+      const key = `docworm_guide_seen_${currentUser.id}`;
+      if (!localStorage.getItem(key)) {
+        setGuideOpen(true);
+      }
+    }
+  }, [currentUser?.id]);
 
   // Role-specific navigation
   const allLinks = [
@@ -170,7 +183,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {/* App logo */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-primary-border">
         <Link to="/" className="flex items-center gap-2.5">
-          <span className="w-9 h-9 rounded-xl bg-gradient-to-tr from-primary-dark to-primary text-white flex items-center justify-center shadow-sm">
+          <span className="w-9 h-9 rounded-xl bg-[#1B365D] text-white flex items-center justify-center shadow-xs">
             <FileText size={19} />
           </span>
           {!collapsed && (
@@ -261,19 +274,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </nav>
 
       <div className="p-3 border-t border-primary-border space-y-2 bg-page">
-        <Link
-          to="/settings?tab=database"
-          onClick={() => setMobileOpen(false)}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-card text-xs font-medium border border-primary-border bg-surface hover:border-primary/40 hover:bg-primary-pale text-ink transition-colors"
-          title="Inspect database and backend access"
+        <button
+          onClick={() => { setGuideOpen(true); setMobileOpen(false); }}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-card text-xs font-semibold border border-primary-border bg-surface hover:bg-primary-pale text-ink transition-colors"
+          title="Open interactive walkthrough & guide"
         >
-          <Database size={14} className={backend === 'supabase' ? 'text-emerald-600' : 'text-primary'} />
-          {!collapsed && (
-            <span className="truncate">
-              Database: {backend === 'supabase' ? 'Supabase' : 'Local Storage'}
-            </span>
-          )}
-        </Link>
+          <HelpCircle size={14} className="text-primary" />
+          {!collapsed && <span className="truncate">Portal Guide &amp; Roles</span>}
+        </button>
 
         <button
           onClick={async () => {
@@ -339,26 +347,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
             <div className="flex-1 sm:hidden" />
 
-            {/* Database status chip — links to Settings → Database tab */}
-            <Link
-              to="/settings?tab=database"
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all ${
-                backend === 'supabase'
-                  ? syncState === 'live'
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                    : syncState === 'loading'
-                    ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                    : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                  : 'bg-primary-light text-primary border-primary-border hover:bg-primary-pale'
-              }`}
-              title="Database Access & Status. Click to inspect."
+            <button
+              onClick={() => setGuideOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-primary/20 bg-primary-pale text-primary hover:bg-primary-light transition-all shadow-xs"
+              title="Interactive How-To Guide & Institutional Hierarchy"
             >
-              <span className={`w-2 h-2 rounded-full ${backend === 'supabase' ? (syncState === 'live' ? 'bg-emerald-500 animate-pulse-dot' : syncState === 'loading' ? 'bg-amber-500' : 'bg-rose-500') : 'bg-primary animate-pulse-dot'}`} />
-              <span className="hidden md:inline">
-                {backend === 'supabase' ? (syncState === 'live' ? 'Database: Supabase Live' : syncState === 'loading' ? 'Database: Syncing...' : 'Database: Offline') : 'Database: Local'}
-              </span>
-              <span className="md:hidden">DB</span>
-            </Link>
+              <HelpCircle size={14} />
+              <span className="hidden sm:inline">How-to Guide</span>
+            </button>
 
             <button
               onClick={() => nav('/notifications')}
@@ -379,19 +375,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
               title="Sign Out"
               aria-label="Log out"
             >
-              <LogOut size={18} />
+              <LogOut size={14} />
             </button>
           </div>
-
-          {backend === 'supabase' && (
-            <button
-              onClick={refresh}
-              className="w-full text-left px-4 py-1 text-[11px] text-ink-muted hover:text-primary border-t border-primary-border bg-page/60 flex items-center justify-between"
-            >
-              <span>{syncState === 'live' ? `Connected to college database (synced ${lastSyncedAt ?? 'just now'})` : syncState === 'loading' ? 'Syncing with Supabase...' : 'Database connection interrupted. Showing cached state.'}</span>
-              <span className="font-semibold text-primary">Click to refresh</span>
-            </button>
-          )}
         </header>
 
         {syncState === 'offline' && (
@@ -407,6 +393,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
         )}
         <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto">{children}</main>
       </div>
+
+      <OnboardingGuideModal
+        isOpen={guideOpen}
+        onClose={() => setGuideOpen(false)}
+        currentUser={currentUser}
+      />
     </div>
   );
 }

@@ -109,8 +109,8 @@ export function exportCSV(filename: string, rows: Record<string, unknown>[], col
     const v = String(r[c] ?? '');
     return `"${v.replace(/"/g, '""')}"`;
   }).join(',')).join('\n');
-  const withHeader = `# ${FILE_HEADER}\n${header}\n${body}`;
-  saveAs(new Blob([withHeader], { type: 'text/csv;charset=utf-8' }), filename);
+  const csvContent = '\uFEFF' + `${header}\n${body}`;
+  saveAs(new Blob([csvContent], { type: 'text/csv;charset=utf-8' }), filename);
 }
 
 export function exportXLSX(filename: string, rows: Record<string, unknown>[], columns: string[]) {
@@ -124,7 +124,7 @@ export function exportXLSX(filename: string, rows: Record<string, unknown>[], co
 export function exportPDF(filename: string, title: string, columns: string[], rows: Record<string, unknown>[]) {
   const doc = new jsPDF();
   doc.setFontSize(11);
-  doc.setTextColor(109, 74, 255);
+  doc.setTextColor(27, 54, 93);
   doc.text('Docworm', 14, 14);
   doc.setTextColor(30, 41, 59);
   doc.setFontSize(13);
@@ -137,7 +137,7 @@ export function exportPDF(filename: string, title: string, columns: string[], ro
     head: [columns],
     body: rows.map((r) => columns.map((c) => String(r[c] ?? ''))),
     styles: { fontSize: 8 },
-    headStyles: { fillColor: [109, 74, 255] },
+    headStyles: { fillColor: [27, 54, 93] },
   });
   doc.save(filename);
 }
@@ -145,7 +145,7 @@ export function exportPDF(filename: string, title: string, columns: string[], ro
 export function exportLetterPDF(p: Proposal, college: { collegeName: string; address: string; phone: string; email: string }) {
   const doc = new jsPDF();
   doc.setFontSize(10);
-  doc.setTextColor(109, 74, 255);
+  doc.setTextColor(27, 54, 93);
   doc.text('Docworm', 14, 12);
   doc.setTextColor(30, 41, 59);
   doc.setFontSize(14);
@@ -154,7 +154,7 @@ export function exportLetterPDF(p: Proposal, college: { collegeName: string; add
   doc.setTextColor(80, 80, 90);
   doc.text(college.address, 14, 26);
   doc.text(`${college.phone} | ${college.email}`, 14, 31);
-  doc.setDrawColor(109, 74, 255);
+  doc.setDrawColor(27, 54, 93);
   doc.line(14, 34, 196, 34);
   doc.setTextColor(30, 41, 59);
   doc.setFontSize(10);
@@ -179,7 +179,7 @@ export function exportLetterPDF(p: Proposal, college: { collegeName: string; add
     startY: y,
     head: [['Coordinator', 'HOD', 'Dean / Principal']],
     body: [[p.submitterName, p.approvalChain.find((s) => s.role === 'HOD')?.userName ?? '', p.approvalChain.find((s) => s.role === 'Principal')?.userName ?? 'Principal']],
-    headStyles: { fillColor: [109, 74, 255], fontSize: 9 },
+    headStyles: { fillColor: [27, 54, 93], fontSize: 9 },
     styles: { fontSize: 9 },
   });
   doc.setFontSize(8);
