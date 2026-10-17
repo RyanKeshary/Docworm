@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
+import { useData } from '../store';
 import {
   Database, Play, Download, AlertTriangle, CheckCircle2, RefreshCw,
   Search, Shield, Plus, Trash2, Mail, Send, Eye, EyeOff, Save,
@@ -547,7 +548,8 @@ export function AcademicOptionsPanel() {
         api.departments.list(),
         api.categories.list(),
       ]);
-      setOptions(optRes.options || []);
+      const rawOptions = optRes.all || (Array.isArray(optRes.options) ? optRes.options : []);
+      setOptions(Array.isArray(rawOptions) ? rawOptions : []);
       setDepartments(deptRes.departments || []);
       setCategories(catRes.categories || []);
     } catch (err: any) {
@@ -623,7 +625,7 @@ export function AcademicOptionsPanel() {
     }
   };
 
-  const filteredOptions = options.filter((o) => o.type === selectedType);
+  const filteredOptions = Array.isArray(options) ? options.filter((o) => o && o.type === selectedType) : [];
 
   return (
     <div className="space-y-4">
@@ -1006,12 +1008,22 @@ export function SmtpSettingsPanel() {
 // 6. USER PROFILE & PASSWORD CHANGE PANEL
 // ==========================================
 export function UserProfilePanel({ currentUser, onUpdate }: { currentUser: any; onUpdate?: () => void }) {
+  const { updateCurrentUser } = useData();
   const [profile, setProfile] = useState({
     name: currentUser.name || '',
     phone: currentUser.phone || '',
     designation: currentUser.designation || '',
     photo_url: currentUser.photo_url || '',
   });
+
+  useEffect(() => {
+    setProfile({
+      name: currentUser.name || '',
+      phone: currentUser.phone || '',
+      designation: currentUser.designation || '',
+      photo_url: currentUser.photo_url || '',
+    });
+  }, [currentUser.id, currentUser.name, currentUser.phone, currentUser.designation, currentUser.photo_url]);
 
   const [passwordForm, setPasswordForm] = useState({
     current_password: '',
@@ -1029,7 +1041,9 @@ export function UserProfilePanel({ currentUser, onUpdate }: { currentUser: any; 
     setProfileSaving(true);
     setProfileFeedback(null);
     try {
-      await api.profile.update(profile);
+      const res = await api.profile.update(profile);
+      const updatedData = res.user ? { ...profile, ...res.user } : profile;
+      updateCurrentUser(updatedData);
       setProfileFeedback({ type: 'success', msg: 'Profile updated successfully!' });
       if (onUpdate) onUpdate();
     } catch (err: any) {

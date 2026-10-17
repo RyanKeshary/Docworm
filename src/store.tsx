@@ -46,6 +46,7 @@ interface DataState {
   rejectFaculty: (userId: string) => Promise<void>;
   addLeadership: (user: any) => Promise<string | null>;
   removeUser: (userId: string) => Promise<void>;
+  updateCurrentUser: (updates: Partial<User>) => void;
   resetDemo: () => void;
   purgeFakeData: () => void;
 }
@@ -325,46 +326,63 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   // Approve Faculty Registration (Principal Only)
   const approveFaculty = async (userId: string) => {
+    // Instant optimistic update
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, status: 'active' } : u)));
     try {
       await api.users.approve(userId);
-      await refresh();
     } catch (err: any) {
+      await refresh();
       alert(err.message || 'Failed to approve registration');
     }
   };
 
   // Reject Faculty Registration (Principal Only)
   const rejectFaculty = async (userId: string) => {
+    // Instant optimistic update
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
     try {
       await api.users.reject(userId);
-      await refresh();
     } catch (err: any) {
+      await refresh();
       alert(err.message || 'Failed to reject registration');
     }
   };
 
-  // Appoint Leadership (Principal Only)
+  // Add / Appoint Staff (Principal adds all, Dean adds HOD & below, HOD adds Faculty)
   const addLeadership = async (userData: any): Promise<string | null> => {
     try {
-      await api.auth.register({
-        ...userData,
-        // Leadership appointed by Principal gets auto-approved on server if needed
-      });
-      await refresh();
-      return null;
+      const res = await api.users.create(userData);
+      if (res.user) {
+        // Instant optimistic update in memory
+        setUsers((prev) => {
+          const exists = prev.some((u) => u.id === res.user.id);
+          if (exists) return prev.map((u) => (u.id === res.user.id ? { ...u, ...res.user } : u));
+          return [res.user, ...prev];
+        });
+        return null;
+      }
+      return 'Failed to create user account.';
     } catch (err: any) {
-      return err.message || 'Failed to appoint leadership';
+      return err.message || 'Failed to add staff account';
     }
   };
 
-  // Remove Staff (Principal Only)
+  // Remove Staff
   const removeUser = async (userId: string) => {
+    // Instant optimistic update
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
     try {
       await api.users.remove(userId);
-      await refresh();
     } catch (err: any) {
+      await refresh();
       alert(err.message || 'Failed to remove staff account');
     }
+  };
+
+  // Update Current User profile in memory immediately
+  const updateCurrentUser = (updates: Partial<User>) => {
+    setCurrentUser((prev) => ({ ...prev, ...updates }));
+    setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? { ...u, ...updates } : u)));
   };
 
   // Save Academic Options
@@ -447,6 +465,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     rejectFaculty,
     addLeadership,
     removeUser,
+    updateCurrentUser,
     resetDemo: () => {},
     purgeFakeData,
   };

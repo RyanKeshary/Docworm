@@ -137,6 +137,8 @@ export const api = {
 
   users: {
     list: () => apiFetch('/api/users'),
+    create: (userData: any) =>
+      apiFetch('/api/users', { method: 'POST', body: JSON.stringify(userData) }),
     update: (id: string, data: any) =>
       apiFetch(`/api/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     approve: (id: string) =>

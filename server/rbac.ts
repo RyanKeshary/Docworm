@@ -95,9 +95,38 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
       return true;
 
     case 'user:create':
+      // Principal can add all. Dean can add HOD and rest below. HOD can add Faculty. Faculty adds none.
+      if (role === 'Principal') return true;
+      if (!resource) return false;
+      {
+        const targetRole = typeof resource === 'string' ? resource : resource.role;
+        if (role === 'Dean') {
+          return targetRole === 'HOD' || targetRole === 'Faculty' || targetRole === 'Office Admin';
+        }
+        if (role === 'HOD') {
+          return targetRole === 'Faculty';
+        }
+      }
+      return false;
+
     case 'user:delete':
+      if (role === 'Principal') return true;
+      if (!resource) return false;
+      {
+        const targetRole = typeof resource === 'string' ? resource : resource.role;
+        if (role === 'Dean') {
+          return targetRole === 'HOD' || targetRole === 'Faculty' || targetRole === 'Office Admin';
+        }
+        if (role === 'HOD') {
+          const resDept = resource.department_code || resource.department_id || resource.department;
+          const isSameDept = !resDept || resDept === user.department_code || resDept === user.department_id;
+          return targetRole === 'Faculty' && isSameDept;
+        }
+      }
+      return false;
+
     case 'user:approve_registration':
-      // ONLY Principal can add, remove, or terminate staff
+      // ONLY Principal can approve or verify registration queue
       return role === 'Principal';
 
     case 'user:edit_own':

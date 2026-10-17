@@ -26,7 +26,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'docworm_jwt_secret_institution_slr
 const IS_PROD = process.env.NODE_ENV === 'production';
 const APP_URL = process.env.APP_URL || 'https://docworm-portal.vercel.app';
 
-// Normalize /api prefix and restore original Vercel rewritten paths
+// Normalize Vercel rewritten paths for API routes only
 app.use((req, _res, next) => {
   const matched = (
     req.headers['x-matched-path'] ||
@@ -37,8 +37,6 @@ app.use((req, _res, next) => {
 
   if (matched && matched.startsWith('/api')) {
     req.url = matched;
-  } else if (req.url && !req.url.startsWith('/api')) {
-    req.url = '/api' + (req.url.startsWith('/') ? req.url : `/${req.url}`);
   }
   next();
 });
@@ -602,6 +600,102 @@ app.get('/api/users', authenticate, async (req, res) => {
   }
 });
 
+// Create / Appoint Staff (Principal adds all, Dean adds HOD & below, HOD adds Faculty)
+app.post('/api/users', authenticate, async (req, res) => {
+  const actor = req.user!;
+  const schema = z.object({
+    name: z.string().min(2, 'Name must be at least 2 characters.'),
+    email: z.string().email('Valid institutional email is required.'),
+    password: z.string().min(6, 'Password must be at least 6 characters.').default('password@67'),
+    role: z.enum(['Principal', 'Dean', 'HOD', 'Faculty', 'Office Admin']),
+    department: z.string().optional().nullable(),
+    designation: z.string().optional().nullable(),
+    phone: z.string().optional().nullable(),
+  });
+
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid input data.' });
+    return;
+  }
+
+  const { name, email, password, role: targetRole, department, designation, phone } = parsed.data;
+
+  // RBAC Hierarchy Verification
+  if (!can(actor, 'user:create', { role: targetRole })) {
+    res.status(403).json({
+      error: `Forbidden: ${actor.role} does not have authority to create accounts with role ${targetRole}.`,
+    });
+    return;
+  }
+
+  try {
+    const existing = await sql`SELECT id FROM public.users WHERE lower(email) = ${email.toLowerCase().trim()}`;
+    if (existing.length) {
+      res.status(409).json({ error: 'A staff account with this email already exists.' });
+      return;
+    }
+
+    let targetDeptCode = department;
+    if (actor.role === 'HOD') {
+      targetDeptCode = actor.department_code || department;
+    }
+    if (targetRole === 'Principal') {
+      targetDeptCode = null;
+    }
+
+    let deptId = null;
+    if (targetDeptCode) {
+      const deptRows = await sql`
+        SELECT id, code FROM public.departments WHERE code = ${targetDeptCode} OR id = ${targetDeptCode}
+      `;
+      if (deptRows.length) {
+        deptId = deptRows[0].id;
+        targetDeptCode = deptRows[0].code;
+      }
+    }
+
+    const pwHash = await bcrypt.hash(password, 10);
+    const defaultDesignation = designation?.trim() || (
+      targetRole === 'Dean' ? 'Dean, Student Welfare' :
+      targetRole === 'HOD' ? `Head of Department, ${targetDeptCode || 'Engineering'}` :
+      targetRole === 'Office Admin' ? 'Administrative Officer' :
+      'Assistant Professor'
+    );
+
+    const inserted = await sql`
+      INSERT INTO public.users (
+        name, email, password_hash, role, department_id,
+        designation, phone, status, must_change_password
+      ) VALUES (
+        ${name.trim()}, ${email.toLowerCase().trim()}, ${pwHash}, ${targetRole}, ${deptId},
+        ${defaultDesignation}, ${phone?.trim() || ''}, 'active', FALSE
+      )
+      RETURNING id, name, email, role, department_id, designation, phone, status, created_at, updated_at
+    `;
+
+    const newUser = {
+      ...inserted[0],
+      department: targetDeptCode,
+      department_code: targetDeptCode,
+    };
+
+    await logAudit(actor.id, actor.name, 'USER_CREATED', `users:${newUser.id}`, {
+      role: targetRole,
+      department: targetDeptCode,
+      appointedBy: actor.name,
+    });
+
+    res.status(201).json({
+      message: `Successfully created ${targetRole} account for ${newUser.name}.`,
+      user: newUser,
+    });
+  } catch (err: any) {
+    console.error('Create user error:', err);
+    res.status(500).json({ error: err.message || 'Failed to create user account.' });
+  }
+});
+
 // Appoint Leadership / Update Staff (Principal Only)
 app.put('/api/users/:id', authenticate, async (req, res) => {
   const user = req.user!;
@@ -720,17 +814,17 @@ app.post('/api/users/:id/reject', authenticate, async (req, res) => {
   }
 });
 
-// Remove / Terminate Staff (Principal Only)
+// Remove / Terminate Staff
 app.delete('/api/users/:id', authenticate, async (req, res) => {
   const user = req.user!;
-  if (!can(user, 'user:delete')) {
-    res.status(403).json({ error: 'Forbidden: Only the Principal can remove staff.' });
-    return;
-  }
-
   const targetId = req.params.id;
   try {
-    const target = await sql`SELECT id, name, role FROM public.users WHERE id = ${targetId}`;
+    const target = await sql`
+      SELECT u.id, u.name, u.role, u.department_id, d.code as department_code
+      FROM public.users u
+      LEFT JOIN public.departments d ON u.department_id = d.id
+      WHERE u.id = ${targetId}
+    `;
     if (!target.length) {
       res.status(404).json({ error: 'User not found.' });
       return;
@@ -738,6 +832,11 @@ app.delete('/api/users/:id', authenticate, async (req, res) => {
 
     if (target[0].role === 'Principal') {
       res.status(400).json({ error: 'The Master Principal account cannot be removed.' });
+      return;
+    }
+
+    if (!can(user, 'user:delete', target[0])) {
+      res.status(403).json({ error: 'Forbidden: You do not have authority to remove this account.' });
       return;
     }
 

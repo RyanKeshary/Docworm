@@ -132,7 +132,7 @@ async function bootstrap() {
     `;
 
     // 5. Bootstrap Initial Principal Account
-    const principalEmail = (process.env.INITIAL_PRINCIPAL_EMAIL || 'principal@slrtce.in').toLowerCase().trim();
+    const principalEmail = (process.env.INITIAL_PRINCIPAL_EMAIL || 'umesh.bhadade@slrtce.in').toLowerCase().trim();
     const principalPassword = process.env.INITIAL_PRINCIPAL_PASSWORD || 'password@67';
     console.log(`👑 Bootstrapping Master Principal Account (${principalEmail})...`);
 

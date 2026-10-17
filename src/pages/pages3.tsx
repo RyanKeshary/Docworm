@@ -12,6 +12,7 @@ import { Badge, Drawer, EmptyState, ExportMenu, Field, Modal, btnGhost, btnPrima
 import { REPORT_COLS, computedTaskStatus, detectClashes, exportCSV, exportPDF, exportXLSX, flattenProposal, flattenReport, flattenTask, budgetTotals, exportLetterPDF } from '../utils';
 import type { Task, User } from '../types';
 import { api } from '../lib/api';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import {
   CloudTableEditorPanel,
   SqlEditorPanel,
@@ -912,20 +913,40 @@ export function SettingsPage() {
 
   const [params, setParams] = useSearchParams();
   const isPrincipal = currentUser.role === 'Principal';
-  const isAdmin = currentUser.role === 'Principal' || currentUser.role === 'Dean';
+  const isDean = currentUser.role === 'Dean';
+  const isHod = currentUser.role === 'HOD';
+  const isAdmin = isPrincipal;
+  const canManageStaff = isPrincipal || isDean || isHod;
+
+  const availableRolesToAdd = useMemo(() => {
+    if (isPrincipal) return ['Dean', 'HOD', 'Faculty', 'Office Admin'] as const;
+    if (isDean) return ['HOD', 'Faculty', 'Office Admin'] as const;
+    if (isHod) return ['Faculty'] as const;
+    return [] as const;
+  }, [isPrincipal, isDean, isHod]);
+
   const rawTab = params.get('tab');
-  const currentTab = (!rawTab || rawTab === 'database') ? (isAdmin ? 'leadership' : 'profile') : rawTab;
+  const currentTab = (!rawTab || rawTab === 'database') ? (canManageStaff ? 'leadership' : 'profile') : rawTab;
   const setTab = (t: string) => setParams({ tab: t });
 
   const pendingFaculty = useMemo(() => users.filter((u) => u.status === 'pending_approval'), [users]);
 
-  const [leadershipForm, setLeadershipForm] = useState({
+  const defaultRole = isPrincipal ? 'HOD' : isDean ? 'HOD' : 'Faculty';
+  const [leadershipForm, setLeadershipForm] = useState<{
+    name: string;
+    email: string;
+    password: string;
+    role: 'Principal' | 'Dean' | 'HOD' | 'Faculty' | 'Office Admin';
+    department: string;
+    designation: string;
+    phone: string;
+  }>({
     name: '',
     email: '',
-    password: 'password123',
-    role: 'HOD' as 'HOD' | 'Dean',
-    department: 'IT',
-    designation: 'Head of Department, IT',
+    password: 'password@67',
+    role: defaultRole,
+    department: currentUser.department || 'IT',
+    designation: '',
     phone: '',
   });
   const [leadershipFeedback, setLeadershipFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
@@ -941,6 +962,9 @@ export function SettingsPage() {
   // Filtered staff list based on role scoping and search
   const visibleStaff = useMemo(() => {
     let list = users;
+    if (isHod && currentUser.department) {
+      list = list.filter((u) => u.department === currentUser.department || u.role === 'Principal' || u.role === 'Dean');
+    }
     if (staffRoleFilter !== 'All') {
       list = list.filter((u) => u.role === staffRoleFilter);
     }
@@ -954,7 +978,7 @@ export function SettingsPage() {
       );
     }
     return list;
-  }, [users, staffRoleFilter, staffSearchQuery]);
+  }, [users, staffRoleFilter, staffSearchQuery, isHod, currentUser.department]);
 
   const editList = (key: keyof typeof options, val: string) => {
     saveOptions({ ...options, [key]: val.split(',').map((s) => s.trim()).filter(Boolean) });
@@ -967,30 +991,46 @@ export function SettingsPage() {
       setLeadershipFeedback({ type: 'error', msg: 'Full name and institutional email are required.' });
       return;
     }
+    const targetDept = isHod ? (currentUser.department || 'IT') : (leadershipForm.role === 'Principal' ? '' : (leadershipForm.department || 'IT'));
+    const targetDesignation = leadershipForm.designation.trim() || (
+      leadershipForm.role === 'Dean' ? 'Dean, Student Welfare' :
+      leadershipForm.role === 'HOD' ? `Head of Department, ${targetDept}` :
+      leadershipForm.role === 'Office Admin' ? 'Administrative Officer' :
+      'Assistant Professor'
+    );
     const err = await addLeadership({
       name: leadershipForm.name.trim(),
       email: leadershipForm.email.trim(),
-      password: leadershipForm.password || 'password123',
+      password: leadershipForm.password || 'password@67',
       role: leadershipForm.role,
-      department: leadershipForm.role === 'HOD' ? leadershipForm.department : 'HAS',
-      designation: leadershipForm.designation.trim() || (leadershipForm.role === 'HOD' ? `Head of Department, ${leadershipForm.department}` : 'Dean, Student Welfare'),
+      department: targetDept,
+      designation: targetDesignation,
       phone: leadershipForm.phone.trim(),
     });
     if (err) {
       setLeadershipFeedback({ type: 'error', msg: err });
       return;
     }
-    setLeadershipFeedback({ type: 'success', msg: `Successfully appointed ${leadershipForm.role}: ${leadershipForm.name}!` });
+    setLeadershipFeedback({ type: 'success', msg: `Successfully added ${leadershipForm.role}: ${leadershipForm.name}!` });
     setLeadershipForm({
       name: '',
       email: '',
-      password: 'password123',
-      role: 'HOD',
-      department: 'IT',
-      designation: 'Head of Department, IT',
+      password: 'password@67',
+      role: defaultRole,
+      department: currentUser.department || 'IT',
+      designation: '',
       phone: '',
     });
     setTimeout(() => setLeadershipFeedback(null), 4000);
+  };
+
+  const canRemoveTarget = (target: User) => {
+    if (target.id === currentUser.id) return false;
+    if (target.role === 'Principal') return false;
+    if (isPrincipal) return true;
+    if (isDean) return target.role !== 'Dean';
+    if (isHod) return target.role === 'Faculty' && (target.department === currentUser.department || !target.department);
+    return false;
   };
 
   const handleRemoveUser = (target: User) => {
@@ -998,7 +1038,11 @@ export function SettingsPage() {
       alert('The Principal account is the institutional master administrator and cannot be removed.');
       return;
     }
-    if (window.confirm(`Are you sure you want to permanently remove ${target.name} (${target.role}, ${target.department})? This action cannot be undone.`)) {
+    if (!canRemoveTarget(target)) {
+      alert('You do not have authority to remove this staff member.');
+      return;
+    }
+    if (window.confirm(`Are you sure you want to permanently remove ${target.name} (${target.role}, ${target.department || 'General'})? This action cannot be undone.`)) {
       storeRemoveUser(target.id);
     }
   };
@@ -1047,7 +1091,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-primary">System & Configuration</span>
-            {!isAdmin && (
+            {!isPrincipal && (
               <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
                 {currentUser.role} View
               </span>
@@ -1074,22 +1118,22 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
       {/* Tabs navigation - clean, responsive pills */}
       <div className="flex gap-1.5 bg-slate-100/80 p-1.5 rounded-card border border-slate-200/60 overflow-x-auto scrollbar-thin">
         {[
-          ...(isAdmin
+          ...(canManageStaff
             ? [
                 {
                   id: 'leadership',
-                  label: 'Leadership & Staff',
-                  badge: pendingFaculty.length > 0 ? `${pendingFaculty.length} Pending` : null,
+                  label: isPrincipal ? 'Leadership & Staff' : isDean ? 'Staff & Faculty' : 'Department Faculty',
+                  badge: isPrincipal && pendingFaculty.length > 0 ? `${pendingFaculty.length} Pending` : null,
                   icon: <Crown size={15} />,
                 },
               ]
             : []),
           { id: 'profile', label: 'My Profile', icon: <UserIcon size={15} /> },
-          { id: 'options', label: 'Academic Options', icon: null },
-          { id: 'letterhead', label: 'College Letterhead', icon: null },
+          ...(isPrincipal || isDean ? [{ id: 'options', label: 'Academic Options', icon: null }] : []),
+          ...(isPrincipal ? [{ id: 'letterhead', label: 'College Letterhead', icon: null }] : []),
           { id: 'auth', label: 'Role Permissions', icon: <Shield size={15} /> },
           ...(isPrincipal ? [{ id: 'smtp', label: 'Email & SMTP', icon: <Mail size={15} /> }] : []),
-          { id: 'audit', label: `Audit Log (${audit.length})`, icon: null },
+          ...(isPrincipal || isDean ? [{ id: 'audit', label: `Audit Log (${(audit || []).length})`, icon: null }] : []),
         ].map((t) => (
           <button
             key={t.id}
@@ -1113,7 +1157,8 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
 
       {/* 0. LEADERSHIP & FACULTY MANAGEMENT TAB */}
       {currentTab === 'leadership' && (
-        <div className="space-y-6 animate-fade-in">
+        <ErrorBoundary fallbackTitle="Staff & Leadership Administration">
+          <div className="space-y-6 animate-fade-in">
           {/* Top Info Banner */}
           <div className="bg-white border border-slate-200 rounded-card p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-start gap-3">
@@ -1217,28 +1262,37 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
             )}
           </div>
 
-          {/* 2. APPOINT LEADERSHIP (HODs & DEANS - PRINCIPAL ONLY) */}
-          {isPrincipal && (
+          {/* 2. ADD / APPOINT STAFF (Principal: all; Dean: HOD & below; HOD: Faculty) */}
+          {canManageStaff && (
             <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
               <div className="pb-3 border-b border-gray-100">
-                <h3 className="font-bold text-slate-900 text-base">Appoint Leadership (HODs & Deans)</h3>
+                <h3 className="font-bold text-slate-900 text-base">
+                  {isPrincipal ? 'Appoint Leadership & Staff (Principal Authority)' :
+                   isDean ? 'Add Department Heads & Faculty (Dean Authority)' :
+                   `Add Faculty Members (${currentUser.department || 'Department'})`}
+                </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Appoint institutional department heads and deans. Appointed leadership accounts are instantly active.
+                  {isPrincipal ? 'Principal can appoint all institutional leadership, Deans, HODs, and Faculty members.' :
+                   isDean ? 'Deans can appoint Department Heads (HODs) and Faculty coordinators.' :
+                   `HOD can add Faculty members directly into the Dept of ${currentUser.department || 'Engineering'}.`}
                 </p>
               </div>
 
               <form onSubmit={handleAppointLeadership} className="space-y-4">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-semibold text-slate-700">Appoint Role:</span>
-                  <div className="flex gap-2">
-                    {(['HOD', 'Dean'] as const).map((r) => (
+                  <div className="flex gap-2 flex-wrap">
+                    {availableRolesToAdd.map((r) => (
                       <button
                         key={r}
                         type="button"
                         onClick={() => setLeadershipForm({
                           ...leadershipForm,
                           role: r,
-                          designation: r === 'HOD' ? `Head of Department, ${leadershipForm.department}` : 'Dean, Student Welfare',
+                          designation: r === 'HOD' ? `Head of Department, ${leadershipForm.department || 'IT'}` :
+                                       r === 'Dean' ? 'Dean, Student Welfare' :
+                                       r === 'Office Admin' ? 'Administrative Officer' :
+                                       'Assistant Professor',
                         })}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
                           leadershipForm.role === r
@@ -1246,7 +1300,11 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                             : 'bg-slate-50 text-slate-700 border-gray-200 hover:bg-slate-100'
                         }`}
                       >
-                        {r === 'HOD' ? '🏢 Head of Department (HOD)' : '🎓 Dean'}
+                        {(r as string) === 'Principal' && '👑 Principal'}
+                        {r === 'Dean' && '🎓 Dean'}
+                        {r === 'HOD' && '🏢 Head of Department (HOD)'}
+                        {r === 'Faculty' && '👤 Faculty'}
+                        {r === 'Office Admin' && '💼 Office Admin'}
                       </button>
                     ))}
                   </div>
@@ -1266,26 +1324,34 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
 
                   <div>
                     <label className="text-xs font-semibold text-slate-700 block mb-1">
-                      {leadershipForm.role === 'HOD' ? 'Department Headed *' : 'Assigned Domain / Office'}
+                      {isHod ? 'Department' : leadershipForm.role === 'HOD' ? 'Department Headed *' : 'Department / Assigned Domain'}
                     </label>
-                    {leadershipForm.role === 'HOD' ? (
+                    {isHod ? (
+                      <input
+                        value={`Dept of ${currentUser.department || 'General'}`}
+                        disabled
+                        className={`${inputCls} bg-slate-50 text-slate-600 font-semibold cursor-not-allowed`}
+                      />
+                    ) : leadershipForm.role === 'Principal' ? (
+                      <input
+                        value="Institutional Master (All Departments)"
+                        disabled
+                        className={`${inputCls} bg-slate-50 text-slate-500 cursor-not-allowed`}
+                      />
+                    ) : (
                       <select
                         value={leadershipForm.department}
                         onChange={(e) => setLeadershipForm({
                           ...leadershipForm,
                           department: e.target.value,
-                          designation: `Head of Department, ${e.target.value}`,
+                          designation: leadershipForm.role === 'HOD' ? `Head of Department, ${e.target.value}` : leadershipForm.designation,
                         })}
                         className={inputCls}
                       >
-                        {options.departments.map((d) => <option key={d} value={d}>{d}</option>)}
+                        {(options.departments || ['IT', 'CMPN', 'EXTC', 'MECH', 'CIVIL', 'AIDS', 'HAS']).map((d) => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
                       </select>
-                    ) : (
-                      <input
-                        value="HAS / Student Welfare"
-                        disabled
-                        className={`${inputCls} bg-slate-50 text-slate-500 cursor-not-allowed`}
-                      />
                     )}
                   </div>
 
@@ -1306,7 +1372,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                       type="email"
                       value={leadershipForm.email}
                       onChange={(e) => setLeadershipForm({ ...leadershipForm, email: e.target.value })}
-                      placeholder="hod.it@slrtce.in"
+                      placeholder={leadershipForm.role === 'HOD' ? 'hod.dept@slrtce.in' : 'faculty@slrtce.in'}
                       className={inputCls}
                     />
                   </div>
@@ -1336,7 +1402,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
 
                 <div className="flex justify-end pt-2">
                   <button type="submit" className={btnPrimary}>
-                    <Plus size={15} /> Appoint {leadershipForm.role === 'HOD' ? 'Head of Department' : 'Dean'}
+                    <Plus size={15} /> Add {leadershipForm.role}
                   </button>
                 </div>
               </form>
@@ -1429,7 +1495,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                           <Edit2 size={12} /> Edit
                         </button>
                       )}
-                      {isPrincipal && u.role !== 'Principal' && !isMe && (
+                      {canRemoveTarget(u) && !isMe && (
                         <button
                           onClick={() => handleRemoveUser(u)}
                           className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50 transition-colors"
@@ -1453,198 +1519,211 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
             />
           )}
         </div>
+        </ErrorBoundary>
       )}
 
 
       {/* 2. PROFILE TAB */}
       {currentTab === 'profile' && (
-        <div className="space-y-6 animate-fade-in">
-          <UserProfilePanel currentUser={currentUser} onUpdate={handleRefresh} />
-        </div>
+        <ErrorBoundary fallbackTitle="User Profile">
+          <div className="space-y-6 animate-fade-in">
+            <UserProfilePanel currentUser={currentUser} onUpdate={handleRefresh} />
+          </div>
+        </ErrorBoundary>
       )}
 
       {/* 3. OPTIONS TAB */}
       {currentTab === 'options' && (
-        <div className="space-y-6 animate-fade-in">
-          <AcademicOptionsPanel />
-        </div>
+        <ErrorBoundary fallbackTitle="Academic Options">
+          <div className="space-y-6 animate-fade-in">
+            <AcademicOptionsPanel />
+          </div>
+        </ErrorBoundary>
       )}
 
       {/* 4. SMTP SETTINGS TAB */}
       {currentTab === 'smtp' && (
-        <div className="space-y-6 animate-fade-in">
-          <SmtpSettingsPanel />
-        </div>
+        <ErrorBoundary fallbackTitle="Email & SMTP Settings">
+          <div className="space-y-6 animate-fade-in">
+            <SmtpSettingsPanel />
+          </div>
+        </ErrorBoundary>
       )}
 
       {/* 4. ROLE & AUTH CONTROL TAB */}
       {currentTab === 'auth' && (
-        <div className="space-y-6 animate-fade-in">
-          {/* Active User Credentials Card */}
-          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <h2 className="font-bold text-slate-900 text-base">Active User Session</h2>
+        <ErrorBoundary fallbackTitle="Role Permissions Matrix">
+          <div className="space-y-6 animate-fade-in">
+            {/* Active User Credentials Card */}
+            <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <h2 className="font-bold text-slate-900 text-base">Active User Session</h2>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Logged in as <span className="font-semibold text-slate-800">{currentUser.name}</span> ({currentUser.email}) with institutional <span className="font-semibold text-primary">{currentUser.role}</span> privileges.
+                  </p>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Logged in as <span className="font-semibold text-slate-800">{currentUser.name}</span> ({currentUser.email}) with institutional <span className="font-semibold text-primary">{currentUser.role}</span> privileges.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary-pale text-primary border border-primary-border">
-                  Active Role: {currentUser.role}
-                </span>
-                {isPrincipal && (
-                  <button
-                    onClick={() => setTab('leadership')}
-                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors flex items-center gap-1.5 shadow-xs"
-                  >
-                    <Crown size={13} />
-                    Manage Leadership & Staff
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary-pale text-primary border border-primary-border">
+                    Active Role: {currentUser.role}
+                  </span>
+                  {isPrincipal && (
+                    <button
+                      onClick={() => setTab('leadership')}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary-dark transition-colors flex items-center gap-1.5 shadow-xs"
+                    >
+                      <Crown size={13} />
+                      Manage Leadership & Staff
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Institutional Role Permissions Matrix */}
-          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
-            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
-              <div>
-                <h3 className="font-bold text-slate-900 text-base">Institutional Role Permission Matrix</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Defines access boundaries enforced across all modules</p>
+            {/* Institutional Role Permissions Matrix */}
+            <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs">
+              <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Institutional Role Permission Matrix</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Defines access boundaries enforced across all modules</p>
+                </div>
+              </div>
+              <div className="mt-4 overflow-x-auto scrollbar-thin">
+                <table className="w-full text-left text-xs sm:text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-slate-50 text-slate-600">
+                      <th className="py-2.5 px-3 font-semibold">Role</th>
+                      <th className="py-2.5 px-3 font-semibold">Proposals Authority</th>
+                      <th className="py-2.5 px-3 font-semibold">Resource / Lab Approvals</th>
+                      <th className="py-2.5 px-3 font-semibold">Task Delegation</th>
+                      <th className="py-2.5 px-3 font-semibold">System & Database</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    <tr className="hover:bg-slate-50/50">
+                      <td className="py-3 px-3 font-semibold text-slate-900 flex items-center gap-1.5"><Badge text="Principal" /></td>
+                      <td className="py-3 px-3 text-slate-600">Final institutional sanction; force approve; budget clearance</td>
+                      <td className="py-3 px-3 text-slate-600">Full institutional room override</td>
+                      <td className="py-3 px-3 text-slate-600">Create & assign tasks across all departments</td>
+                      <td className="py-3 px-3 text-emerald-700 font-medium">Full Admin (Staff, DB, Letterhead)</td>
+                    </tr>
+                    <tr className="hover:bg-slate-50/50">
+                      <td className="py-3 px-3 font-semibold text-slate-900 flex items-center gap-1.5"><Badge text="Dean" /></td>
+                      <td className="py-3 px-3 text-slate-600">Student welfare & inter-departmental approval stage</td>
+                      <td className="py-3 px-3 text-slate-600">View room allocation & clashes</td>
+                      <td className="py-3 px-3 text-slate-600">View college tasks & assignments</td>
+                      <td className="py-3 px-3 text-slate-500">View audit logs & analytics</td>
+                    </tr>
+                    <tr className="hover:bg-slate-50/50">
+                      <td className="py-3 px-3 font-semibold text-slate-900 flex items-center gap-1.5"><Badge text="HOD" /></td>
+                      <td className="py-3 px-3 text-slate-600">First-level departmental proposal endorsement</td>
+                      <td className="py-3 px-3 text-slate-600">Approve / reject labs & classrooms owned by department</td>
+                      <td className="py-3 px-3 text-slate-600">Assign departmental tasks to faculty</td>
+                      <td className="py-3 px-3 text-slate-500">Department reports & directory</td>
+                    </tr>
+                    <tr className="hover:bg-slate-50/50">
+                      <td className="py-3 px-3 font-semibold text-slate-900 flex items-center gap-1.5"><Badge text="Faculty" /></td>
+                      <td className="py-3 px-3 text-slate-600">Draft proposals, request budgets, submit completion reports</td>
+                      <td className="py-3 px-3 text-slate-600">Request rooms / seminar halls with clash detection</td>
+                      <td className="py-3 px-3 text-slate-600">View & complete assigned tasks</td>
+                      <td className="py-3 px-3 text-slate-500">Personal profile & proposal history</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
-            <div className="mt-4 overflow-x-auto scrollbar-thin">
-              <table className="w-full text-left text-xs sm:text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-slate-50 text-slate-600">
-                    <th className="py-2.5 px-3 font-semibold">Role</th>
-                    <th className="py-2.5 px-3 font-semibold">Proposals Authority</th>
-                    <th className="py-2.5 px-3 font-semibold">Resource / Lab Approvals</th>
-                    <th className="py-2.5 px-3 font-semibold">Task Delegation</th>
-                    <th className="py-2.5 px-3 font-semibold">System & Database</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  <tr className="hover:bg-slate-50/50">
-                    <td className="py-3 px-3 font-semibold text-slate-900 flex items-center gap-1.5"><Badge text="Principal" /></td>
-                    <td className="py-3 px-3 text-slate-600">Final institutional sanction; force approve; budget clearance</td>
-                    <td className="py-3 px-3 text-slate-600">Full institutional room override</td>
-                    <td className="py-3 px-3 text-slate-600">Create & assign tasks across all departments</td>
-                    <td className="py-3 px-3 text-emerald-700 font-medium">Full Admin (Staff, DB, Letterhead)</td>
-                  </tr>
-                  <tr className="hover:bg-slate-50/50">
-                    <td className="py-3 px-3 font-semibold text-slate-900 flex items-center gap-1.5"><Badge text="Dean" /></td>
-                    <td className="py-3 px-3 text-slate-600">Student welfare & inter-departmental approval stage</td>
-                    <td className="py-3 px-3 text-slate-600">View room allocation & clashes</td>
-                    <td className="py-3 px-3 text-slate-600">View college tasks & assignments</td>
-                    <td className="py-3 px-3 text-slate-500">View audit logs & analytics</td>
-                  </tr>
-                  <tr className="hover:bg-slate-50/50">
-                    <td className="py-3 px-3 font-semibold text-slate-900 flex items-center gap-1.5"><Badge text="HOD" /></td>
-                    <td className="py-3 px-3 text-slate-600">First-level departmental proposal endorsement</td>
-                    <td className="py-3 px-3 text-slate-600">Approve / reject labs & classrooms owned by department</td>
-                    <td className="py-3 px-3 text-slate-600">Assign departmental tasks to faculty</td>
-                    <td className="py-3 px-3 text-slate-500">Department reports & directory</td>
-                  </tr>
-                  <tr className="hover:bg-slate-50/50">
-                    <td className="py-3 px-3 font-semibold text-slate-900 flex items-center gap-1.5"><Badge text="Faculty" /></td>
-                    <td className="py-3 px-3 text-slate-600">Draft proposals, request budgets, submit completion reports</td>
-                    <td className="py-3 px-3 text-slate-600">Request rooms / seminar halls with clash detection</td>
-                    <td className="py-3 px-3 text-slate-600">View & complete assigned tasks</td>
-                    <td className="py-3 px-3 text-slate-500">Personal profile & proposal history</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
           </div>
-        </div>
+        </ErrorBoundary>
       )}
 
       {/* 5. LETTERHEAD TAB */}
       {currentTab === 'letterhead' && (
-        <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4 animate-fade-in">
-          <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-            <div>
-              <h2 className="font-bold text-slate-900 text-base">College Letterhead Header</h2>
-              <p className="text-xs text-slate-500">Appears on every exported PDF and DOCX permission letter.</p>
+        <ErrorBoundary fallbackTitle="College Letterhead">
+          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4 animate-fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div>
+                <h2 className="font-bold text-slate-900 text-base">College Letterhead Header</h2>
+                <p className="text-xs text-slate-500">Appears on every exported PDF and DOCX permission letter.</p>
+              </div>
+              {!isAdmin && (
+                <span className="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full font-medium">
+                  <Lock size={12} /> Admin Managed
+                </span>
+              )}
             </div>
-            {!isAdmin && (
-              <span className="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full font-medium">
-                <Lock size={12} /> Admin Managed
-              </span>
-            )}
-          </div>
 
-          <Field label="College Name">
-            <input
-              value={letterhead.collegeName}
-              onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, collegeName: e.target.value })}
-              disabled={!isAdmin}
-              className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
-            />
-          </Field>
-          <Field label="Official Address">
-            <textarea
-              value={letterhead.address}
-              onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, address: e.target.value })}
-              disabled={!isAdmin}
-              className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
-              rows={2}
-            />
-          </Field>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Field label="Phone">
+            <Field label="College Name">
               <input
-                value={letterhead.phone}
-                onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, phone: e.target.value })}
+                value={letterhead.collegeName}
+                onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, collegeName: e.target.value })}
                 disabled={!isAdmin}
                 className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
               />
             </Field>
-            <Field label="Official Email">
-              <input
-                value={letterhead.email}
-                onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, email: e.target.value })}
+            <Field label="Official Address">
+              <textarea
+                value={letterhead.address}
+                onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, address: e.target.value })}
                 disabled={!isAdmin}
                 className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+                rows={2}
               />
             </Field>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Phone">
+                <input
+                  value={letterhead.phone}
+                  onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, phone: e.target.value })}
+                  disabled={!isAdmin}
+                  className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+                />
+              </Field>
+              <Field label="Official Email">
+                <input
+                  value={letterhead.email}
+                  onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, email: e.target.value })}
+                  disabled={!isAdmin}
+                  className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+                />
+              </Field>
+            </div>
           </div>
-        </div>
+        </ErrorBoundary>
       )}
 
       {/* 6. AUDIT TAB */}
       {currentTab === 'audit' && (
-        <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs animate-fade-in">
-          <div className="flex items-center justify-between pb-4 border-b border-gray-100">
-            <div>
-              <h2 className="font-bold text-slate-900 text-base">Institutional Audit Trail</h2>
-              <p className="text-xs text-slate-500">Chronological record of official approvals, edits, and status changes.</p>
-            </div>
-            <span className="text-xs font-semibold bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">
-              {audit.length} Records
-            </span>
-          </div>
-
-          <div className="mt-4 max-h-[500px] overflow-y-auto space-y-2 pr-1 scrollbar-thin">
-            {audit.map((a) => (
-              <div key={a.id} className="border border-gray-100 rounded-card p-3 hover:bg-slate-50/70 transition-colors text-xs sm:text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900">{a.actorName}</span>
-                  <span className="text-[11px] text-slate-400 font-mono">{a.createdAt}</span>
-                </div>
-                <p className="text-slate-600 mt-1">{a.action}</p>
+        <ErrorBoundary fallbackTitle="Audit Trail">
+          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs animate-fade-in">
+            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+              <div>
+                <h2 className="font-bold text-slate-900 text-base">Institutional Audit Trail</h2>
+                <p className="text-xs text-slate-500">Chronological record of official approvals, edits, and status changes.</p>
               </div>
-            ))}
-            {audit.length === 0 && (
-              <EmptyState title="No audit records" hint="Actions performed across Docworm will be recorded here." />
-            )}
+              <span className="text-xs font-semibold bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">
+                {audit.length} Records
+              </span>
+            </div>
+
+            <div className="mt-4 max-h-[500px] overflow-y-auto space-y-2 pr-1 scrollbar-thin">
+              {audit.map((a) => (
+                <div key={a.id} className="border border-gray-100 rounded-card p-3 hover:bg-slate-50/70 transition-colors text-xs sm:text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900">{a.actorName}</span>
+                    <span className="text-[11px] text-slate-400 font-mono">{a.createdAt}</span>
+                  </div>
+                  <p className="text-slate-600 mt-1">{a.action}</p>
+                </div>
+              ))}
+              {audit.length === 0 && (
+                <EmptyState title="No audit records" hint="Actions performed across Docworm will be recorded here." />
+              )}
+            </div>
           </div>
-        </div>
+        </ErrorBoundary>
       )}
     </div>
   );

@@ -159,6 +159,27 @@ assert(can(principal, 'leave:decide_principal') === true, 'Principal CAN grant f
 assert(can(dean, 'leave:view_all') === true, 'Dean CAN view all leaves (read-only oversight)');
 assert(can(dean, 'leave:decide_principal') === false, 'Dean CANNOT grant final sanction for leaves (403)');
 
+// 11. Hierarchical User Creation RBAC
+console.log('\n--- 11. Hierarchical User Creation ---');
+assert(can(principal, 'user:create', { role: 'Dean' }) === true, 'Principal CAN add Dean');
+assert(can(principal, 'user:create', { role: 'HOD' }) === true, 'Principal CAN add HOD');
+assert(can(principal, 'user:create', { role: 'Faculty' }) === true, 'Principal CAN add Faculty');
+assert(can(principal, 'user:create', { role: 'Office Admin' }) === true, 'Principal CAN add Office Admin');
+
+assert(can(dean, 'user:create', { role: 'HOD' }) === true, 'Dean CAN add HOD');
+assert(can(dean, 'user:create', { role: 'Faculty' }) === true, 'Dean CAN add Faculty');
+assert(can(dean, 'user:create', { role: 'Office Admin' }) === true, 'Dean CAN add Office Admin');
+assert(can(dean, 'user:create', { role: 'Dean' }) === false, 'Dean CANNOT add Dean');
+assert(can(dean, 'user:create', { role: 'Principal' }) === false, 'Dean CANNOT add Principal');
+
+assert(can(hodIt, 'user:create', { role: 'Faculty' }) === true, 'HOD CAN add Faculty');
+assert(can(hodIt, 'user:create', { role: 'HOD' }) === false, 'HOD CANNOT add HOD');
+assert(can(hodIt, 'user:create', { role: 'Dean' }) === false, 'HOD CANNOT add Dean');
+assert(can(hodIt, 'user:create', { role: 'Principal' }) === false, 'HOD CANNOT add Principal');
+
+assert(can(facultyIt, 'user:create', { role: 'Faculty' }) === false, 'Faculty CANNOT add Faculty');
+assert(can(facultyIt, 'user:create', { role: 'HOD' }) === false, 'Faculty CANNOT add HOD');
+
 console.log(`\n=================================================`);
 console.log(`Test Results: ${passed} Passed, ${failed} Failed`);
 console.log(`=================================================`);
