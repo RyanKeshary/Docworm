@@ -959,12 +959,40 @@ export function SettingsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const nav = useNavigate();
 
-  // Filtered staff list based on role scoping and search
-  const visibleStaff = useMemo(() => {
-    let list = users;
-    if (isHod && currentUser.department) {
-      list = list.filter((u) => u.department === currentUser.department || u.role === 'Principal' || u.role === 'Dean');
+  // Redirect faculty if they attempt to view leadership tab directly
+  useEffect(() => {
+    if (!canManageStaff && currentTab === 'leadership') {
+      setTab('profile');
     }
+  }, [canManageStaff, currentTab]);
+
+  // Filtered staff list based on role scoping:
+  // - Principal: sees all accounts across the institution
+  // - Dean: only sees HOD and Faculty accounts
+  // - HOD: only sees Faculty accounts in their department
+  // - Faculty: tab hidden entirely
+  const scopedStaff = useMemo(() => {
+    if (isPrincipal) {
+      return users;
+    }
+    if (isDean) {
+      return users.filter((u) => u.role === 'HOD' || u.role === 'Faculty');
+    }
+    if (isHod) {
+      return users.filter((u) => u.role === 'Faculty' && (u.department === currentUser.department || !u.department));
+    }
+    return [];
+  }, [users, isPrincipal, isDean, isHod, currentUser.department]);
+
+  const availableStaffFilters = useMemo(() => {
+    if (isPrincipal) return ['All', 'Principal', 'Dean', 'HOD', 'Faculty'] as const;
+    if (isDean) return ['All', 'HOD', 'Faculty'] as const;
+    if (isHod) return ['All', 'Faculty'] as const;
+    return ['All'] as const;
+  }, [isPrincipal, isDean, isHod]);
+
+  const visibleStaff = useMemo(() => {
+    let list = scopedStaff;
     if (staffRoleFilter !== 'All') {
       list = list.filter((u) => u.role === staffRoleFilter);
     }
@@ -978,7 +1006,7 @@ export function SettingsPage() {
       );
     }
     return list;
-  }, [users, staffRoleFilter, staffSearchQuery, isHod, currentUser.department]);
+  }, [scopedStaff, staffRoleFilter, staffSearchQuery]);
 
   const editList = (key: keyof typeof options, val: string) => {
     saveOptions({ ...options, [key]: val.split(',').map((s) => s.trim()).filter(Boolean) });
@@ -1413,8 +1441,16 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
           <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-100">
               <div>
-                <h3 className="font-bold text-slate-900 text-base">Authorized Leadership & Staff Directory</h3>
-                <p className="text-xs text-slate-500 mt-0.5">All active institutional accounts registered in the system</p>
+                <h3 className="font-bold text-slate-900 text-base">
+                  {isPrincipal ? 'Authorized Leadership & Staff Directory' :
+                   isDean ? 'Authorized Staff Directory (HODs & Faculty)' :
+                   `Department Faculty Directory (Dept of ${currentUser.department || 'General'})`}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {isPrincipal ? 'All active institutional accounts registered in the system' :
+                   isDean ? 'Active Heads of Department and Faculty coordinators across all departments' :
+                   `Faculty members registered under Department of ${currentUser.department || 'General'}`}
+                </p>
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
@@ -1430,19 +1466,19 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
               </div>
             </div>
 
-            {/* Filter pills */}
+            {/* Scoped Role Filter pills */}
             <div className="flex items-center gap-1.5 flex-wrap">
-              {(['All', 'Principal', 'Dean', 'HOD', 'Faculty'] as const).map((r) => (
+              {availableStaffFilters.map((r) => (
                 <button
                   key={r}
-                  onClick={() => setStaffRoleFilter(r)}
+                  onClick={() => setStaffRoleFilter(r as any)}
                   className={`px-3 py-1 rounded-lg text-xs font-semibold border transition-all ${
                     staffRoleFilter === r
                       ? 'bg-primary text-white border-primary shadow-xs'
                       : 'bg-slate-50 text-slate-600 border-gray-200 hover:bg-slate-100'
                   }`}
                 >
-                  {r} ({r === 'All' ? users.length : users.filter((u) => u.role === r).length})
+                  {r} ({r === 'All' ? scopedStaff.length : scopedStaff.filter((u) => u.role === r).length})
                 </button>
               ))}
             </div>

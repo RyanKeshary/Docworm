@@ -229,46 +229,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </NavLink>
         ))}
 
-        {/* Role-specific quick info */}
-        {!collapsed && (
-          <div className="mt-4 pt-3 border-t border-primary-border/40">
-            <p className="text-[10px] text-ink-muted uppercase font-semibold px-3 pb-2">Your Access Level</p>
-            <div className="px-3 space-y-1.5 text-[11px] text-ink-muted">
-              {role === 'Principal' && (
-                <>
-                  <p>✅ Final sanction authority</p>
-                  <p>✅ View all departments</p>
-                  <p>✅ Manage users & settings</p>
-                  <p>✅ Assign tasks to anyone</p>
-                </>
-              )}
-              {role === 'Dean' && (
-                <>
-                  <p>✅ View all departments</p>
-                  <p>✅ Review endorsed proposals</p>
-                  <p>✅ Forward to Principal</p>
-                  <p>🔒 Cannot manage system settings</p>
-                </>
-              )}
-              {role === 'HOD' && (
-                <>
-                  <p>✅ View {currentUser.department} dept only</p>
-                  <p>✅ First reviewer in chain</p>
-                  <p>✅ Assign dept tasks</p>
-                  <p>🔒 Cannot access other depts</p>
-                </>
-              )}
-              {role === 'Faculty' && (
-                <>
-                  <p>✅ Submit new requests</p>
-                  <p>✅ View your submissions</p>
-                  <p>✅ Download approved letters</p>
-                  <p>🔒 Cannot approve proposals</p>
-                </>
-              )}
-            </div>
-          </div>
-        )}
       </nav>
 
       <div className="p-3 border-t border-primary-border space-y-2 bg-page">
@@ -325,56 +285,107 @@ export function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-30 bg-surface/95 backdrop-blur-md border-b border-primary-border print-hidden">
-          <div className="flex items-center gap-2.5 px-4 py-2.5">
-            <button className="lg:hidden p-2 rounded-lg hover:bg-primary-pale text-ink" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu size={19} /></button>
-            <button className="hidden lg:block p-2 rounded-lg hover:bg-primary-pale text-ink-muted" onClick={() => setCollapsed((c) => !c)} aria-label="Toggle sidebar"><ChevronLeft size={18} className={collapsed ? 'rotate-180 transition-transform' : 'transition-transform'} /></button>
+        {/* Rearranged, beautifully spaced header */}
+        <header className="sticky top-0 z-30 bg-surface/95 backdrop-blur-md border-b border-primary-border/80 print-hidden shadow-xs">
+          <div className="flex items-center justify-between gap-4 px-4 sm:px-6 py-2.5">
+            {/* Left Zone: Sidebar toggles & Institutional Identity */}
+            <div className="flex items-center gap-2.5 shrink-0">
+              <button
+                className="lg:hidden p-2 rounded-xl hover:bg-primary-pale text-ink transition-colors"
+                onClick={() => setMobileOpen(true)}
+                aria-label="Open navigation"
+              >
+                <Menu size={19} />
+              </button>
+              <button
+                className="hidden lg:flex items-center justify-center p-2 rounded-xl hover:bg-primary-pale text-ink-muted transition-colors border border-transparent hover:border-primary-border/60"
+                onClick={() => setCollapsed((c) => !c)}
+                aria-label="Toggle sidebar"
+                title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                <ChevronLeft size={18} className={collapsed ? 'rotate-180 transition-transform' : 'transition-transform'} />
+              </button>
+              {collapsed && (
+                <div className="hidden sm:flex items-center gap-2 pl-1 border-l border-primary-border/60 ml-1">
+                  <span className="text-xs font-bold text-ink">Docworm</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary-pale text-primary font-semibold uppercase">{currentUser.role}</span>
+                </div>
+              )}
+            </div>
 
-            <form onSubmit={searchGo} className="flex-1 max-w-md hidden sm:block">
-              <div className="relative">
-                <Search size={16} className="absolute left-3 top-2.5 text-ink-muted" />
+            {/* Center Zone: Search bar (prominent & centered) */}
+            <div className="flex-1 max-w-xl mx-auto hidden sm:block">
+              <form onSubmit={searchGo} className="relative w-full">
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted/70" />
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   placeholder="Search ref no, event name, department..."
-                  className={`${inputCls} pl-9 py-1.5 text-xs sm:text-sm`}
+                  className={`${inputCls} pl-10 pr-4 py-2 text-xs sm:text-sm bg-slate-50/80 focus:bg-white border-slate-200/80 rounded-xl transition-all shadow-2xs`}
                   aria-label="Global search"
                 />
+              </form>
+            </div>
+
+            {/* Right Zone: Actions, Live Indicator, Notifications, and Profile */}
+            <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0 ml-auto">
+              {/* Live Auto-Sync Indicator */}
+              <div
+                className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-[11px] font-semibold text-emerald-700 select-none shadow-2xs"
+                title="Real-time live synchronization active. Updates from other users reflect automatically."
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span>Live Sync</span>
               </div>
-            </form>
 
-            <div className="flex-1 sm:hidden" />
+              {/* How-to Guide */}
+              <button
+                onClick={() => setGuideOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-primary/20 bg-primary-pale text-primary hover:bg-primary-light transition-all shadow-2xs"
+                title={`${currentUser.role} Interactive Guide & Walkthrough`}
+              >
+                <HelpCircle size={14} className="shrink-0" />
+                <span className="hidden sm:inline font-medium">Guide</span>
+              </button>
 
-            <button
-              onClick={() => setGuideOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-primary/20 bg-primary-pale text-primary hover:bg-primary-light transition-all shadow-xs"
-              title="Interactive How-To Guide & Institutional Hierarchy"
-            >
-              <HelpCircle size={14} />
-              <span className="hidden sm:inline">How-to Guide</span>
-            </button>
+              {/* Notification Bell */}
+              <button
+                onClick={() => nav('/notifications')}
+                className="relative p-2 rounded-xl hover:bg-primary-pale text-ink-muted hover:text-ink transition-colors border border-transparent hover:border-primary-border/60"
+                aria-label={`Notifications, ${unread} unread`}
+                title="Notifications"
+              >
+                <Bell size={18} />
+                {unread > 0 && (
+                  <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center animate-pulse shadow-xs">
+                    {unread}
+                  </span>
+                )}
+              </button>
 
-            <button
-              onClick={() => nav('/notifications')}
-              className="relative p-2 rounded-lg hover:bg-primary-pale text-ink-muted transition-colors"
-              aria-label={`Notifications, ${unread} unread`}
-            >
-              <Bell size={18} />
-              {unread > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center">
-                  {unread}
+              <div className="h-6 w-px bg-slate-200 hidden sm:block" />
+
+              {/* User Profile Chip */}
+              <div className="hidden md:flex items-center gap-2 pl-1 py-0.5">
+                <span className={`w-8 h-8 rounded-full ${roleMeta.bg} border ${roleMeta.border} font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs`}>
+                  {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
                 </span>
-              )}
-            </button>
+                <div className="text-left hidden lg:block leading-tight">
+                  <p className="text-xs font-bold text-slate-800 truncate max-w-[120px]">{currentUser.name}</p>
+                  <p className={`text-[10px] font-medium truncate ${roleMeta.accent}`}>{currentUser.role}</p>
+                </div>
+              </div>
 
-            <button
-              onClick={() => { signOut(); nav('/login'); }}
-              className="p-2 rounded-lg hover:bg-rose-50 text-ink-muted hover:text-rose-600 transition-colors"
-              title="Sign Out"
-              aria-label="Log out"
-            >
-              <LogOut size={14} />
-            </button>
+              {/* Sign Out */}
+              <button
+                onClick={() => { signOut(); nav('/login'); }}
+                className="p-2 rounded-xl hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors border border-transparent hover:border-rose-200"
+                title="Sign Out"
+                aria-label="Log out"
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
           </div>
         </header>
 
