@@ -2075,8 +2075,8 @@ if (fs.existsSync(distPath)) {
   });
 }
 
-// Start Server
-if (process.env.NODE_ENV !== 'test') {
+// Start Server (standalone / local only; Vercel serverless imports app directly)
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Docworm Production Server listening on http://0.0.0.0:${PORT}`);
   });

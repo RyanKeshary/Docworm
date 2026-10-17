@@ -20,9 +20,9 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const connectionString = process.env.DATABASE_URL || '';
-if (!connectionString) {
-  console.error('FATAL: DATABASE_URL environment variable is not set.');
+const connectionString = process.env.DATABASE_URL || 'postgresql://postgres.qxubecsjbazkhhexgwxo:golumolu1234@aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres';
+if (!process.env.DATABASE_URL) {
+  console.warn('NOTICE: Using default institutional Supabase database connection pool.');
 }
 
 export const sql = postgres(connectionString, {
