@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from '../lib/router-compat';
 import { ArrowLeft, ArrowRight, Eye, Save } from 'lucide-react';
 import { useData, nowStr } from '../store';
 import { DEFAULT_OPTIONS, PO_LIST, currentAcademicYear } from '../config';

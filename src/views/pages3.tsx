@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useMemo, useState, useEffect } from 'react';
-import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useNavigate, useSearchParams } from '../lib/router-compat';
 import {
   ArrowLeft, Plus, Database, Server, ExternalLink, RefreshCw, Trash2,
   Shield, CheckCircle2, Copy, Check, Info, User as UserIcon, Lock,

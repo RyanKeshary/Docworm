@@ -674,8 +674,9 @@ app.post('/api/users', authenticate, async (req, res) => {
       RETURNING id, name, email, role, department_id, designation, phone, status, created_at, updated_at
     `;
 
+    const newRow = inserted[0] as any;
     const newUser = {
-      ...inserted[0],
+      ...newRow,
       department: targetDeptCode,
       department_code: targetDeptCode,
     };
@@ -1665,9 +1666,9 @@ app.put('/api/options/:id', authenticate, async (req, res) => {
     await sql`
       UPDATE public.academic_options
       SET
-        value = COALESCE(${parsed.data.value}, value),
-        active = COALESCE(${parsed.data.active}, active),
-        sort_order = COALESCE(${parsed.data.sort_order}, sort_order)
+        value = COALESCE(${parsed.data.value ?? null}, value),
+        active = COALESCE(${parsed.data.active ?? null}, active),
+        sort_order = COALESCE(${parsed.data.sort_order ?? null}, sort_order)
       WHERE id = ${optId}
     `;
     res.json({ message: 'Option updated.' });
@@ -1959,7 +1960,7 @@ app.get('/api/admin/tables/:table', authenticate, async (req, res) => {
     return;
   }
 
-  const tableName = req.params.table.replace(/[^a-zA-Z0-9_]/g, '');
+  const tableName = String(req.params.table).replace(/[^a-zA-Z0-9_]/g, '');
   const page = Math.max(1, Number(req.query.page || 1));
   const limit = Math.min(100, Math.max(5, Number(req.query.limit || 25)));
   const offset = (page - 1) * limit;
@@ -2055,7 +2056,7 @@ app.post('/api/admin/sql', authenticate, async (req, res) => {
 // Quick CSV Export with BOM
 app.get('/api/export/csv/:table', authenticate, async (req, res) => {
   const user = req.user!;
-  const tableName = req.params.table.replace(/[^a-zA-Z0-9_]/g, '');
+  const tableName = String(req.params.table).replace(/[^a-zA-Z0-9_]/g, '');
 
   try {
     let rows: any[];

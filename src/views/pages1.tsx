@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useMemo, useState, useEffect } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from '../lib/router-compat';
 import {
   FileText, Clock, CheckCircle2, AlertTriangle, ListTodo, Search, Plus,
   GraduationCap, Building2, Landmark, Briefcase, Zap, User, ArrowRight,
@@ -657,7 +659,7 @@ export function ProposalsList() {
       <div className="flex flex-wrap gap-2 items-center bg-white border border-gray-200 rounded-card p-3">
         <div className="flex gap-1 bg-gray-100 rounded-card p-1">
           {(['all', 'mine', 'awaiting'] as const).map((t) => (
-            <button key={t} onClick={() => setParams((prev) => { const n = new URLSearchParams(prev); n.set('tab', t); return n; })} className={`px-3 py-1.5 text-sm font-medium rounded-md ${tab === t ? 'bg-white shadow-sm text-primary-dark' : 'text-slate-600'}`}>
+            <button key={t} onClick={() => setParams((prev: URLSearchParams) => { const n = new URLSearchParams(prev); n.set('tab', t); return n; })} className={`px-3 py-1.5 text-sm font-medium rounded-md ${tab === t ? 'bg-white shadow-sm text-primary-dark' : 'text-slate-600'}`}>
               {t === 'all' ? 'All' : t === 'mine' ? 'Mine' : 'Awaiting my action'}
             </button>
           ))}
@@ -670,7 +672,7 @@ export function ProposalsList() {
           <option value="">All depts</option>
           {['IT', 'CMPN', 'EXTC', 'ECS', 'MECH', 'CIVIL', 'HAS'].map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
-        <select value={statusF} onChange={(e) => setParams((prev) => { const n = new URLSearchParams(prev); if (e.target.value) n.set('status', e.target.value); else n.delete('status'); return n; })} className={`${inputCls} !w-44`} aria-label="Filter by status">
+        <select value={statusF} onChange={(e) => setParams((prev: URLSearchParams) => { const n = new URLSearchParams(prev); if (e.target.value) n.set('status', e.target.value); else n.delete('status'); return n; })} className={`${inputCls} !w-44`} aria-label="Filter by status">
           <option value="">All statuses</option>
           {['Draft', 'Submitted', 'Under Review', 'Approved', 'Rejected', 'Changes Requested', 'Withdrawn', 'Completed'].map((s) => <option key={s} value={s}>{s}</option>)}
         </select>

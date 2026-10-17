@@ -2,10 +2,10 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { DataProvider, useData } from './store';
 import { Layout } from './components';
-import { PermissionPortal } from './pages/PermissionPortal';
-import { Login } from './pages/pages1';
-import { SettingsPage, NotificationsCenter } from './pages/pages3';
-import { FacultyLeavePortal } from './pages/FacultyLeavePortal';
+import { PermissionPortal } from './views/PermissionPortal';
+import { Login } from './views/pages1';
+import { SettingsPage, NotificationsCenter } from './views/pages3';
+import { FacultyLeavePortal } from './views/FacultyLeavePortal';
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, authLoading } = useData();

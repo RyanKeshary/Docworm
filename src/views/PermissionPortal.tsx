@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../lib/router-compat';
 import {
   FileText, Plus, CheckCircle2, XCircle, Clock,
   Search, Printer, ShieldCheck, Building2,

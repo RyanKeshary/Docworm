@@ -1,5 +1,7 @@
+'use client';
+
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../lib/router-compat';
 import { Bell, CheckSquare, FilePlus2, FileText } from 'lucide-react';
 import { useData } from '../store';
 import { Badge, EmptyState, btnPrimary, btnGhost } from '../components';

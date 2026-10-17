@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from './lib/router-compat';
 import {
   FileText, Bell, Settings, Calendar,
   Menu, X, Search, LogOut, ChevronLeft, User, Database, Shield, Crown, GraduationCap, Building2, Users,

@@ -1,7 +1,7 @@
 // Email Service & Dynamic SMTP Configuration
 // Supports database-persisted SMTP credentials, environment fallbacks, and Ethereal test catchers.
 
-import nodemailer from 'nodemailer';
+import nodemailer, { type TestAccount, type Transporter } from 'nodemailer';
 import { sql } from './db';
 
 export interface EmailOptions {
@@ -48,9 +48,9 @@ export async function getSmtpConfig(): Promise<SmtpConfig> {
   };
 }
 
-let etherealAccount: nodemailer.TestAccount | null = null;
+let etherealAccount: TestAccount | null = null;
 
-export async function getTransporter(): Promise<{ transporter: nodemailer.Transporter; from: string }> {
+export async function getTransporter(): Promise<{ transporter: Transporter; from: string }> {
   const cfg = await getSmtpConfig();
 
   // If user has not provided credentials and host is ethereal or empty, create an ephemeral Ethereal account

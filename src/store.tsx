@@ -1,3 +1,5 @@
+'use client';
+
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import type { AppOptions } from './config';
 import { DEFAULT_OPTIONS } from './config';

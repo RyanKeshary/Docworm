@@ -20,17 +20,6 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
     defaultHeaders['Content-Type'] = 'application/json';
   }
 
-  const isLocal = typeof window !== 'undefined' && (
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1' ||
-    window.location.hostname === '0.0.0.0' ||
-    window.location.hostname.endsWith('.local')
-  );
-
-  // Direct port 3001 is ONLY applicable for local development on localhost/127.0.0.1.
-  // In production (e.g. Vercel at docworm-portal.vercel.app), all API calls go to same-origin /api.
-  const localDirectBase = isLocal ? `${window.location.protocol}//${window.location.hostname}:3001` : '';
-
   let res: Response;
   try {
     res = await fetch(apiPath, {
@@ -41,36 +30,8 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
         ...options.headers,
       },
     });
-
-    // If local dev server returned 405 (static server without proxy), fallback to local backend on 3001
-    if (localDirectBase && (res.status === 405 || (res.status === 200 && res.headers.get('content-type')?.includes('text/html') && !apiPath.includes('health')))) {
-      res = await fetch(`${localDirectBase}${apiPath}`, {
-        credentials: 'include',
-        ...options,
-        headers: {
-          ...defaultHeaders,
-          ...options.headers,
-        },
-      });
-    }
   } catch (err: any) {
-    // If relative fetch failed and on local machine, try direct connection to port 3001
-    if (localDirectBase) {
-      try {
-        res = await fetch(`${localDirectBase}${apiPath}`, {
-          credentials: 'include',
-          ...options,
-          headers: {
-            ...defaultHeaders,
-            ...options.headers,
-          },
-        });
-      } catch {
-        throw new Error('Unable to connect to local backend server. Please verify backend is running on port 3001.');
-      }
-    } else {
-      throw new Error(err.message || 'Unable to connect to server. Please check your internet connection.');
-    }
+    throw new Error(err.message || 'Unable to connect to server. Please check your internet connection.');
   }
 
   const contentType = res.headers.get('content-type') || '';
