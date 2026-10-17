@@ -26,9 +26,18 @@ const JWT_SECRET = process.env.JWT_SECRET || 'docworm_jwt_secret_institution_slr
 const IS_PROD = process.env.NODE_ENV === 'production';
 const APP_URL = process.env.APP_URL || 'https://docworm-portal.vercel.app';
 
-// Normalize /api prefix for Vercel serverless rewrites
+// Normalize /api prefix and restore original Vercel rewritten paths
 app.use((req, _res, next) => {
-  if (req.url && !req.url.startsWith('/api')) {
+  const matched = (
+    req.headers['x-matched-path'] ||
+    req.headers['x-invoke-path'] ||
+    req.headers['x-forwarded-uri'] ||
+    req.headers['x-original-url']
+  ) as string | undefined;
+
+  if (matched && matched.startsWith('/api')) {
+    req.url = matched;
+  } else if (req.url && !req.url.startsWith('/api')) {
     req.url = '/api' + (req.url.startsWith('/') ? req.url : `/${req.url}`);
   }
   next();
