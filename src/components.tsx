@@ -145,12 +145,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const role = currentUser.role;
   const roleMeta = ROLE_META[role] ?? ROLE_META.Faculty;
 
-  // Auto-show guide for first-time login
+  // Auto-show guide strictly once on first-time login
   useEffect(() => {
-    if (currentUser?.id) {
+    if (currentUser?.id && currentUser.id !== 'guest') {
       const key = `docworm_guide_seen_${currentUser.id}`;
       if (!localStorage.getItem(key)) {
         setGuideOpen(true);
+        localStorage.setItem(key, 'true');
       }
     }
   }, [currentUser?.id]);
@@ -331,14 +332,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
             {/* Right Zone: Actions, Live Indicator, Notifications, and Profile */}
             <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0 ml-auto">
-              {/* Live Auto-Sync Indicator */}
-              <div
-                className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-[11px] font-semibold text-emerald-700 select-none shadow-2xs"
-                title="Real-time live synchronization active. Updates from other users reflect automatically."
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                <span>Live Sync</span>
-              </div>
 
               {/* How-to Guide */}
               <button
@@ -407,7 +400,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       <OnboardingGuideModal
         isOpen={guideOpen}
-        onClose={() => setGuideOpen(false)}
+        onClose={() => {
+          if (currentUser?.id) {
+            localStorage.setItem(`docworm_guide_seen_${currentUser.id}`, 'true');
+          }
+          setGuideOpen(false);
+        }}
         currentUser={currentUser}
       />
     </div>

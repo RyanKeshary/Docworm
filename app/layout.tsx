@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import '../src/index.css';
 import { Providers } from './providers';
 
-export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Docworm - Digital Permission and Task System',

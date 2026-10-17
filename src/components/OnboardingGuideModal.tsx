@@ -40,9 +40,15 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
 
   const role = currentUser.role || 'Faculty';
 
-  const handleFinish = () => {
-    localStorage.setItem(`docworm_guide_seen_${currentUser.id}`, 'true');
+  const handleClose = () => {
+    if (currentUser?.id) {
+      localStorage.setItem(`docworm_guide_seen_${currentUser.id}`, 'true');
+    }
     onClose();
+  };
+
+  const handleFinish = () => {
+    handleClose();
   };
 
   // Role metadata and title customization
@@ -102,7 +108,7 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
           </div>
 
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1.5 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition-colors"
             title="Close guide"
           >

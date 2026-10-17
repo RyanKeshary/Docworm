@@ -98,11 +98,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [syncState, setSyncState] = useState<'live' | 'loading' | 'offline'>('loading');
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [liveTick, setLiveTick] = useState(0);
+  const isRefreshingRef = useRef(false);
 
   // Load Workspace from Database via API
   const refresh = useCallback(async () => {
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
     try {
-      setSyncState('loading');
       const [userRes, propRes, optRes, lhRes, annRes, auditRes] = await Promise.allSettled([
         api.users.list(),
         api.requests.list(),
@@ -213,6 +215,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       console.error('Refresh error:', err);
       setBackendError(err.message || 'Failed to sync with server');
       setSyncState('offline');
+    } finally {
+      isRefreshingRef.current = false;
     }
   }, [currentUser.id]);
 
@@ -246,7 +250,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Track known notification IDs to alert only on newly arrived notifications
   const seenNotificationIds = useRef(new Set<string>());
 
-  // Sync workspace when authenticated + Instant Real-Time Auto-Sync (2.5s polling)
+  // Sync workspace when authenticated + Instant Real-Time Auto-Sync (20s periodic background sync)
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -260,12 +264,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // High-efficiency background poll timer: updates site instantly even if changes happen from other devices
+    // High-efficiency background poll timer
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         refresh();
       }
-    }, 2500);
+    }, 20000);
 
     // Instant refresh when user switches back to this browser tab
     const handleFocus = () => {

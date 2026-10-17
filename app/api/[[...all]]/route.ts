@@ -13,6 +13,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'docworm_jwt_secret_institution_slr
 const IS_PROD = process.env.NODE_ENV === 'production';
 const APP_URL = process.env.APP_URL || 'https://docworm-portal.vercel.app';
 
+export const dynamic = 'force-dynamic';
+
 // In-memory rate limiting map for auth routes
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
 function checkRateLimit(ip: string, key: string, max: number, windowMs: number): boolean {

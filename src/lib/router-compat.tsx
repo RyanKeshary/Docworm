@@ -20,7 +20,7 @@ export interface LinkProps extends Omit<React.AnchorHTMLAttributes<HTMLAnchorEle
 export function Link({ to, href, replace, children, className, ...rest }: LinkProps) {
   const target = to || href || '#';
   return (
-    <NextLink href={target} replace={replace} className={className} {...rest}>
+    <NextLink href={target} replace={replace} prefetch={true} className={className} {...rest}>
       {children}
     </NextLink>
   );
@@ -41,7 +41,7 @@ export function NavLink({ to, href, end, className, children, ...rest }: NavLink
   const computedClassName = typeof className === 'function' ? className({ isActive }) : className;
 
   return (
-    <NextLink href={target} className={computedClassName} {...rest}>
+    <NextLink href={target} prefetch={true} className={computedClassName} {...rest}>
       {children}
     </NextLink>
   );
