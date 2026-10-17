@@ -56,7 +56,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@aws-0-ap-southeast-2.pooler.supaba
 # Server Configuration
 PORT=3001
 JWT_SECRET=your-secure-jwt-secret-here
-APP_URL=http://localhost:5173
+APP_URL=https://docworm-portal.vercel.app
 
 # Initial Principal Bootstrap Credentials
 INITIAL_PRINCIPAL_EMAIL=principal@slrtce.in

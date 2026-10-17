@@ -9,6 +9,13 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
     'Accept': 'application/json',
   };
 
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('docworm_token');
+    if (token) {
+      defaultHeaders['Authorization'] = `Bearer ${token}`;
+    }
+  }
+
   if (!(options.body instanceof FormData)) {
     defaultHeaders['Content-Type'] = 'application/json';
   }
@@ -99,11 +106,21 @@ export const api = {
   health: () => apiFetch('/api/health'),
 
   auth: {
-    login: (credentials: { email: string; password: string }) =>
-      apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
+    login: async (credentials: { email: string; password: string }) => {
+      const data = await apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify(credentials) });
+      if (data?.token && typeof window !== 'undefined') {
+        localStorage.setItem('docworm_token', data.token);
+      }
+      return data;
+    },
     register: (userData: any) =>
       apiFetch('/api/auth/register', { method: 'POST', body: JSON.stringify(userData) }),
-    logout: () => apiFetch('/api/auth/logout', { method: 'POST' }),
+    logout: async () => {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('docworm_token');
+      }
+      return apiFetch('/api/auth/logout', { method: 'POST' });
+    },
     me: () => apiFetch('/api/auth/me'),
     forgotPassword: (email: string) =>
       apiFetch('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),

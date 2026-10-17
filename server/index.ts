@@ -24,7 +24,7 @@ app.set('trust proxy', 1);
 const PORT = Number(process.env.PORT || 3001);
 const JWT_SECRET = process.env.JWT_SECRET || 'docworm_jwt_secret_institution_slrtce_2026';
 const IS_PROD = process.env.NODE_ENV === 'production';
-const APP_URL = process.env.APP_URL || 'http://localhost:5174';
+const APP_URL = process.env.APP_URL || 'https://docworm-portal.vercel.app';
 
 // Normalize /api prefix for Vercel serverless rewrites
 app.use((req, _res, next) => {
@@ -202,9 +202,10 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    const isHttps = IS_PROD || Boolean(process.env.VERCEL) || req.secure || req.headers['x-forwarded-proto'] === 'https';
     res.cookie('docworm_session', token, {
       httpOnly: true,
-      secure: IS_PROD,
+      secure: isHttps,
       sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
@@ -213,6 +214,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     logAudit(user.id, user.name, 'USER_LOGIN', `users:${user.id}`, { ip: req.ip }).catch(() => {});
 
     res.json({
+      token,
       user: {
         id: user.id,
         name: user.name,
