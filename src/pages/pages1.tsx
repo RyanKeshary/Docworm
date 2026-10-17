@@ -73,7 +73,8 @@ export function Login() {
       if (mode === 'signin') {
         const err = await signIn(email.trim(), password);
         if (err) {
-          setError(err);
+          const errMsg = typeof err === 'object' ? ((err as any).message || JSON.stringify(err)) : String(err);
+          setError(errMsg);
           setBusy(false);
           return;
         }
@@ -104,7 +105,8 @@ export function Login() {
         nav('/');
       }
     } catch (err: any) {
-      setError(err.message || 'Operation failed. Please try again.');
+      const msg = err?.message || err;
+      setError(typeof msg === 'object' ? (msg.message || JSON.stringify(msg)) : String(msg || 'Operation failed. Please try again.'));
     } finally {
       setBusy(false);
     }

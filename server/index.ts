@@ -19,10 +19,20 @@ import { isPushConfigured, getVapidPublicKey, sendPushToUsers } from './push';
 import { generateStaffDirectoryExcel, generatePermissionRequestsExcel } from './excel';
 
 const app = express();
+app.set('trust proxy', 1);
+
 const PORT = Number(process.env.PORT || 3001);
 const JWT_SECRET = process.env.JWT_SECRET || 'docworm_jwt_secret_institution_slrtce_2026';
 const IS_PROD = process.env.NODE_ENV === 'production';
 const APP_URL = process.env.APP_URL || 'http://localhost:5174';
+
+// Normalize /api prefix for Vercel serverless rewrites
+app.use((req, _res, next) => {
+  if (req.url && !req.url.startsWith('/api')) {
+    req.url = '/api' + (req.url.startsWith('/') ? req.url : `/${req.url}`);
+  }
+  next();
+});
 
 // Middleware
 app.use(helmet({
@@ -38,21 +48,23 @@ app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rate Limiters
+// Rate Limiters (with proxy safety)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20, // 20 attempts per 15 min
+  max: 50,
   message: { error: 'Too many authentication attempts. Please try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: false },
 });
 
 const forgotPasswordLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 5, // 5 attempts per hour
+  max: 10,
   message: { error: 'Too many password reset requests. Please check your inbox or try again in 1 hour.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: false },
 });
 
 // Extend Express Request with authenticated user
@@ -278,24 +290,30 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   }
 });
 
-// Get Current User Profile
-app.get('/api/auth/me', authenticate, async (req, res) => {
+// Get Current User Profile (Graceful: returns { user: null } when unauthenticated without throwing errors)
+app.get('/api/auth/me', async (req, res) => {
+  const token = req.cookies?.docworm_session || (req.headers.authorization?.replace(/^Bearer\s+/i, ''));
+  if (!token) {
+    res.json({ user: null });
+    return;
+  }
+
   try {
-    const user = req.user!;
-    const row = await sql`
+    const payload = jwt.verify(token, JWT_SECRET) as { id: string };
+    const rows = await sql`
       SELECT u.id, u.name, u.email, u.role, u.department_id, d.code as department_code,
              u.designation, u.phone, u.photo_url, u.status, u.must_change_password
       FROM public.users u
       LEFT JOIN public.departments d ON u.department_id = d.id
-      WHERE u.id = ${user.id}
+      WHERE u.id = ${payload.id}
     `;
 
-    if (!row.length) {
-      res.status(404).json({ error: 'User not found.' });
+    if (!rows.length || rows[0].status === 'terminated') {
+      res.json({ user: null });
       return;
     }
 
-    const u = row[0];
+    const u = rows[0];
     res.json({
       user: {
         id: u.id,
@@ -312,7 +330,7 @@ app.get('/api/auth/me', authenticate, async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch user state.' });
+    res.json({ user: null });
   }
 });
 

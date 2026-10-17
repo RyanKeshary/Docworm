@@ -70,14 +70,26 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
   if (contentType.includes('application/json')) {
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.error || data.message || `Request failed with status ${res.status}`);
+      let msg = data.error || data.message;
+      if (typeof msg === 'object' && msg !== null) {
+        msg = msg.message || msg.code || JSON.stringify(msg);
+      }
+      throw new Error(String(msg || `Request failed with status ${res.status}`));
     }
     return data;
   }
 
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(text || `Server returned HTTP ${res.status}`);
+    let msg = text;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.error || parsed.message) {
+        const extracted = parsed.error || parsed.message;
+        msg = typeof extracted === 'object' ? (extracted.message || extracted.code || JSON.stringify(extracted)) : extracted;
+      }
+    } catch {}
+    throw new Error(msg || `Server returned HTTP ${res.status}`);
   }
 
   return text as unknown as T;
