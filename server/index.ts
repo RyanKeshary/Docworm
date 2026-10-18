@@ -292,6 +292,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 
     res.status(201).json({
       message: 'Faculty registration submitted successfully! Your account will be activated once approved by the Principal.',
+      user: { id: newUser.id, name: newUser.name, email: newUser.email, status: 'pending_approval' },
     });
   } catch (err) {
     console.error('Registration error:', err);
@@ -1155,7 +1156,11 @@ app.post('/api/permission-requests/:id/decide', authenticate, async (req, res) =
   const requestId = req.params.id;
 
   const schema = z.object({
-    action: z.enum(['Approved', 'Rejected', 'Changes Requested', 'Pending']),
+    action: z.string().transform((a) => {
+      if (a === 'Approve' || a === 'Endorse' || a === 'Recommend') return 'Approved';
+      if (a === 'Reject') return 'Rejected';
+      return a;
+    }).pipe(z.enum(['Approved', 'Rejected', 'Changes Requested', 'Pending'])),
     remark: z.string().optional().default(''),
   });
 
@@ -1475,6 +1480,23 @@ app.post('/api/announcements/:id/archive', authenticate, async (req, res) => {
     res.json({ success: true, is_archived: isArchived });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update announcement archive status.' });
+  }
+});
+
+// Delete Announcement
+app.delete('/api/announcements/:id', authenticate, async (req, res) => {
+  const user = req.user!;
+  if (!can(user, 'announcement:delete')) {
+    res.status(403).json({ error: 'Forbidden: Only Principal can delete announcements.' });
+    return;
+  }
+  const annId = req.params.id;
+  try {
+    await sql`DELETE FROM public.announcements WHERE id = ${annId}`;
+    await logAudit(user.id, user.name, 'ANNOUNCEMENT_DELETED', `announcements:${annId}`);
+    res.json({ ok: true, message: 'Announcement deleted.' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to delete announcement.' });
   }
 });
 
@@ -1988,7 +2010,7 @@ app.post('/api/gate-passes/:id/movement', authenticate, async (req, res) => {
 
       await sql`
         INSERT INTO public.announcements (id, title, body, priority, audience_dept, created_by, created_at)
-        VALUES (${annId}, ${title}, ${noteBody}, 'URGENT', NULL, ${user.id}, NOW())
+        VALUES (${annId}, ${title}, ${noteBody}, 'Urgent', NULL, ${user.id}, NOW())
       `;
 
       await logAudit(user.id, user.name, 'FACULTY_EXITED_CAMPUS', `employee_gate_passes:${passId}`, { refNo: pass.ref_no, employeeName: pass.employee_name });
@@ -2011,7 +2033,7 @@ app.post('/api/gate-passes/:id/movement', authenticate, async (req, res) => {
 
       await sql`
         INSERT INTO public.announcements (id, title, body, priority, audience_dept, created_by, created_at)
-        VALUES (${annId}, ${title}, ${noteBody}, 'NORMAL', NULL, ${user.id}, NOW())
+        VALUES (${annId}, ${title}, ${noteBody}, 'Medium', NULL, ${user.id}, NOW())
       `;
 
       await logAudit(user.id, user.name, 'FACULTY_RETURNED_CAMPUS', `employee_gate_passes:${passId}`, { refNo: pass.ref_no, employeeName: pass.employee_name });

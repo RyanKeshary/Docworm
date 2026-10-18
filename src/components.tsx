@@ -159,11 +159,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   // Role-specific navigation
   const allLinks = [
-    { to: '/', label: 'Permission Requests', icon: <FileText size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
-    { to: '/gate-pass', label: 'Employee Gate Pass', icon: <Ticket size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
-    { to: '/notifications', label: 'Notifications', icon: <Bell size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
+    { to: '/', label: 'Permission Requests', icon: <FileText size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty', 'Office Admin'] },
+    { to: '/gate-pass', label: 'Employee Gate Pass', icon: <Ticket size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty', 'Office Admin'] },
+    { to: '/notifications', label: 'Notifications', icon: <Bell size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty', 'Office Admin'] },
     { to: '/settings', label: 'Settings & Admin', icon: <Settings size={18} />, roles: ['Principal'] },
-    { to: '/settings', label: 'Settings', icon: <Settings size={18} />, roles: ['Dean', 'HOD', 'Faculty'] },
+    { to: '/settings', label: 'Settings', icon: <Settings size={18} />, roles: ['Dean', 'HOD', 'Faculty', 'Office Admin'] },
   ];
 
   // De-dupe by role visibility

@@ -754,7 +754,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       await logAudit(newUser.id, newUser.name, 'FACULTY_REGISTERED', `users:${newUser.id}`, { department });
 
       return NextResponse.json(
-        { message: 'Faculty registration submitted successfully! Your account will be activated once approved by the Principal.' },
+        {
+          message: 'Faculty registration submitted successfully! Your account will be activated once approved by the Principal.',
+          user: { id: newUser.id, name: newUser.name, email: newUser.email, status: 'pending_approval' }
+        },
         { status: 201 }
       );
     } catch {
@@ -1162,7 +1165,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
   if (decideMatch) {
     const requestId = decideMatch[1];
     const schema = z.object({
-      action: z.enum(['Approved', 'Rejected', 'Changes Requested', 'Pending']),
+      action: z.string().transform((a) => {
+        if (a === 'Approve' || a === 'Endorse' || a === 'Recommend') return 'Approved';
+        if (a === 'Reject') return 'Rejected';
+        return a;
+      }).pipe(z.enum(['Approved', 'Rejected', 'Changes Requested', 'Pending'])),
       remark: z.string().optional().default(''),
     });
     const parsed = schema.safeParse(body);
@@ -1653,7 +1660,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
 
         await sql`
           INSERT INTO public.announcements (id, title, body, priority, audience_dept, created_by, created_at)
-          VALUES (${annId}, ${title}, ${noteBody}, 'URGENT', NULL, ${user.id}, NOW())
+          VALUES (${annId}, ${title}, ${noteBody}, 'Urgent', NULL, ${user.id}, NOW())
         `;
 
         await logAudit(user.id, user.name, 'FACULTY_EXITED_CAMPUS', `employee_gate_passes:${passId}`, { refNo: pass.ref_no, employeeName: pass.employee_name });
@@ -1675,7 +1682,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
 
         await sql`
           INSERT INTO public.announcements (id, title, body, priority, audience_dept, created_by, created_at)
-          VALUES (${annId}, ${title}, ${noteBody}, 'NORMAL', NULL, ${user.id}, NOW())
+          VALUES (${annId}, ${title}, ${noteBody}, 'Medium', NULL, ${user.id}, NOW())
         `;
 
         await logAudit(user.id, user.name, 'FACULTY_RETURNED_CAMPUS', `employee_gate_passes:${passId}`, { refNo: pass.ref_no, employeeName: pass.employee_name });
@@ -2067,6 +2074,20 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ a
       return NextResponse.json({ message: `Option '${opt[0].value}' deleted.` });
     } catch {
       return jsonError('Failed to delete option.', 500);
+    }
+  }
+
+  // 4. Delete Announcement
+  const annMatch = path.match(/^\/announcements\/([a-zA-Z0-9_-]+)$/);
+  if (annMatch) {
+    if (!can(user, 'announcement:delete')) return jsonError('Forbidden: Only Principal can delete announcements.', 403);
+    const annId = annMatch[1];
+    try {
+      await sql`DELETE FROM public.announcements WHERE id = ${annId}`;
+      await logAudit(user.id, user.name, 'ANNOUNCEMENT_DELETED', `announcements:${annId}`);
+      return NextResponse.json({ ok: true, message: 'Announcement deleted.' });
+    } catch {
+      return jsonError('Failed to delete announcement.', 500);
     }
   }
 
