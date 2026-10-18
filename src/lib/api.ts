@@ -148,6 +148,8 @@ export const api = {
       apiFetch('/api/announcements', { method: 'POST', body: JSON.stringify(data) }),
     markRead: (id: string) =>
       apiFetch(`/api/announcements/${id}/read`, { method: 'POST' }),
+    archive: (id: string, is_archived: boolean = true) =>
+      apiFetch(`/api/announcements/${id}/archive`, { method: 'POST', body: JSON.stringify({ is_archived }) }),
   },
 
   options: {

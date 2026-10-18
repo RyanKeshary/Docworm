@@ -117,7 +117,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (userRes.status === 'fulfilled' && userRes.value.users) {
         setUsers(userRes.value.users.map((u: any) => ({
           ...u,
-          department: u.role === 'Principal' ? null : (u.department_code || u.department || 'HAS'),
+          department: (u.role === 'Principal' || u.role === 'Dean') ? null : (u.department_code || u.department || 'HAS'),
         })));
       }
 
@@ -193,15 +193,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (annRes.status === 'fulfilled' && annRes.value.announcements) {
-        setNotifications(annRes.value.announcements.map((a: any) => ({
-          id: a.id,
-          userId: currentUser.id,
-          title: `[${a.priority}] ${a.title}`,
-          body: a.body,
-          link: '/notifications',
-          read: Boolean(a.read_at),
-          createdAt: String(a.created_at || '').slice(0, 16).replace('T', ' '),
-        })));
+        setNotifications(
+          annRes.value.announcements
+            .filter((a: any) => !a.is_archived)
+            .map((a: any) => ({
+              id: a.id,
+              userId: currentUser.id,
+              title: `[${a.priority}] ${a.title}`,
+              body: a.body,
+              link: '/notifications',
+              read: Boolean(a.read_at),
+              createdAt: String(a.created_at || '').slice(0, 16).replace('T', ' '),
+            }))
+        );
       }
 
       if (auditRes.status === 'fulfilled' && auditRes.value.logs) {

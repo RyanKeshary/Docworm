@@ -1371,6 +1371,35 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
     }
   }
 
+  // 12b. Archive / Unarchive Announcement from everyone
+  const archiveMatch = path.match(/^\/announcements\/([a-zA-Z0-9_-]+)\/archive$/);
+  if (archiveMatch) {
+    if (user.role !== 'Principal' && user.role !== 'Dean') {
+      return jsonError('Forbidden: Only Principal or Dean can archive notices from everyone.', 403);
+    }
+    const annId = archiveMatch[1];
+    const isArchived = body?.is_archived !== undefined ? Boolean(body.is_archived) : true;
+    try {
+      await sql`
+        UPDATE public.announcements
+        SET is_archived = ${isArchived},
+            archived_at = ${isArchived ? sql`NOW()` : null},
+            archived_by = ${isArchived ? user.id : null}
+        WHERE id = ${annId}
+      `;
+      await logAudit(
+        user.id,
+        user.name,
+        isArchived ? 'ANNOUNCEMENT_ARCHIVED' : 'ANNOUNCEMENT_UNARCHIVED',
+        `announcements:${annId}`,
+        { isArchived }
+      );
+      return NextResponse.json({ success: true, is_archived: isArchived });
+    } catch {
+      return jsonError('Failed to update announcement archive status.', 500);
+    }
+  }
+
   // 13. Push Subscribe
   if (path === '/push/subscribe') {
     const schema = z.object({

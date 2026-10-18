@@ -1434,6 +1434,36 @@ app.post('/api/announcements/:id/read', authenticate, async (req, res) => {
   }
 });
 
+// Archive / Unarchive Announcement from everyone
+app.post('/api/announcements/:id/archive', authenticate, async (req, res) => {
+  const user = req.user!;
+  if (user.role !== 'Principal' && user.role !== 'Dean') {
+    res.status(403).json({ error: 'Forbidden: Only Principal or Dean can archive notices from everyone.' });
+    return;
+  }
+  const annId = req.params.id;
+  const isArchived = req.body?.is_archived !== undefined ? Boolean(req.body.is_archived) : true;
+  try {
+    await sql`
+      UPDATE public.announcements
+      SET is_archived = ${isArchived},
+          archived_at = ${isArchived ? sql`NOW()` : null},
+          archived_by = ${isArchived ? user.id : null}
+      WHERE id = ${annId}
+    `;
+    await logAudit(
+      user.id,
+      user.name,
+      isArchived ? 'ANNOUNCEMENT_ARCHIVED' : 'ANNOUNCEMENT_UNARCHIVED',
+      `announcements:${annId}`,
+      { isArchived }
+    );
+    res.json({ success: true, is_archived: isArchived });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update announcement archive status.' });
+  }
+});
+
 // Web Push Subscription
 app.get('/api/push/vapid-key', (_req, res) => {
   res.json({ publicKey: getVapidPublicKey() });

@@ -27,7 +27,7 @@ export interface AppOptions {
 }
 
 export const DEFAULT_OPTIONS: AppOptions = {
-  departments: ['IT', 'CMPN', 'EXTC', 'ECS', 'MECH', 'CIVIL', 'HAS'],
+  departments: ['IT', 'CMPN', 'CS', 'EXTC', 'ECS', 'ETRX', 'MECH', 'CIVIL', 'HAS', 'AIML', 'AIDS', 'CYBER', 'MCA', 'B.VOC', 'TPO', 'EXAM', 'IQAC'],
   years: ['FY', 'SY', 'TY', 'BE'],
   roles: ['Principal', 'Dean', 'HOD', 'Faculty'],
   proposalStatuses: ['Draft', 'Submitted', 'Under Review', 'Approved', 'Rejected', 'Changes Requested', 'Withdrawn', 'Completed'],

@@ -7,7 +7,7 @@ import {
   Shield, CheckCircle2, Copy, Check, Info, User as UserIcon, Lock,
   Crown, CheckCircle, XCircle, UserCheck, AlertTriangle, FileSpreadsheet,
   Play, Send, Bell, Key, Edit2, Sliders, Wrench, Mail, Terminal, SlidersHorizontal,
-  Download, Eye, AlertCircle
+  Download, Eye, AlertCircle, Archive, ArchiveRestore
 } from 'lucide-react';
 import { useData, nowStr } from '../store';
 import { Badge, Drawer, EmptyState, ExportMenu, Field, Modal, btnGhost, btnPrimary, inputCls } from '../components';
@@ -547,9 +547,11 @@ export function Reports() {
 }
 
 export function NotificationsCenter() {
-  const { notifications, saveNotifications, currentUser, options } = useData();
+  const { notifications, saveNotifications, currentUser, options, refresh } = useData();
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [loadingAnnouncements, setLoadingAnnouncements] = useState(false);
+  const [noticeTab, setNoticeTab] = useState<'active' | 'archived'>('active');
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<'idle' | 'subscribed' | 'unsupported' | 'denied'>('idle');
   const [pushFeedback, setPushFeedback] = useState('');
 
@@ -574,6 +576,23 @@ export function NotificationsCenter() {
       setLoadingAnnouncements(false);
     }
   };
+
+  const handleToggleArchive = async (id: string, currentlyArchived: boolean) => {
+    try {
+      setArchivingId(id);
+      await api.announcements.archive(id, !currentlyArchived);
+      await loadAnnouncements();
+      await refresh();
+    } catch (err: any) {
+      alert(err.message || 'Failed to update announcement archive status.');
+    } finally {
+      setArchivingId(null);
+    }
+  };
+
+  const activeAnnouncements = useMemo(() => announcements.filter((a) => !a.is_archived), [announcements]);
+  const archivedAnnouncements = useMemo(() => announcements.filter((a) => a.is_archived), [announcements]);
+  const displayedAnnouncements = noticeTab === 'active' ? activeAnnouncements : archivedAnnouncements;
 
   useEffect(() => {
     loadAnnouncements();
@@ -798,21 +817,41 @@ export function NotificationsCenter() {
 
       {/* 2. RECENT BROADCASTS & DELIVERY REPORTS */}
       <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-3 border-b border-gray-100 gap-3">
           <div>
-            <h2 className="font-bold text-slate-900 text-base">Broadcast Announcements History</h2>
+            <h2 className="font-bold text-slate-900 text-base">Broadcast Announcements & Notices</h2>
             <p className="text-xs text-slate-500">Official directives and circulars published to faculty.</p>
           </div>
-          <button onClick={loadAnnouncements} className="text-xs font-semibold text-primary hover:underline flex items-center gap-1">
-            <RefreshCw size={12} className={loadingAnnouncements ? 'animate-spin' : ''} /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+              <button
+                onClick={() => setNoticeTab('active')}
+                className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                  noticeTab === 'active' ? 'bg-white text-primary shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Active ({activeAnnouncements.length})
+              </button>
+              <button
+                onClick={() => setNoticeTab('archived')}
+                className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                  noticeTab === 'archived' ? 'bg-white text-primary shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Archived ({archivedAnnouncements.length})
+              </button>
+            </div>
+            <button onClick={loadAnnouncements} className="text-xs font-semibold text-primary hover:underline flex items-center gap-1">
+              <RefreshCw size={12} className={loadingAnnouncements ? 'animate-spin' : ''} /> Refresh
+            </button>
+          </div>
         </div>
 
         <div className="divide-y divide-gray-100">
-          {announcements.map((a) => (
+          {displayedAnnouncements.map((a) => (
             <div key={a.id} className="py-4 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
                     a.priority === 'urgent' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
                     a.priority === 'high' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
@@ -820,18 +859,45 @@ export function NotificationsCenter() {
                   }`}>
                     {a.priority}
                   </span>
+                  {a.is_archived && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 border border-slate-300">
+                      Archived from everyone
+                    </span>
+                  )}
                   <h3 className="font-bold text-slate-900 text-sm">{a.title}</h3>
                 </div>
-                <span className="text-[11px] text-slate-400 font-mono">
-                  {String(a.created_at || '').slice(0, 16).replace('T', ' ')}
-                </span>
+                <div className="flex items-center gap-2">
+                  {(isPrincipal || currentUser.role === 'Dean') && (
+                    <button
+                      onClick={() => handleToggleArchive(a.id, Boolean(a.is_archived))}
+                      disabled={archivingId === a.id}
+                      className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-100 transition-colors"
+                      title={a.is_archived ? 'Restore notice for everyone' : 'Archive notice from everyone'}
+                    >
+                      {a.is_archived ? (
+                        <>
+                          <ArchiveRestore size={13} className="text-emerald-600" />
+                          <span>Restore</span>
+                        </>
+                      ) : (
+                        <>
+                          <Archive size={13} className="text-slate-500" />
+                          <span>Archive from everyone</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    {String(a.created_at || '').slice(0, 16).replace('T', ' ')}
+                  </span>
+                </div>
               </div>
 
               <p className="text-xs sm:text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">{a.body}</p>
 
               <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 pt-1">
-                <span>By: <b className="text-slate-700">{a.creator_name || 'Principal Office'}</b></span>
-                <span>Audience: <b className="text-slate-700">{a.target_department ? `Dept of ${a.target_department}` : 'All Faculty'}</b></span>
+                <span>By: <b className="text-slate-700">{a.created_by_name || a.creator_name || 'Principal Office'}</b></span>
+                <span>Audience: <b className="text-slate-700">{a.audience_dept ? `Dept of ${a.audience_dept}` : a.target_department ? `Dept of ${a.target_department}` : 'All Faculty'}</b></span>
 
                 {isPrincipal && (
                   <span className="ml-auto inline-flex items-center gap-2 text-[11px] bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md">
@@ -843,8 +909,11 @@ export function NotificationsCenter() {
             </div>
           ))}
 
-          {announcements.length === 0 && !loadingAnnouncements && (
-            <EmptyState title="No broadcasts published" hint="Institutional broadcasts sent by the Principal will appear here." />
+          {displayedAnnouncements.length === 0 && !loadingAnnouncements && (
+            <EmptyState
+              title={noticeTab === 'active' ? "No active broadcasts published" : "No archived notices"}
+              hint={noticeTab === 'active' ? "Institutional broadcasts sent by the Principal will appear here." : "Archived notices will appear here once archived."}
+            />
           )}
         </div>
       </div>
@@ -929,7 +998,11 @@ export function SettingsPage() {
   }, [isPrincipal, isDean, isHod]);
 
   const rawTab = params.get('tab');
-  const currentTab = (!rawTab || rawTab === 'database') ? (canManageStaff ? 'leadership' : 'profile') : rawTab;
+  const normalizedTab = rawTab === 'approval' ? 'approval_policy' : rawTab;
+  const validTabs = ['leadership', 'profile', 'approval_policy', 'options', 'letterhead', 'auth', 'smtp', 'audit'];
+  const currentTab = (!normalizedTab || !validTabs.includes(normalizedTab))
+    ? (canManageStaff ? 'leadership' : 'profile')
+    : normalizedTab;
   const setTab = (t: string) => setParams({ tab: t });
 
   const pendingFaculty = useMemo(() => users.filter((u) => u.status === 'pending_approval'), [users]);

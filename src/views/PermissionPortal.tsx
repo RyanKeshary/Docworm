@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useData, nowStr } from '../store';
 import { Badge, btnGhost, btnPrimary, inputCls } from '../components';
-import type { Proposal, Attachment } from '../types';
+import type { Proposal, Attachment, Role } from '../types';
 import { api } from '../lib/api';
 import {
   ROLE_META, PERMISSIONS, canActOnProposal, buildApprovalChain,
@@ -113,6 +113,21 @@ export function PermissionPortal() {
   const [decisionAction, setDecisionAction] = useState<'Approved' | 'Rejected' | 'Changes Requested'>('Approved');
   const [decisionRemark, setDecisionRemark] = useState('');
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+
+  const getDefaultDecisionRemark = (action: 'Approved' | 'Rejected' | 'Changes Requested', userRole: Role) => {
+    if (action === 'Approved') {
+      if (userRole === 'Principal') return 'Sanctioned and approved by Principal Office. Permitted to proceed.';
+      if (userRole === 'Dean') return 'Reviewed and recommended for Principal sanction.';
+      return 'Department verified and endorsed.';
+    }
+    if (action === 'Changes Requested') {
+      return 'Modifications requested. Please update proposal details and clarifications and resubmit.';
+    }
+    if (action === 'Rejected') {
+      return 'Proposal cannot be accommodated at this time.';
+    }
+    return '';
+  };
 
   // ── Document Upload State (Mandatory) ────────────────────
   const [uploadedFile, setUploadedFile] = useState<Attachment | null>(null);
@@ -535,7 +550,7 @@ export function PermissionPortal() {
           {role === 'Principal' && (
             <>
               <Link
-                to="/settings?tab=approval"
+                to="/settings?tab=approval_policy"
                 className="px-3.5 py-2 text-xs font-bold rounded-lg border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100 transition-colors flex items-center gap-1.5 shadow-xs"
                 title="Institutional approval policy: Decide whether requests require BOTH Dean & Principal or ONLY Principal"
               >
@@ -886,7 +901,7 @@ export function PermissionPortal() {
                                   setOpenActionMenuId(null);
                                   setDecidingProposal(p);
                                   setDecisionAction('Approved');
-                                  setDecisionRemark('');
+                                  setDecisionRemark(getDefaultDecisionRemark('Approved', role));
                                 }}
                                 className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700 flex items-center gap-2"
                               >
@@ -898,7 +913,7 @@ export function PermissionPortal() {
                                   setOpenActionMenuId(null);
                                   setDecidingProposal(p);
                                   setDecisionAction('Changes Requested');
-                                  setDecisionRemark('');
+                                  setDecisionRemark(getDefaultDecisionRemark('Changes Requested', role));
                                 }}
                                 className="w-full text-left px-3 py-1.5 hover:bg-amber-50 text-amber-800 flex items-center gap-2"
                               >
@@ -910,7 +925,7 @@ export function PermissionPortal() {
                                   setOpenActionMenuId(null);
                                   setDecidingProposal(p);
                                   setDecisionAction('Rejected');
-                                  setDecisionRemark('');
+                                  setDecisionRemark(getDefaultDecisionRemark('Rejected', role));
                                 }}
                                 className="w-full text-left px-3 py-1.5 hover:bg-rose-50 text-rose-700 flex items-center gap-2"
                               >
@@ -940,7 +955,7 @@ export function PermissionPortal() {
                                   setOpenActionMenuId(null);
                                   setDecidingProposal(p);
                                   setDecisionAction('Changes Requested');
-                                  setDecisionRemark('');
+                                  setDecisionRemark(getDefaultDecisionRemark('Changes Requested', role));
                                 }}
                                 className="w-full text-left px-3 py-1.5 hover:bg-amber-50 text-amber-800 flex items-center gap-2"
                               >
@@ -952,7 +967,7 @@ export function PermissionPortal() {
                                   setOpenActionMenuId(null);
                                   setDecidingProposal(p);
                                   setDecisionAction('Rejected');
-                                  setDecisionRemark('');
+                                  setDecisionRemark(getDefaultDecisionRemark('Rejected', role));
                                 }}
                                 className="w-full text-left px-3 py-1.5 hover:bg-rose-50 text-rose-700 flex items-center gap-2"
                               >
@@ -1309,7 +1324,10 @@ export function PermissionPortal() {
                   {(['Approved', 'Changes Requested', 'Rejected'] as const).map((a) => (
                     <button
                       key={a}
-                      onClick={() => setDecisionAction(a)}
+                      onClick={() => {
+                        setDecisionAction(a);
+                        setDecisionRemark(getDefaultDecisionRemark(a, role));
+                      }}
                       className={`flex-1 py-2 px-2 text-xs font-semibold rounded-lg border transition-all flex items-center justify-center gap-1.5 ${
                         decisionAction === a
                           ? a === 'Approved'
@@ -1356,7 +1374,9 @@ export function PermissionPortal() {
                   placeholder={
                     decisionAction === 'Approved'
                       ? (role === 'Principal' ? 'e.g. Sanctioned and approved by Principal Office.' : role === 'Dean' ? 'e.g. Recommended for Principal sanction.' : 'e.g. Department verified and endorsed.')
-                      : 'Explain the reason for rejection or required changes...'
+                      : decisionAction === 'Changes Requested'
+                      ? 'e.g. Modifications requested. Please update proposal details and clarifications and resubmit.'
+                      : 'e.g. Proposal cannot be accommodated at this time.'
                   }
                   className={inputCls}
                 />
