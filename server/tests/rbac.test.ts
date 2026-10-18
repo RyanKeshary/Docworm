@@ -159,6 +159,27 @@ assert(can(principal, 'leave:decide_principal') === true, 'Principal CAN grant f
 assert(can(dean, 'leave:view_all') === true, 'Dean CAN view all leaves (read-only oversight)');
 assert(can(dean, 'leave:decide_principal') === false, 'Dean CANNOT grant final sanction for leaves (403)');
 
+// 10b. Employee Gate Passes RBAC
+console.log('\n--- 10b. Employee Gate Passes RBAC ---');
+const itPass = { id: 'pass-1', employee_id: facultyIt.id, department: 'IT', department_code: 'IT', status: 'Pending' };
+const extcPass = { id: 'pass-2', employee_id: 'other', department: 'EXTC', department_code: 'EXTC', status: 'Pending' };
+
+assert(can(facultyIt, 'gatepass:create') === true, 'Faculty CAN request gate pass');
+assert(can(facultyIt, 'gatepass:view_own', itPass) === true, 'Faculty CAN view own gate pass');
+assert(can(facultyIt, 'gatepass:cancel_own', itPass) === true, 'Faculty CAN cancel pending gate pass');
+assert(can(facultyIt, 'gatepass:view_all') === false, 'Faculty CANNOT view all gate passes');
+
+assert(can(hodIt, 'gatepass:view_dept', itPass) === true, 'HOD CAN view department gate pass');
+assert(can(hodIt, 'gatepass:view_dept', extcPass) === false, 'HOD CANNOT view other department gate pass');
+assert(can(hodIt, 'gatepass:endorse_hod', itPass) === true, 'HOD CAN recommend department gate pass');
+assert(can(hodIt, 'gatepass:endorse_hod', extcPass) === false, 'HOD CANNOT recommend other department gate pass');
+assert(can(hodIt, 'gatepass:decide_principal') === false, 'HOD CANNOT grant final principal sanction for gate pass (403)');
+
+assert(can(principal, 'gatepass:view_all') === true, 'Principal CAN view all gate passes');
+assert(can(principal, 'gatepass:decide_principal') === true, 'Principal CAN grant final sanction for gate pass');
+assert(can(dean, 'gatepass:view_all') === true, 'Dean CAN view all gate passes (read-only oversight)');
+assert(can(dean, 'gatepass:decide_principal') === false, 'Dean CANNOT grant final sanction for gate pass (403)');
+
 // 11. Hierarchical User Creation RBAC
 console.log('\n--- 11. Hierarchical User Creation ---');
 assert(can(principal, 'user:create', { role: 'Dean' }) === true, 'Principal CAN add Dean');

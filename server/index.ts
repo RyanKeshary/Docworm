@@ -1583,6 +1583,283 @@ app.delete('/api/leaves/:id', authenticate, async (req, res) => {
 });
 
 // ====================================================================
+// 6.6. EMPLOYEE GATE PASSES MANAGEMENT
+// ====================================================================
+
+// List Gate Passes
+app.get('/api/gate-passes', authenticate, async (req, res) => {
+  const user = req.user!;
+  try {
+    let gatePasses: any[];
+    if (can(user, 'gatepass:view_all') || can(user, 'leave:view_all')) {
+      gatePasses = await sql`
+        SELECT g.*, u.email as employee_email, u.phone as employee_phone
+        FROM public.employee_gate_passes g
+        LEFT JOIN public.users u ON g.employee_id = u.id
+        ORDER BY g.created_at DESC
+      `;
+    } else if (user.role === 'HOD') {
+      gatePasses = await sql`
+        SELECT g.*, u.email as employee_email, u.phone as employee_phone
+        FROM public.employee_gate_passes g
+        LEFT JOIN public.users u ON g.employee_id = u.id
+        WHERE g.department = ${user.department_code || ''}
+           OR g.department_id = ${user.department_id || ''}
+           OR g.employee_id = ${user.id}
+        ORDER BY g.created_at DESC
+      `;
+    } else {
+      gatePasses = await sql`
+        SELECT g.*, u.email as employee_email, u.phone as employee_phone
+        FROM public.employee_gate_passes g
+        LEFT JOIN public.users u ON g.employee_id = u.id
+        WHERE g.employee_id = ${user.id}
+        ORDER BY g.created_at DESC
+      `;
+    }
+    res.json({ gatePasses, leaves: gatePasses });
+  } catch (err: any) {
+    console.error('Fetch gate passes error:', err);
+    res.status(500).json({ error: 'Failed to fetch gate passes.' });
+  }
+});
+
+// Create Employee Gate Pass
+app.post('/api/gate-passes', authenticate, async (req, res) => {
+  const user = req.user!;
+  if (!can(user, 'gatepass:create') && !can(user, 'leave:create')) {
+    res.status(403).json({ error: 'Forbidden: You cannot request a gate pass.' });
+    return;
+  }
+
+  const schema = z.object({
+    date: z.string().optional(),
+    department: z.string().optional(),
+    purpose: z.string().min(2, 'Purpose is required'),
+    time_out: z.string().min(1, 'Time Out is required'),
+    time_in: z.string().min(1, 'Time In is required'),
+    contact_phone: z.string().optional().default(''),
+  });
+
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid gate pass data.' });
+    return;
+  }
+
+  const d = parsed.data;
+  const deptCode = d.department || user.department_code || 'GEN';
+  const yearStr = new Date().getFullYear().toString();
+  const counterVal = Math.floor(1000 + Math.random() * 9000);
+  const refNo = `GP/${deptCode}/${yearStr}/${counterVal}`;
+  const dateVal = d.date || new Date().toISOString().split('T')[0];
+
+  try {
+    const inserted = await sql`
+      INSERT INTO public.employee_gate_passes (
+        ref_no, employee_id, employee_name, department_id, department,
+        date, purpose, time_out, time_in, contact_phone, status
+      ) VALUES (
+        ${refNo}, ${user.id}, ${user.name}, ${user.department_id}, ${deptCode},
+        ${dateVal}, ${d.purpose}, ${d.time_out}, ${d.time_in}, ${d.contact_phone || user.phone || ''}, 'Pending'
+      )
+      RETURNING *
+    `;
+
+    await logAudit(user.id, user.name, 'GATE_PASS_REQUESTED', `employee_gate_passes:${inserted[0].id}`, { refNo, purpose: d.purpose });
+    res.status(201).json({ ok: true, gatePass: inserted[0], leave: inserted[0] });
+  } catch (err: any) {
+    console.error('Create gate pass error:', err);
+    res.status(500).json({ error: 'Failed to submit gate pass request.' });
+  }
+});
+
+// Decide Employee Gate Pass
+app.post('/api/gate-passes/:id/decide', authenticate, async (req, res) => {
+  const user = req.user!;
+  const passId = req.params.id;
+
+  const schema = z.object({
+    action: z.enum(['Recommend', 'Approve', 'Reject']),
+    remark: z.string().optional().default(''),
+  });
+
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid decision action.' });
+    return;
+  }
+
+  const { action, remark } = parsed.data;
+
+  try {
+    const existing = await sql`SELECT * FROM public.employee_gate_passes WHERE id = ${passId}`;
+    if (!existing.length) {
+      res.status(404).json({ error: 'Gate pass not found.' });
+      return;
+    }
+    const pass = existing[0];
+
+    if (user.role === 'HOD') {
+      if (!can(user, 'gatepass:endorse_hod', pass)) {
+        res.status(403).json({ error: 'Forbidden: You can only recommend gate passes for employees in your department.' });
+        return;
+      }
+      if (action === 'Approve') {
+        res.status(403).json({ error: 'HOD can only Recommend or Reject. Final sanction is reserved for the Principal.' });
+        return;
+      }
+
+      const newStatus = action === 'Recommend' ? 'Recommended' : 'Rejected';
+      const updated = await sql`
+        UPDATE public.employee_gate_passes
+        SET status = ${newStatus}, hod_id = ${user.id}, hod_name = ${user.name}, hod_remark = ${remark}, hod_acted_at = NOW(), updated_at = NOW()
+        WHERE id = ${passId}
+        RETURNING *
+      `;
+
+      await logAudit(user.id, user.name, `GATEPASS_HOD_${action.toUpperCase()}`, `employee_gate_passes:${passId}`, { refNo: pass.ref_no, action, remark });
+      res.json({ ok: true, gatePass: updated[0], leave: updated[0] });
+      return;
+    }
+
+    if (user.role === 'Principal') {
+      if (!can(user, 'gatepass:decide_principal')) {
+        res.status(403).json({ error: 'Forbidden: Principal authority required.' });
+        return;
+      }
+      const newStatus = action === 'Approve' ? 'Approved' : 'Rejected';
+      const updated = await sql`
+        UPDATE public.employee_gate_passes
+        SET status = ${newStatus}, principal_id = ${user.id}, principal_name = ${user.name}, principal_remark = ${remark}, principal_acted_at = NOW(), updated_at = NOW()
+        WHERE id = ${passId}
+        RETURNING *
+      `;
+
+      await logAudit(user.id, user.name, `GATEPASS_PRINCIPAL_${action.toUpperCase()}`, `employee_gate_passes:${passId}`, { refNo: pass.ref_no, action, remark });
+      res.json({ ok: true, gatePass: updated[0], leave: updated[0] });
+      return;
+    }
+
+    res.status(403).json({ error: 'Forbidden: You do not have approval authority.' });
+  } catch (err: any) {
+    console.error('Gate pass decide error:', err);
+    res.status(500).json({ error: 'Failed to record decision.' });
+  }
+});
+
+// Cancel Employee Gate Pass
+app.delete('/api/gate-passes/:id', authenticate, async (req, res) => {
+  const user = req.user!;
+  const passId = req.params.id;
+
+  try {
+    const existing = await sql`SELECT * FROM public.employee_gate_passes WHERE id = ${passId}`;
+    if (!existing.length) {
+      res.status(404).json({ error: 'Gate pass not found.' });
+      return;
+    }
+    const pass = existing[0];
+
+    if (!can(user, 'gatepass:cancel_own', pass) && user.role !== 'Principal') {
+      res.status(403).json({ error: 'Forbidden: You can only cancel your own pending gate passes.' });
+      return;
+    }
+
+    const updated = await sql`
+      UPDATE public.employee_gate_passes
+      SET status = 'Cancelled', updated_at = NOW()
+      WHERE id = ${passId}
+      RETURNING *
+    `;
+
+    await logAudit(user.id, user.name, 'GATEPASS_CANCELLED', `employee_gate_passes:${passId}`, { refNo: pass.ref_no });
+    res.json({ ok: true, message: 'Gate pass cancelled.', gatePass: updated[0], leave: updated[0] });
+  } catch (err: any) {
+    console.error('Gate pass cancel error:', err);
+    res.status(500).json({ error: 'Failed to cancel gate pass.' });
+  }
+});
+
+// Update Movement (Exit / Return tracking with Principal Alert)
+app.post('/api/gate-passes/:id/movement', authenticate, async (req, res) => {
+  const user = req.user!;
+  const passId = req.params.id;
+
+  const schema = z.object({
+    action: z.enum(['exit', 'return']),
+  });
+
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid movement action.' });
+    return;
+  }
+
+  const { action } = parsed.data;
+
+  try {
+    const existing = await sql`SELECT * FROM public.employee_gate_passes WHERE id = ${passId}`;
+    if (!existing.length) {
+      res.status(404).json({ error: 'Gate pass not found.' });
+      return;
+    }
+    const pass = existing[0];
+
+    if (action === 'exit') {
+      const updated = await sql`
+        UPDATE public.employee_gate_passes
+        SET movement_status = 'outside', actual_exit_at = NOW(), updated_at = NOW()
+        WHERE id = ${passId}
+        RETURNING *
+      `;
+
+      const annId = `ann-exit-${Date.now().toString(36)}`;
+      const exitTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      const title = `🚨 Faculty Departure Alert: ${pass.employee_name} has exited premises`;
+      const noteBody = `Faculty member ${pass.employee_name} (${pass.department}) marked departure at ${exitTime} for: ${pass.purpose}. Gate Pass Ref: ${pass.ref_no}. Time Out: ${pass.time_out}, Expected Return: ${pass.time_in}. Approval Status: ${pass.status}.`;
+
+      await sql`
+        INSERT INTO public.announcements (id, title, body, priority, audience_dept, created_by, created_at)
+        VALUES (${annId}, ${title}, ${noteBody}, 'URGENT', NULL, ${user.id}, NOW())
+      `;
+
+      await logAudit(user.id, user.name, 'FACULTY_EXITED_CAMPUS', `employee_gate_passes:${passId}`, { refNo: pass.ref_no, employeeName: pass.employee_name });
+      res.json({ ok: true, gatePass: updated[0], message: 'Departure recorded. Principal alert dispatched.' });
+      return;
+    }
+
+    if (action === 'return') {
+      const updated = await sql`
+        UPDATE public.employee_gate_passes
+        SET movement_status = 'returned', actual_return_at = NOW(), updated_at = NOW()
+        WHERE id = ${passId}
+        RETURNING *
+      `;
+
+      const annId = `ann-return-${Date.now().toString(36)}`;
+      const returnTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      const title = `✅ Faculty Return Alert: ${pass.employee_name} is back on campus`;
+      const noteBody = `Faculty member ${pass.employee_name} (${pass.department}) returned to campus at ${returnTime}. Gate Pass Ref: ${pass.ref_no}.`;
+
+      await sql`
+        INSERT INTO public.announcements (id, title, body, priority, audience_dept, created_by, created_at)
+        VALUES (${annId}, ${title}, ${noteBody}, 'NORMAL', NULL, ${user.id}, NOW())
+      `;
+
+      await logAudit(user.id, user.name, 'FACULTY_RETURNED_CAMPUS', `employee_gate_passes:${passId}`, { refNo: pass.ref_no, employeeName: pass.employee_name });
+      res.json({ ok: true, gatePass: updated[0], message: 'Return to campus recorded.' });
+      return;
+    }
+
+    res.status(400).json({ error: 'Invalid action.' });
+  } catch (err: any) {
+    console.error('Movement update error:', err);
+    res.status(500).json({ error: 'Failed to update movement status.' });
+  }
+});
+
+// ====================================================================
 // 7. ACADEMIC OPTIONS & RESTRICTED INPUTS (Phase 6)
 // ====================================================================
 

@@ -118,14 +118,28 @@ export const api = {
       apiFetch(`/api/permission-requests/${id}/decide`, { method: 'POST', body: JSON.stringify(payload) }),
   },
 
-  leaves: {
-    list: () => apiFetch('/api/leaves'),
+  gatePasses: {
+    list: () => apiFetch('/api/gate-passes'),
     create: (data: any) =>
-      apiFetch('/api/leaves', { method: 'POST', body: JSON.stringify(data) }),
+      apiFetch('/api/gate-passes', { method: 'POST', body: JSON.stringify(data) }),
     decide: (id: string, payload: { action: 'Recommend' | 'Approve' | 'Reject'; remark?: string }) =>
-      apiFetch(`/api/leaves/${id}/decide`, { method: 'POST', body: JSON.stringify(payload) }),
+      apiFetch(`/api/gate-passes/${id}/decide`, { method: 'POST', body: JSON.stringify(payload) }),
+    updateMovement: (id: string, action: 'exit' | 'return') =>
+      apiFetch(`/api/gate-passes/${id}/movement`, { method: 'POST', body: JSON.stringify({ action }) }),
+    quickApprove: (id: string, remark = 'Quick Sanctioned by Principal') =>
+      apiFetch(`/api/gate-passes/${id}/decide`, { method: 'POST', body: JSON.stringify({ action: 'Approve', remark }) }),
     cancel: (id: string) =>
-      apiFetch(`/api/leaves/${id}`, { method: 'DELETE' }),
+      apiFetch(`/api/gate-passes/${id}`, { method: 'DELETE' }),
+  },
+
+  leaves: {
+    list: () => apiFetch('/api/gate-passes'),
+    create: (data: any) =>
+      apiFetch('/api/gate-passes', { method: 'POST', body: JSON.stringify(data) }),
+    decide: (id: string, payload: { action: 'Recommend' | 'Approve' | 'Reject'; remark?: string }) =>
+      apiFetch(`/api/gate-passes/${id}/decide`, { method: 'POST', body: JSON.stringify(payload) }),
+    cancel: (id: string) =>
+      apiFetch(`/api/gate-passes/${id}`, { method: 'DELETE' }),
   },
 
   announcements: {

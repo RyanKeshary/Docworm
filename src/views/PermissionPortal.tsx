@@ -827,16 +827,26 @@ export function PermissionPortal() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Venue / Hall Needed</label>
-                  <select
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Venue / Location Needed *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter venue or location (e.g. Seminar Hall 1, Room 302, Campus Ground...)"
                     value={formData.venue}
                     onChange={(e) => setFormData({ ...formData, venue: e.target.value })}
+                    list="venue-suggestions"
                     className={inputCls}
-                  >
-                    {['Seminar Hall 1', 'Seminar Hall 2', 'Main Auditorium', 'Lab 302 (IT)', 'Lab 405 (CMPN)', 'College Amphitheatre', 'Campus Ground'].map((v) => (
-                      <option key={v} value={v}>{v}</option>
-                    ))}
-                  </select>
+                  />
+                  <datalist id="venue-suggestions">
+                    <option value="Seminar Hall 1" />
+                    <option value="Seminar Hall 2" />
+                    <option value="Main Auditorium" />
+                    <option value="College Amphitheatre" />
+                    <option value="Campus Ground" />
+                    <option value="Lab 302 (IT)" />
+                    <option value="Lab 405 (CMPN)" />
+                    <option value="Library Conference Room" />
+                  </datalist>
                 </div>
               </div>
 

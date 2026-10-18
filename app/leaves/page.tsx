@@ -2,12 +2,12 @@
 
 import React from 'react';
 import { Guard } from '../guard';
-import { FacultyLeavePortal } from '../../src/views/FacultyLeavePortal';
+import { EmployeeGatePassPortal } from '../../src/views/EmployeeGatePassPortal';
 
 export default function LeavesPage() {
   return (
     <Guard>
-      <FacultyLeavePortal />
+      <EmployeeGatePassPortal />
     </Guard>
   );
 }

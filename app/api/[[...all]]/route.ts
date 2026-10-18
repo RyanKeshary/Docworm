@@ -355,39 +355,39 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ all?
     }
   }
 
-  // 11. Faculty Leaves
-  if (path === '/leaves') {
+  // 11. Employee Gate Passes & Faculty Leaves
+  if (path === '/gate-passes' || path === '/leaves') {
     try {
-      let leaves: any[];
-      if (can(user, 'leave:view_all')) {
-        leaves = await sql`
-          SELECT l.*, u.email as faculty_email, u.phone as faculty_phone
-          FROM public.faculty_leaves l
-          LEFT JOIN public.users u ON l.faculty_id = u.id
-          ORDER BY l.created_at DESC
+      let gatePasses: any[];
+      if (can(user, 'gatepass:view_all') || can(user, 'leave:view_all')) {
+        gatePasses = await sql`
+          SELECT g.*, u.email as employee_email, u.phone as employee_phone
+          FROM public.employee_gate_passes g
+          LEFT JOIN public.users u ON g.employee_id = u.id
+          ORDER BY g.created_at DESC
         `;
       } else if (user.role === 'HOD') {
-        leaves = await sql`
-          SELECT l.*, u.email as faculty_email, u.phone as faculty_phone
-          FROM public.faculty_leaves l
-          LEFT JOIN public.users u ON l.faculty_id = u.id
-          WHERE l.department = ${user.department_code || ''}
-             OR l.department_id = ${user.department_id || ''}
-             OR l.faculty_id = ${user.id}
-          ORDER BY l.created_at DESC
+        gatePasses = await sql`
+          SELECT g.*, u.email as employee_email, u.phone as employee_phone
+          FROM public.employee_gate_passes g
+          LEFT JOIN public.users u ON g.employee_id = u.id
+          WHERE g.department = ${user.department_code || ''}
+             OR g.department_id = ${user.department_id || ''}
+             OR g.employee_id = ${user.id}
+          ORDER BY g.created_at DESC
         `;
       } else {
-        leaves = await sql`
-          SELECT l.*, u.email as faculty_email, u.phone as faculty_phone
-          FROM public.faculty_leaves l
-          LEFT JOIN public.users u ON l.faculty_id = u.id
-          WHERE l.faculty_id = ${user.id}
-          ORDER BY l.created_at DESC
+        gatePasses = await sql`
+          SELECT g.*, u.email as employee_email, u.phone as employee_phone
+          FROM public.employee_gate_passes g
+          LEFT JOIN public.users u ON g.employee_id = u.id
+          WHERE g.employee_id = ${user.id}
+          ORDER BY g.created_at DESC
         `;
       }
-      return NextResponse.json({ leaves });
+      return NextResponse.json({ gatePasses, leaves: gatePasses });
     } catch {
-      return jsonError('Failed to fetch leave applications.', 500);
+      return jsonError('Failed to fetch employee gate passes.', 500);
     }
   }
 
@@ -1253,9 +1253,51 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
     }
   }
 
-  // 14. Create Leave Application
-  if (path === '/leaves') {
-    if (!can(user, 'leave:create')) return jsonError('Forbidden: You cannot apply for leave.', 403);
+  // 14. Create Employee Gate Pass & Leave Application
+  if (path === '/gate-passes' || path === '/leaves') {
+    if (!can(user, 'gatepass:create') && !can(user, 'leave:create')) {
+      return jsonError('Forbidden: You cannot request a gate pass.', 403);
+    }
+
+    const isGatePass = path === '/gate-passes' || (body && (body.purpose || body.time_out || !body.leave_type));
+    if (isGatePass) {
+      const gatePassSchema = z.object({
+        date: z.string().optional(),
+        department: z.string().optional(),
+        purpose: z.string().min(2, 'Purpose is required'),
+        time_out: z.string().min(1, 'Time Out is required'),
+        time_in: z.string().min(1, 'Time In is required'),
+        contact_phone: z.string().optional().default(''),
+      });
+      const parsed = gatePassSchema.safeParse(body);
+      if (!parsed.success) {
+        return jsonError(parsed.error.issues[0]?.message || 'Invalid gate pass data.');
+      }
+      const d = parsed.data;
+      const deptCode = d.department || user.department_code || 'GEN';
+      const yearStr = new Date().getFullYear().toString();
+      const counterVal = Math.floor(1000 + Math.random() * 9000);
+      const refNo = `GP/${deptCode}/${yearStr}/${counterVal}`;
+      const dateVal = d.date || new Date().toISOString().split('T')[0];
+
+      try {
+        const inserted = await sql`
+          INSERT INTO public.employee_gate_passes (
+            ref_no, employee_id, employee_name, department_id, department,
+            date, purpose, time_out, time_in, contact_phone, status
+          ) VALUES (
+            ${refNo}, ${user.id}, ${user.name}, ${user.department_id}, ${deptCode},
+            ${dateVal}, ${d.purpose}, ${d.time_out}, ${d.time_in}, ${d.contact_phone || ''}, 'Pending'
+          )
+          RETURNING *
+        `;
+
+        await logAudit(user.id, user.name, 'GATE_PASS_REQUESTED', `employee_gate_passes:${inserted[0].id}`, { refNo, purpose: d.purpose });
+        return NextResponse.json({ ok: true, gatePass: inserted[0], leave: inserted[0] }, { status: 201 });
+      } catch {
+        return jsonError('Failed to submit gate pass request.', 500);
+      }
+    }
 
     const schema = z.object({
       leave_type: z.string().min(2),
@@ -1302,10 +1344,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
     }
   }
 
-  // 15. Decide Leave
-  const leaveDecideMatch = path.match(/^\/leaves\/([a-zA-Z0-9_-]+)\/decide$/);
-  if (leaveDecideMatch) {
-    const leaveId = leaveDecideMatch[1];
+  // 15. Decide Gate Pass / Leave
+  const gatePassDecideMatch = path.match(/^\/(gate-passes|leaves)\/([a-zA-Z0-9_-]+)\/decide$/);
+  if (gatePassDecideMatch) {
+    const recordId = gatePassDecideMatch[2];
     const schema = z.object({
       action: z.enum(['Recommend', 'Approve', 'Reject']),
       remark: z.string().optional().default(''),
@@ -1315,8 +1357,48 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
 
     const { action, remark } = parsed.data;
     try {
-      const existing = await sql`SELECT * FROM public.faculty_leaves WHERE id = ${leaveId}`;
-      if (!existing.length) return jsonError('Leave application not found.', 404);
+      // Check employee_gate_passes first
+      const existingGp = await sql`SELECT * FROM public.employee_gate_passes WHERE id = ${recordId}`;
+      if (existingGp.length) {
+        const pass = existingGp[0];
+        if (user.role === 'HOD') {
+          if (!can(user, 'gatepass:endorse_hod', pass)) {
+            return jsonError('Forbidden: You can only recommend gate passes for employees in your department.', 403);
+          }
+          if (action === 'Approve') {
+            return jsonError('HOD can only Recommend or Reject. Final sanction is reserved for the Principal.', 403);
+          }
+
+          const newStatus = action === 'Recommend' ? 'Recommended' : 'Rejected';
+          const updated = await sql`
+            UPDATE public.employee_gate_passes
+            SET status = ${newStatus}, hod_id = ${user.id}, hod_name = ${user.name}, hod_remark = ${remark}, hod_acted_at = NOW(), updated_at = NOW()
+            WHERE id = ${recordId}
+            RETURNING *
+          `;
+          await logAudit(user.id, user.name, `GATEPASS_HOD_${action.toUpperCase()}`, `employee_gate_passes:${recordId}`, { refNo: pass.ref_no, action, remark });
+          return NextResponse.json({ ok: true, gatePass: updated[0], leave: updated[0] });
+        }
+
+        if (user.role === 'Principal') {
+          if (!can(user, 'gatepass:decide_principal')) return jsonError('Forbidden.', 403);
+          const newStatus = action === 'Approve' ? 'Approved' : 'Rejected';
+          const updated = await sql`
+            UPDATE public.employee_gate_passes
+            SET status = ${newStatus}, principal_id = ${user.id}, principal_name = ${user.name}, principal_remark = ${remark}, principal_acted_at = NOW(), updated_at = NOW()
+            WHERE id = ${recordId}
+            RETURNING *
+          `;
+          await logAudit(user.id, user.name, `GATEPASS_PRINCIPAL_${action.toUpperCase()}`, `employee_gate_passes:${recordId}`, { refNo: pass.ref_no, action, remark });
+          return NextResponse.json({ ok: true, gatePass: updated[0], leave: updated[0] });
+        }
+
+        return jsonError('Forbidden.', 403);
+      }
+
+      // Fallback check faculty_leaves
+      const existing = await sql`SELECT * FROM public.faculty_leaves WHERE id = ${recordId}`;
+      if (!existing.length) return jsonError('Record not found.', 404);
       const leave = existing[0];
 
       if (user.role === 'HOD') {
@@ -1331,11 +1413,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
         const updated = await sql`
           UPDATE public.faculty_leaves
           SET status = ${newStatus}, hod_id = ${user.id}, hod_name = ${user.name}, hod_remark = ${remark}, hod_acted_at = NOW(), updated_at = NOW()
-          WHERE id = ${leaveId}
+          WHERE id = ${recordId}
           RETURNING *
         `;
-        await logAudit(user.id, user.name, `LEAVE_HOD_${action.toUpperCase()}`, `faculty_leaves:${leaveId}`, { refNo: leave.ref_no, action, remark });
-        return NextResponse.json({ ok: true, leave: updated[0] });
+        await logAudit(user.id, user.name, `LEAVE_HOD_${action.toUpperCase()}`, `faculty_leaves:${recordId}`, { refNo: leave.ref_no, action, remark });
+        return NextResponse.json({ ok: true, leave: updated[0], gatePass: updated[0] });
       }
 
       if (user.role === 'Principal') {
@@ -1344,16 +1426,82 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
         const updated = await sql`
           UPDATE public.faculty_leaves
           SET status = ${newStatus}, principal_id = ${user.id}, principal_name = ${user.name}, principal_remark = ${remark}, principal_acted_at = NOW(), updated_at = NOW()
-          WHERE id = ${leaveId}
+          WHERE id = ${recordId}
           RETURNING *
         `;
-        await logAudit(user.id, user.name, `LEAVE_PRINCIPAL_${action.toUpperCase()}`, `faculty_leaves:${leaveId}`, { refNo: leave.ref_no, action, remark });
-        return NextResponse.json({ ok: true, leave: updated[0] });
+        await logAudit(user.id, user.name, `LEAVE_PRINCIPAL_${action.toUpperCase()}`, `faculty_leaves:${recordId}`, { refNo: leave.ref_no, action, remark });
+        return NextResponse.json({ ok: true, leave: updated[0], gatePass: updated[0] });
       }
 
       return jsonError('Forbidden.', 403);
     } catch {
-      return jsonError('Failed to record leave decision.', 500);
+      return jsonError('Failed to record decision.', 500);
+    }
+  }
+
+  // 15b. Gate Pass Movement (Exit / Return Tracking)
+  const gatePassMovementMatch = path.match(/^\/gate-passes\/([a-zA-Z0-9_-]+)\/movement$/);
+  if (gatePassMovementMatch) {
+    const passId = gatePassMovementMatch[1];
+    const schema = z.object({
+      action: z.enum(['exit', 'return']),
+    });
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) return jsonError('Invalid movement action.');
+
+    const { action } = parsed.data;
+    try {
+      const existing = await sql`SELECT * FROM public.employee_gate_passes WHERE id = ${passId}`;
+      if (!existing.length) return jsonError('Gate pass not found.', 404);
+      const pass = existing[0];
+
+      if (action === 'exit') {
+        const updated = await sql`
+          UPDATE public.employee_gate_passes
+          SET movement_status = 'outside', actual_exit_at = NOW(), updated_at = NOW()
+          WHERE id = ${passId}
+          RETURNING *
+        `;
+
+        const annId = `ann-exit-${Date.now().toString(36)}`;
+        const exitTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        const title = `🚨 Faculty Departure Alert: ${pass.employee_name} has exited premises`;
+        const noteBody = `Faculty member ${pass.employee_name} (${pass.department}) marked departure at ${exitTime} for: ${pass.purpose}. Gate Pass Ref: ${pass.ref_no}. Time Out: ${pass.time_out}, Expected Return: ${pass.time_in}. Approval Status: ${pass.status}.`;
+
+        await sql`
+          INSERT INTO public.announcements (id, title, body, priority, audience_dept, created_by, created_at)
+          VALUES (${annId}, ${title}, ${noteBody}, 'URGENT', NULL, ${user.id}, NOW())
+        `;
+
+        await logAudit(user.id, user.name, 'FACULTY_EXITED_CAMPUS', `employee_gate_passes:${passId}`, { refNo: pass.ref_no, employeeName: pass.employee_name });
+        return NextResponse.json({ ok: true, gatePass: updated[0], message: 'Departure recorded. Principal alert dispatched.' });
+      }
+
+      if (action === 'return') {
+        const updated = await sql`
+          UPDATE public.employee_gate_passes
+          SET movement_status = 'returned', actual_return_at = NOW(), updated_at = NOW()
+          WHERE id = ${passId}
+          RETURNING *
+        `;
+
+        const annId = `ann-return-${Date.now().toString(36)}`;
+        const returnTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        const title = `✅ Faculty Return Alert: ${pass.employee_name} is back on campus`;
+        const noteBody = `Faculty member ${pass.employee_name} (${pass.department}) returned to campus at ${returnTime}. Gate Pass Ref: ${pass.ref_no}.`;
+
+        await sql`
+          INSERT INTO public.announcements (id, title, body, priority, audience_dept, created_by, created_at)
+          VALUES (${annId}, ${title}, ${noteBody}, 'NORMAL', NULL, ${user.id}, NOW())
+        `;
+
+        await logAudit(user.id, user.name, 'FACULTY_RETURNED_CAMPUS', `employee_gate_passes:${passId}`, { refNo: pass.ref_no, employeeName: pass.employee_name });
+        return NextResponse.json({ ok: true, gatePass: updated[0], message: 'Return to campus recorded.' });
+      }
+
+      return jsonError('Invalid action.', 400);
+    } catch {
+      return jsonError('Failed to update movement status.', 500);
     }
   }
 
@@ -1659,24 +1807,35 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ a
     }
   }
 
-  // 2. Delete / Cancel Leave
-  const leaveMatch = path.match(/^\/leaves\/([a-zA-Z0-9_-]+)$/);
-  if (leaveMatch) {
-    const leaveId = leaveMatch[1];
+  // 2. Delete / Cancel Gate Pass or Leave
+  const cancelMatch = path.match(/^\/(gate-passes|leaves)\/([a-zA-Z0-9_-]+)$/);
+  if (cancelMatch) {
+    const recordId = cancelMatch[2];
     try {
-      const existing = await sql`SELECT * FROM public.faculty_leaves WHERE id = ${leaveId}`;
-      if (!existing.length) return jsonError('Leave application not found.', 404);
+      const existingGp = await sql`SELECT * FROM public.employee_gate_passes WHERE id = ${recordId}`;
+      if (existingGp.length) {
+        const pass = existingGp[0];
+        if (!can(user, 'gatepass:cancel_own', pass) && user.role !== 'Principal') {
+          return jsonError('Forbidden: You can only cancel your own pending gate passes.', 403);
+        }
+        const updated = await sql`UPDATE public.employee_gate_passes SET status = 'Cancelled', updated_at = NOW() WHERE id = ${recordId} RETURNING *`;
+        await logAudit(user.id, user.name, 'GATEPASS_CANCELLED', `employee_gate_passes:${recordId}`, { refNo: pass.ref_no });
+        return NextResponse.json({ ok: true, message: 'Gate pass cancelled.', gatePass: updated[0], leave: updated[0] });
+      }
+
+      const existing = await sql`SELECT * FROM public.faculty_leaves WHERE id = ${recordId}`;
+      if (!existing.length) return jsonError('Record not found.', 404);
       const leave = existing[0];
 
       if (!can(user, 'leave:cancel_own', leave) && user.role !== 'Principal') {
         return jsonError('Forbidden: You can only cancel your own pending leave applications.', 403);
       }
 
-      const updated = await sql`UPDATE public.faculty_leaves SET status = 'Cancelled', updated_at = NOW() WHERE id = ${leaveId} RETURNING *`;
-      await logAudit(user.id, user.name, 'LEAVE_CANCELLED', `faculty_leaves:${leaveId}`, { refNo: leave.ref_no });
-      return NextResponse.json({ ok: true, message: 'Leave application cancelled.', leave: updated[0] });
+      const updated = await sql`UPDATE public.faculty_leaves SET status = 'Cancelled', updated_at = NOW() WHERE id = ${recordId} RETURNING *`;
+      await logAudit(user.id, user.name, 'LEAVE_CANCELLED', `faculty_leaves:${recordId}`, { refNo: leave.ref_no });
+      return NextResponse.json({ ok: true, message: 'Leave application cancelled.', leave: updated[0], gatePass: updated[0] });
     } catch {
-      return jsonError('Failed to cancel leave application.', 500);
+      return jsonError('Failed to cancel request.', 500);
     }
   }
 

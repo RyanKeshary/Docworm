@@ -3,13 +3,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from './lib/router-compat';
 import {
-  FileText, Bell, Settings, Calendar,
+  FileText, Bell, Settings, Calendar, Ticket,
   Menu, X, Search, LogOut, ChevronLeft, User, Database, Shield, Crown, GraduationCap, Building2, Users,
   HelpCircle,
 } from 'lucide-react';
 import { useData } from './store';
 import { ROLE_META, PERMISSIONS } from './lib/roleUtils';
 import { OnboardingGuideModal } from './components/OnboardingGuideModal';
+import { PrincipalDepartureAlert } from './components/PrincipalDepartureAlert';
 
 export const STATUS_STYLE: Record<string, string> = {
   Approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -159,7 +160,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   // Role-specific navigation
   const allLinks = [
     { to: '/', label: 'Permission Requests', icon: <FileText size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
-    { to: '/leaves', label: 'Faculty Leaves', icon: <Calendar size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
+    { to: '/gate-pass', label: 'Employee Gate Pass', icon: <Ticket size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
     { to: '/notifications', label: 'Notifications', icon: <Bell size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
     { to: '/settings', label: 'Settings & Admin', icon: <Settings size={18} />, roles: ['Principal'] },
     { to: '/settings', label: 'Settings', icon: <Settings size={18} />, roles: ['Dean', 'HOD', 'Faculty'] },
@@ -408,6 +409,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         }}
         currentUser={currentUser}
       />
+
+      <PrincipalDepartureAlert />
     </div>
   );
 }

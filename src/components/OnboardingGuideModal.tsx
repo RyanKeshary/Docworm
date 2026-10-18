@@ -172,26 +172,26 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
                 <div className="space-y-4 animate-fade-in">
                   <div>
                     <span className="text-xs font-bold text-violet-700 uppercase tracking-wider block mb-1">
-                      Step 2: Faculty Leave Orders
+                      Step 2: Employee Gate Passes
                     </span>
-                    <h3 className="text-lg font-bold text-slate-900">Official Granting of Faculty Leaves</h3>
+                    <h3 className="text-lg font-bold text-slate-900">Official Sanction of Employee Gate Passes</h3>
                     <p className="text-xs text-slate-500 mt-1">
-                      Review leaves recommended by HODs and issue authorized institutional leave orders:
+                      Review gate passes endorsed by HODs and issue authorized institutional gate passes:
                     </p>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-3 text-xs">
                     <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
                       <span className="font-bold text-slate-900 block">HOD Recommendations</span>
-                      <p className="text-slate-600">Ensure the department HOD has validated lecture swaps and colleague substitutions before issuing sanction.</p>
+                      <p className="text-slate-600">Ensure the department HOD has validated the departure timings and purpose before issuing sanction.</p>
                     </div>
                     <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                      <span className="font-bold text-slate-900 block">Duty Leaves (OD) Clearance</span>
-                      <p className="text-slate-600">Review On-Duty requests for Mumbai University paper evaluations, conferences, and external academic duties.</p>
+                      <span className="font-bold text-slate-900 block">Printable Pass (Image Format)</span>
+                      <p className="text-slate-600">Generates the official Shree L.R. Tiwari College of Engineering physical gate pass with security verification.</p>
                     </div>
                   </div>
                   <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2.5">
                     <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
-                    <span>Faculty and HOD receive instant real-time notification upon your leave decision.</span>
+                    <span>Employees and security receive instant confirmation upon your gate pass sanction.</span>
                   </div>
                 </div>
               )}
@@ -421,21 +421,21 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
                 <div className="space-y-4 animate-fade-in">
                   <div>
                     <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider block mb-1">
-                      Step 3: Faculty Leave Verifications
+                      Step 3: Employee Gate Pass Verifications
                     </span>
-                    <h3 className="text-lg font-bold text-slate-900">Checking Lecture Adjustments</h3>
+                    <h3 className="text-lg font-bold text-slate-900">Endorsing Campus Departure Passes</h3>
                     <p className="text-xs text-slate-500 mt-1">
-                      Safeguard academic syllabus continuity before leave approval:
+                      Verify employee departure timings and reasons before endorsing:
                     </p>
                   </div>
                   <div className="space-y-2 text-xs text-slate-700">
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                      <span className="font-bold text-slate-900 block mb-0.5">Colleague Lecture Swaps</span>
-                      <p className="text-slate-600">Verify that the applying faculty member has named substitute faculty who will take their lecture or lab hours during their absence.</p>
+                      <span className="font-bold text-slate-900 block mb-0.5">Purpose & Timings Verification</span>
+                      <p className="text-slate-600">Verify that the departing staff member has stated a clear purpose and realistic Time Out / Time In schedule.</p>
                     </div>
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
                       <span className="font-bold text-slate-900 block mb-0.5">Recommend to Principal</span>
-                      <p className="text-slate-600">Once satisfied, add your recommendation remark and send to the Principal for the final leave order sanction.</p>
+                      <p className="text-slate-600">Once satisfied, add your recommendation remark to forward to the Principal for the final gate pass sanction.</p>
                     </div>
                   </div>
                 </div>
@@ -505,26 +505,26 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
                 <div className="space-y-4 animate-fade-in">
                   <div>
                     <span className="text-xs font-bold text-[#1B365D] uppercase tracking-wider block mb-1">
-                      Step 2: Faculty Leave Applications
+                      Step 2: Employee Gate Passes
                     </span>
-                    <h3 className="text-lg font-bold text-slate-900">Leave Requests with Colleague Adjustments</h3>
+                    <h3 className="text-lg font-bold text-slate-900">Gate Pass Requests for Campus Exit</h3>
                     <p className="text-xs text-slate-500 mt-1">
-                      Apply for leaves without manual paper circulation:
+                      Apply for gate passes directly with official Shree L.R. Tiwari College of Engineering format:
                     </p>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-3 text-xs">
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                      <span className="font-bold text-slate-900 block mb-1">Supported Leave Types</span>
-                      <p className="text-slate-600">Casual Leave (CL), On Duty (OD for university paper correction/conferences), Medical Leave, and Comp-Off.</p>
+                      <span className="font-bold text-slate-900 block mb-1">Purpose & Departure Schedule</span>
+                      <p className="text-slate-600">Select pre-set or custom reasons (official university duty, bank work, medical) with Time Out and Time In.</p>
                     </div>
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                      <span className="font-bold text-slate-900 block mb-1">Lecture Load Substitutions</span>
-                      <p className="text-slate-600">Enter which colleague faculty member has agreed to cover your teaching or lab periods.</p>
+                      <span className="font-bold text-slate-900 block mb-1">Physical Printout Ready</span>
+                      <p className="text-slate-600">View and print the official SLRTCE gate pass card with digital HOD & Principal approval stamps.</p>
                     </div>
                   </div>
                   <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600">
                     <span className="font-bold text-slate-900 block">Approval Chain:</span>
-                    Faculty submits &rarr; HOD reviews & recommends &rarr; Principal issues final sanction order.
+                    Employee submits &rarr; HOD reviews & recommends &rarr; Principal issues final sanctioned gate pass.
                   </div>
                 </div>
               )}
