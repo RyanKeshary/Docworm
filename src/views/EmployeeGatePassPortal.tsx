@@ -408,42 +408,38 @@ export function EmployeeGatePassPortal() {
       {/* ==================================================================== */}
       {/* REAL-TIME CAMPUS PRESENCE & FACULTY MOVEMENT TRACKER                   */}
       {/* ==================================================================== */}
-      <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white p-5 rounded-2xl border border-slate-700 shadow-lg relative overflow-hidden">
-        {/* Subtle decorative glow */}
-        <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 relative z-10 border-b border-slate-700/80 pb-3">
-          <div className="flex items-center gap-3">
-            <span className="relative flex h-3 w-3">
+      <div className="bg-surface p-4 sm:p-5 rounded-card border border-primary-border shadow-xs space-y-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2.5 w-2.5 shrink-0">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
             </span>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-2">
-                  <Activity size={18} className="text-emerald-400" />
-                  Live Campus Presence &amp; Faculty Movement Tracker
+                <h2 className="text-sm sm:text-base font-bold text-ink">
+                  Live Campus Presence &amp; Movement Tracker
                 </h2>
-                <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full">
+                <span className="text-[10px] font-semibold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
                   Real-Time Active
                 </span>
               </div>
-              <p className="text-xs text-slate-300 mt-0.5">
+              <p className="text-xs text-ink-muted">
                 Dynamic tracking of faculty status across campus gates with instant Principal alerts upon exit.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700 text-xs text-slate-300 flex items-center gap-2">
-              <span className="text-slate-400">Currently Away:</span>
-              <span className={`px-2 py-0.5 rounded-md font-bold text-xs ${stats.currentlyOutside > 0 ? 'bg-amber-500 text-slate-950 animate-pulse' : 'bg-slate-700 text-slate-300'}`}>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-page border border-primary-border text-xs text-ink">
+              <span className="text-ink-muted">Currently Away:</span>
+              <span className={`px-2 py-0.5 rounded-md font-bold text-xs ${stats.currentlyOutside > 0 ? 'bg-amber-100 text-amber-900 border border-amber-200 animate-pulse' : 'bg-slate-100 text-slate-700'}`}>
                 {stats.currentlyOutside} Outside
               </span>
             </div>
-            <div className="px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700 text-xs text-slate-300 flex items-center gap-2">
-              <span className="text-slate-400">Returned Today:</span>
-              <span className="px-2 py-0.5 rounded-md font-bold text-xs bg-blue-500/20 text-blue-300 border border-blue-500/30">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-page border border-primary-border text-xs text-ink">
+              <span className="text-ink-muted">Returned Today:</span>
+              <span className="px-2 py-0.5 rounded-md font-bold text-xs bg-blue-50 text-blue-700 border border-blue-200">
                 {stats.returnedToday}
               </span>
             </div>
@@ -451,81 +447,79 @@ export function EmployeeGatePassPortal() {
         </div>
 
         {/* Presence Cards / Active Departure Grid */}
-        <div className="relative z-10">
+        <div>
           {stats.currentlyOutside === 0 ? (
-            <div className="py-4 px-4 rounded-xl bg-slate-800/50 border border-slate-700/60 flex items-center justify-between text-xs text-slate-300">
-              <div className="flex items-center gap-3">
-                <span className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-bold">
-                  ✓
-                </span>
+            <div className="py-3 px-4 rounded-xl bg-slate-50/80 border border-primary-border/80 flex items-center justify-between text-xs text-ink">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
                 <div>
-                  <p className="font-semibold text-white">All Faculty Members are Currently Inside Campus</p>
-                  <p className="text-slate-400 text-[11px]">When a faculty member exits the premises via a gate pass, their status and exit alert will appear here instantly.</p>
+                  <span className="font-semibold text-ink text-xs">All faculty members are currently inside campus.</span>
+                  <span className="text-ink-muted text-[11px] ml-2 hidden sm:inline">Exits and departure alerts will appear here in real time.</span>
                 </div>
               </div>
-              <span className="hidden sm:inline-block text-[11px] text-slate-400 font-mono">
+              <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
                 Gate Status: All Clear
               </span>
             </div>
           ) : (
             <div className="space-y-2.5">
-              <p className="text-xs font-semibold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
-                <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+              <p className="text-xs font-semibold text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
                 Faculty Members Currently Outside Campus ({stats.currentlyOutside})
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {gatePasses.filter(p => p.movement_status === 'outside').map((pass) => (
-                  <div key={pass.id} className="bg-slate-800/90 border-2 border-amber-500/60 rounded-xl p-3.5 shadow-md flex flex-col justify-between gap-3">
+                  <div key={pass.id} className="bg-surface border-2 border-amber-200/90 rounded-xl p-3.5 shadow-xs flex flex-col justify-between gap-3">
                     <div>
                       <div className="flex items-start justify-between gap-2 mb-1.5">
                         <div>
-                          <span className="font-bold text-sm text-white block">{pass.employee_name}</span>
-                          <span className="text-[11px] text-slate-300">{pass.department} • Ref: {pass.ref_no}</span>
+                          <span className="font-bold text-xs sm:text-sm text-ink block">{pass.employee_name}</span>
+                          <span className="text-[11px] text-ink-muted">{pass.department} • Ref: {pass.ref_no}</span>
                         </div>
-                        <span className="px-2 py-0.5 rounded-md bg-amber-400 text-slate-950 font-bold text-[10px] uppercase">
+                        <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px] uppercase">
                           Away
                         </span>
                       </div>
-                      <p className="text-xs text-slate-200 line-clamp-2 italic bg-slate-900/60 p-2 rounded-lg border border-slate-700/50">
+                      <p className="text-xs text-ink-muted italic bg-page p-2 rounded-lg border border-primary-border line-clamp-2">
                         &quot;{pass.purpose}&quot;
                       </p>
-                      <div className="mt-2 text-[11px] text-slate-300 space-y-0.5">
+                      <div className="mt-2 text-[11px] space-y-0.5">
                         <div className="flex justify-between">
-                          <span className="text-slate-400">Departed at:</span>
-                          <span className="font-mono text-rose-400 font-semibold">
+                          <span className="text-ink-muted">Departed at:</span>
+                          <span className="font-mono text-rose-700 font-semibold">
                             {pass.actual_exit_at ? new Date(pass.actual_exit_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : pass.time_out}
                           </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-slate-400">Expected Return:</span>
-                          <span className="font-mono text-emerald-400 font-semibold">{pass.time_in}</span>
+                          <span className="text-ink-muted">Expected Return:</span>
+                          <span className="font-mono text-emerald-700 font-semibold">{pass.time_in}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-slate-400">Pass Status:</span>
-                          <span className={`font-semibold ${pass.status === 'Approved' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                          <span className="text-ink-muted">Pass Status:</span>
+                          <span className={`font-semibold ${pass.status === 'Approved' ? 'text-emerald-700' : 'text-amber-700'}`}>
                             {pass.status}
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-slate-700 flex items-center gap-2">
+                    <div className="pt-2 border-t border-primary-border flex items-center gap-2">
                       {currentUser.role === 'Principal' && pass.status !== 'Approved' && (
                         <button
                           onClick={() => handleQuickApprove(pass.id, pass.employee_name)}
                           disabled={submitting}
-                          className="flex-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 transition-colors flex items-center justify-center gap-1 shadow-xs"
+                          className="flex-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1 shadow-xs"
                         >
-                          <Zap size={13} className="text-amber-300" />
+                          <Zap size={13} className="text-amber-200 fill-current" />
                           <span>1-Click Sanction</span>
                         </button>
                       )}
                       <button
                         onClick={() => handleMovement(pass.id, 'return')}
                         disabled={submitting}
-                        className="flex-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-100 bg-blue-600/80 hover:bg-blue-600 transition-colors flex items-center justify-center gap-1"
+                        className="flex-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-primary-border bg-page hover:bg-primary-pale text-ink transition-colors flex items-center justify-center gap-1"
                       >
-                        <CheckCircle2 size={13} />
+                        <CheckCircle2 size={13} className="text-primary" />
                         <span>Mark Return</span>
                       </button>
                     </div>

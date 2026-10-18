@@ -127,9 +127,7 @@ export function PrincipalDepartureAlert() {
 
   return (
     <div className="fixed bottom-5 right-5 z-50 max-w-md w-full px-3 sm:px-0 animate-bounce-in">
-      <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border-2 border-amber-400 shadow-2xl p-4 sm:p-5 overflow-hidden relative transition-all">
-        {/* Glow indicator line */}
-        <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 via-rose-500 to-amber-500 animate-pulse" />
+      <div className="bg-surface rounded-card border border-primary-border shadow-xl p-4 sm:p-5 overflow-hidden relative transition-all">
 
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
