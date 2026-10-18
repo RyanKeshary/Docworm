@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { z } from 'zod';
 import { sql, checkDbHealth, logAudit } from '../../../server/db';
-import { can, type Role, type AuthUser } from '../../../server/rbac';
+import { can, normalizeDept, type Role, type AuthUser } from '../../../server/rbac';
 import { sendEmail, getSmtpConfig } from '../../../server/email';
 import { isPushConfigured, getVapidPublicKey, sendPushToUsers } from '../../../server/push';
 import { generateStaffDirectoryExcel, generatePermissionRequestsExcel } from '../../../server/excel';
@@ -952,9 +952,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
   // 8. Approve / Reject User Registration
   const approveMatch = path.match(/^\/users\/([a-zA-Z0-9_-]+)\/approve$/);
   if (approveMatch) {
-    if (!can(user, 'user:approve_registration')) return jsonError('Forbidden.', 403);
     const targetId = approveMatch[1];
     try {
+      const targetRows = await sql`
+        SELECT u.*, d.code as department_code
+        FROM public.users u
+        LEFT JOIN public.departments d ON u.department_id = d.id
+        WHERE u.id = ${targetId} AND u.status = 'pending_approval'
+      `;
+      if (!targetRows.length) return jsonError('Pending registration not found.', 404);
+      const targetUser = targetRows[0];
+      if (!can(user, 'user:approve_registration', targetUser)) {
+        return jsonError('Forbidden: Insufficient privileges to approve this user registration.', 403);
+      }
+
       const updated = await sql`
         UPDATE public.users SET status = 'active', updated_at = NOW()
         WHERE id = ${targetId} AND status = 'pending_approval'
@@ -966,7 +977,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       await sendEmail({
         to: updated[0].email,
         subject: 'Docworm Account Approved',
-        text: `Hello ${updated[0].name},\n\nYour faculty registration has been approved. You may now log in.`,
+        text: `Hello ${updated[0].name},\n\nYour faculty registration has been approved by ${user.name} (${user.role}). You may now log in to the Docworm Institutional Portal.`,
       });
 
       return NextResponse.json({ message: `Successfully approved faculty registration for ${updated[0].name}!` });
@@ -977,9 +988,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
 
   const rejectMatch = path.match(/^\/users\/([a-zA-Z0-9_-]+)\/reject$/);
   if (rejectMatch) {
-    if (!can(user, 'user:approve_registration')) return jsonError('Forbidden.', 403);
     const targetId = rejectMatch[1];
     try {
+      const targetRows = await sql`
+        SELECT u.*, d.code as department_code
+        FROM public.users u
+        LEFT JOIN public.departments d ON u.department_id = d.id
+        WHERE u.id = ${targetId}
+      `;
+      if (!targetRows.length) return jsonError('User not found.', 404);
+      const targetUser = targetRows[0];
+      if (!can(user, 'user:approve_registration', targetUser)) {
+        return jsonError('Forbidden: Insufficient privileges to reject this user registration.', 403);
+      }
+
       await sql`UPDATE public.users SET status = 'rejected', updated_at = NOW() WHERE id = ${targetId}`;
       await logAudit(user.id, user.name, 'FACULTY_REGISTRATION_REJECTED', `users:${targetId}`);
       return NextResponse.json({ message: 'Registration rejected.' });
@@ -1229,10 +1251,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       }
 
       if (user.role === 'HOD') {
-        if (prop.faculty_id === user.id) {
-          return jsonError('Forbidden: HOD cannot endorse or approve their own permission request.', 403);
-        }
-        if (prop.submitter_dept !== user.department_code) {
+        const propDept = normalizeDept(prop.submitter_dept);
+        const userDept = normalizeDept(user.department_code || user.department_id);
+        if (propDept && userDept && propDept !== userDept) {
           return jsonError('Forbidden: You can only endorse requests from your own department.', 403);
         }
 

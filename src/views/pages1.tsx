@@ -12,7 +12,7 @@ import { Badge, Drawer, EmptyState, ExportMenu, btnGhost, btnPrimary, inputCls }
 import { computedTaskStatus, detectClashes, exportCSV, exportPDF, exportXLSX, flattenProposal } from '../utils';
 import { api } from '../lib/api';
 
-type AuthMode = 'signin' | 'forgot' | 'reset' | 'force_change';
+type AuthMode = 'signin' | 'signup' | 'forgot' | 'reset' | 'force_change';
 
 function getPasswordStrength(pass: string): { score: number; label: string; color: string } {
   if (!pass) return { score: 0, label: 'Empty', color: 'bg-slate-200' };
@@ -30,7 +30,7 @@ function getPasswordStrength(pass: string): { score: number; label: string; colo
 }
 
 export function Login() {
-  const { signIn, isAuthenticated, refresh, letterhead } = useData();
+  const { signIn, signUp, isAuthenticated, refresh, letterhead, options } = useData();
   const nav = useNavigate();
   const [params] = useSearchParams();
 
@@ -40,6 +40,12 @@ export function Login() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [resetToken, setResetToken] = useState('');
+
+  // Faculty signup fields
+  const [signupName, setSignupName] = useState('');
+  const [signupDept, setSignupDept] = useState('IT');
+  const [signupDesignation, setSignupDesignation] = useState('Assistant Professor');
+  const [signupPhone, setSignupPhone] = useState('');
 
   // UI state
   const [showPassword, setShowPassword] = useState(false);
@@ -81,6 +87,33 @@ export function Login() {
           return;
         }
         nav('/');
+        return;
+      } else if (mode === 'signup') {
+        if (!signupName.trim()) throw new Error('Please enter your full name.');
+        if (!email.trim()) throw new Error('Please enter your institutional email.');
+        if (!email.toLowerCase().includes('@')) throw new Error('A valid email address is required.');
+        if (password.length < 8) throw new Error('Password must be at least 8 characters long.');
+        if (password !== confirmPassword) throw new Error('Passwords do not match.');
+
+        const err = await signUp({
+          name: signupName.trim(),
+          email: email.trim().toLowerCase(),
+          password,
+          department: signupDept,
+          designation: signupDesignation.trim(),
+          phone: signupPhone.trim(),
+        });
+
+        if (err) {
+          throw new Error(err);
+        }
+
+        setInfoMessage('Faculty registration submitted! Your account is pending verification and approval by your HOD, Dean, or Principal before you can access the portal.');
+        setSignupName('');
+        setPassword('');
+        setConfirmPassword('');
+        setSignupPhone('');
+        setMode('signin');
         return;
       } else if (mode === 'forgot') {
         if (!email.trim()) throw new Error('Please enter your institutional email.');
@@ -147,12 +180,14 @@ export function Login() {
             <div className="mb-6">
               <h2 className="text-xl font-bold text-slate-900 tracking-tight">
                 {mode === 'signin' && 'Sign In to Your Account'}
+                {mode === 'signup' && 'Sign Up as Faculty'}
                 {mode === 'forgot' && 'Reset Your Password'}
                 {mode === 'reset' && 'Set New Permanent Password'}
                 {mode === 'force_change' && 'First-Login Password Change'}
               </h2>
               <p className="text-xs text-slate-500 mt-1">
                 {mode === 'signin' && 'Enter your institutional credentials to access your portal.'}
+                {mode === 'signup' && 'Create your institutional faculty account. Access is activated upon approval by your HOD, Dean, or Principal.'}
                 {mode === 'forgot' && 'Enter your registered email to receive reset instructions.'}
                 {mode === 'reset' && 'Enter your security token and select a new password.'}
                 {mode === 'force_change' && 'Change your temporary password before proceeding.'}
@@ -163,13 +198,22 @@ export function Login() {
             {error && (
               <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-start gap-2.5 animate-fade-in">
                 <AlertCircle size={16} className="shrink-0 mt-0.5 text-rose-600" />
-                <span>{error}</span>
+                <div className="flex-1">
+                  <span>{error}</span>
+                  {error.toLowerCase().includes('pending') && (
+                    <p className="mt-1 text-[11px] text-rose-600 font-normal">
+                      ℹ️ Registrations are reviewed by Department HODs, the Dean, and Principal Office. Please allow time for verification.
+                    </p>
+                  )}
+                </div>
               </div>
             )}
             {infoMessage && (
-              <div className="mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-start gap-2.5 animate-fade-in">
+              <div className="mb-4 p-3.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-start gap-2.5 animate-fade-in">
                 <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-emerald-600" />
-                <span>{infoMessage}</span>
+                <div className="flex-1">
+                  <span>{infoMessage}</span>
+                </div>
               </div>
             )}
 
@@ -203,12 +247,74 @@ export function Login() {
                 </label>
               )}
 
-              {/* Email Field (for signin, forgot) */}
-              {(mode === 'signin' || mode === 'forgot') && (
+              {/* Signup Fields: Full Name, Department, Designation, Phone */}
+              {mode === 'signup' && (
+                <div className="space-y-3 animate-fade-in">
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-700">Full Name *</span>
+                    <div className="relative mt-1">
+                      <input
+                        value={signupName}
+                        onChange={(e) => setSignupName(e.target.value)}
+                        placeholder="e.g. Prof. Priya Sharma"
+                        className={`${inputCls} pl-9`}
+                        type="text"
+                        required
+                      />
+                      <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    </div>
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <span className="text-xs font-semibold text-slate-700 block mb-1">Department *</span>
+                      <select
+                        value={signupDept}
+                        onChange={(e) => setSignupDept(e.target.value)}
+                        className={inputCls}
+                        required
+                      >
+                        {(options?.departments || ['IT', 'CMPN', 'EXTC', 'MECH', 'CIVIL', 'AIDS', 'HAS']).map((d) => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold text-slate-700 block mb-1">Designation</span>
+                      <select
+                        value={signupDesignation}
+                        onChange={(e) => setSignupDesignation(e.target.value)}
+                        className={inputCls}
+                      >
+                        <option value="Assistant Professor">Assistant Professor</option>
+                        <option value="Associate Professor">Associate Professor</option>
+                        <option value="Professor">Professor</option>
+                        <option value="Lecturer">Lecturer</option>
+                        <option value="Faculty Coordinator">Faculty Coordinator</option>
+                        <option value="Lab Assistant">Lab Assistant</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-700">Phone Number (Optional)</span>
+                    <input
+                      value={signupPhone}
+                      onChange={(e) => setSignupPhone(e.target.value)}
+                      placeholder="+91 98765 43210"
+                      className={`${inputCls} mt-1`}
+                      type="tel"
+                    />
+                  </label>
+                </div>
+              )}
+
+              {/* Email Field (for signin, signup, forgot) */}
+              {(mode === 'signin' || mode === 'signup' || mode === 'forgot') && (
                 <label className="block">
                   <span className="text-xs font-semibold text-slate-700 flex items-center justify-between">
                     <span>Institutional Email *</span>
-                    {mode === 'signin' && (
+                    {(mode === 'signin' || mode === 'signup') && (
                       <span className="text-[11px] text-slate-400 font-normal">Domain: @slrtce.in</span>
                     )}
                   </span>
@@ -226,8 +332,8 @@ export function Login() {
                 </label>
               )}
 
-              {/* Password Field (for signin, reset, force_change) */}
-              {(mode === 'signin' || mode === 'reset' || mode === 'force_change') && (
+              {/* Password Field (for signin, signup, reset, force_change) */}
+              {(mode === 'signin' || mode === 'signup' || mode === 'reset' || mode === 'force_change') && (
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-700">
@@ -264,7 +370,7 @@ export function Login() {
                   </div>
 
                   {/* Password strength meter for new passwords */}
-                  {(mode === 'reset' || mode === 'force_change') && password && (
+                  {(mode === 'signup' || mode === 'reset' || mode === 'force_change') && password && (
                     <div className="mt-2 space-y-1.5">
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="text-slate-500">Strength: <b className="text-slate-700">{strength.label}</b></span>
@@ -281,16 +387,16 @@ export function Login() {
                 </div>
               )}
 
-              {/* Confirm Password (for reset and force_change) */}
-              {(mode === 'reset' || mode === 'force_change') && (
+              {/* Confirm Password (for signup, reset and force_change) */}
+              {(mode === 'signup' || mode === 'reset' || mode === 'force_change') && (
                 <label className="block">
-                  <span className="text-xs font-semibold text-slate-700">Confirm New Password *</span>
+                  <span className="text-xs font-semibold text-slate-700">Confirm Password *</span>
                   <div className="relative mt-1">
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Repeat new password"
+                      placeholder="Repeat password"
                       className={`${inputCls} pl-9`}
                       required
                     />
@@ -313,6 +419,7 @@ export function Login() {
                 ) : (
                   <>
                     {mode === 'signin' && 'Sign In'}
+                    {mode === 'signup' && 'Sign Up as Faculty (Submit for Approval)'}
                     {mode === 'forgot' && 'Send Password Reset Link'}
                     {mode === 'reset' && 'Update Password & Sign In'}
                     {mode === 'force_change' && 'Save New Password & Continue'}
@@ -320,8 +427,24 @@ export function Login() {
                 )}
               </button>
 
-              {/* Back to signin button when in forgot or reset */}
-              {(mode === 'forgot' || mode === 'reset') && (
+              {/* Toggle between Sign In and Sign Up */}
+              {mode === 'signin' && (
+                <div className="pt-4 border-t border-slate-100 mt-4 text-center">
+                  <p className="text-xs text-slate-600">
+                    New faculty member?{' '}
+                    <button
+                      type="button"
+                      onClick={() => { setMode('signup'); setError(''); setInfoMessage(''); }}
+                      className="text-xs font-bold text-primary hover:underline ml-1"
+                    >
+                      Sign Up as Faculty
+                    </button>
+                  </p>
+                </div>
+              )}
+
+              {/* Back to signin button when in signup, forgot or reset */}
+              {(mode === 'signup' || mode === 'forgot' || mode === 'reset') && (
                 <div className="text-center pt-2">
                   <button
                     type="button"

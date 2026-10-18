@@ -13,7 +13,7 @@ import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
 import { sql, checkDbHealth, logAudit } from './db';
-import { can, type Role, type AuthUser } from './rbac';
+import { can, normalizeDept, type Role, type AuthUser } from './rbac';
 import { sendEmail, getSmtpConfig } from './email';
 import { isPushConfigured, getVapidPublicKey, sendPushToUsers } from './push';
 import { generateStaffDirectoryExcel, generatePermissionRequestsExcel } from './excel';
@@ -757,16 +757,27 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
   }
 });
 
-// Approve Faculty Registration (Principal Only)
+// Approve Faculty Registration (Principal, Dean, or HOD for own dept)
 app.post('/api/users/:id/approve', authenticate, async (req, res) => {
   const user = req.user!;
-  if (!can(user, 'user:approve_registration')) {
-    res.status(403).json({ error: 'Forbidden: Only the Principal can approve faculty registrations.' });
-    return;
-  }
-
   const targetId = req.params.id;
   try {
+    const targetRows = await sql`
+      SELECT u.*, d.code as department_code
+      FROM public.users u
+      LEFT JOIN public.departments d ON u.department_id = d.id
+      WHERE u.id = ${targetId} AND u.status = 'pending_approval'
+    `;
+    if (!targetRows.length) {
+      res.status(404).json({ error: 'Pending registration not found.' });
+      return;
+    }
+    const targetUser = targetRows[0];
+    if (!can(user, 'user:approve_registration', targetUser)) {
+      res.status(403).json({ error: 'Forbidden: Insufficient privileges to approve this user registration.' });
+      return;
+    }
+
     const updated = await sql`
       UPDATE public.users
       SET status = 'active', updated_at = NOW()
@@ -785,7 +796,7 @@ app.post('/api/users/:id/approve', authenticate, async (req, res) => {
     await sendEmail({
       to: updated[0].email,
       subject: 'Docworm Account Approved',
-      text: `Hello ${updated[0].name},\n\nYour faculty registration for the Docworm Institutional Portal has been approved by the Principal Office. You can now log in and submit event permission requests.`,
+      text: `Hello ${updated[0].name},\n\nYour faculty registration for the Docworm Institutional Portal has been approved by ${user.name} (${user.role}). You can now log in and submit event permission requests.`,
     });
 
     res.json({ message: `Successfully approved faculty registration for ${updated[0].name}!` });
@@ -794,16 +805,27 @@ app.post('/api/users/:id/approve', authenticate, async (req, res) => {
   }
 });
 
-// Reject Faculty Registration (Principal Only)
+// Reject Faculty Registration
 app.post('/api/users/:id/reject', authenticate, async (req, res) => {
   const user = req.user!;
-  if (!can(user, 'user:approve_registration')) {
-    res.status(403).json({ error: 'Forbidden: Only the Principal can reject faculty registrations.' });
-    return;
-  }
-
   const targetId = req.params.id;
   try {
+    const targetRows = await sql`
+      SELECT u.*, d.code as department_code
+      FROM public.users u
+      LEFT JOIN public.departments d ON u.department_id = d.id
+      WHERE u.id = ${targetId}
+    `;
+    if (!targetRows.length) {
+      res.status(404).json({ error: 'User not found.' });
+      return;
+    }
+    const targetUser = targetRows[0];
+    if (!can(user, 'user:approve_registration', targetUser)) {
+      res.status(403).json({ error: 'Forbidden: Insufficient privileges to reject this user registration.' });
+      return;
+    }
+
     await sql`
       UPDATE public.users SET status = 'rejected', updated_at = NOW()
       WHERE id = ${targetId}
@@ -1241,11 +1263,9 @@ app.post('/api/permission-requests/:id/decide', authenticate, async (req, res) =
     }
 
     if (user.role === 'HOD') {
-      if (prop.faculty_id === user.id) {
-        res.status(403).json({ error: 'Forbidden: HOD cannot endorse or approve their own permission request.' });
-        return;
-      }
-      if (prop.submitter_dept !== user.department_code) {
+      const propDept = normalizeDept(prop.submitter_dept);
+      const userDept = normalizeDept(user.department_code || user.department_id);
+      if (propDept && userDept && propDept !== userDept) {
         res.status(403).json({ error: 'Forbidden: You can only endorse requests from your own department.' });
         return;
       }

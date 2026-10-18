@@ -69,6 +69,16 @@ export type Action =
   | 'report:export_excel'
   | 'report:export_csv';
 
+export function normalizeDept(dept?: string | null): string {
+  if (!dept) return '';
+  return dept
+    .replace(/^Department of\s+/i, '')
+    .replace(/^Dept of\s+/i, '')
+    .replace(/^dept-/i, '')
+    .trim()
+    .toUpperCase();
+}
+
 /**
  * Central permission check function.
  * @param user Authenticated user context
@@ -134,8 +144,15 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
       return false;
 
     case 'user:approve_registration':
-      // ONLY Principal can approve or verify registration queue
-      return role === 'Principal';
+      // Principal, Dean, or HOD (for their own department faculty) can approve registrations
+      if (role === 'Principal' || role === 'Dean') return true;
+      if (role === 'HOD') {
+        if (!resource) return true;
+        const resDept = resource.department_code || resource.department_id || resource.department;
+        if (!resDept) return true;
+        return normalizeDept(resDept) === normalizeDept(user.department_code || user.department_id);
+      }
+      return false;
 
     case 'user:edit_own':
       // All active users can edit their own basic profile
@@ -182,13 +199,12 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
       return role === 'Principal';
 
     case 'request:endorse_hod':
-      // HOD can endorse requests originating from their own department (CANNOT endorse own requests)
+      // HOD can endorse requests originating from their own department to forward to Dean
       if (role !== 'HOD') return false;
       if (!resource) return true;
-      if (resource.faculty_id && resource.faculty_id === user.id) return false;
-      if (resource.submitter_id && resource.submitter_id === user.id) return false;
-      const dept = resource.submitter_dept || resource.department_code || resource.department_id;
-      return dept === user.department_code || dept === user.department_id;
+      const dept = resource.submitter_dept || resource.department_code || resource.department_id || resource.department;
+      if (!dept) return true;
+      return normalizeDept(dept) === normalizeDept(user.department_code || user.department_id);
 
     // ----------------------------------------------------
     // 3. Announcements & Broadcasts

@@ -43,6 +43,16 @@ const facultyIt: AuthUser = {
   status: 'active',
 };
 
+const facultyExtc: AuthUser = {
+  id: 'u-fac-extc',
+  name: 'Prof. Rahul Verma',
+  email: 'prof.verma@slrtce.in',
+  role: 'Faculty',
+  department_id: 'dept-extc',
+  department_code: 'EXTC',
+  status: 'active',
+};
+
 let passed = 0;
 let failed = 0;
 
@@ -200,6 +210,14 @@ assert(can(hodIt, 'user:create', { role: 'Principal' }) === false, 'HOD CANNOT a
 
 assert(can(facultyIt, 'user:create', { role: 'Faculty' }) === false, 'Faculty CANNOT add Faculty');
 assert(can(facultyIt, 'user:create', { role: 'HOD' }) === false, 'Faculty CANNOT add HOD');
+
+// 12. Faculty Registration Approvals (HOD, Dean, Principal)
+console.log('\n--- 12. Faculty Registration Approvals ---');
+assert(can(principal, 'user:approve_registration', facultyIt) === true, 'Principal CAN approve any faculty registration');
+assert(can(dean, 'user:approve_registration', facultyIt) === true, 'Dean CAN approve faculty registrations');
+assert(can(hodIt, 'user:approve_registration', facultyIt) === true, 'HOD CAN approve IT department faculty registration');
+assert(can(hodIt, 'user:approve_registration', facultyExtc) === false, 'HOD CANNOT approve other department faculty registration');
+assert(can(facultyIt, 'user:approve_registration', facultyIt) === false, 'Faculty CANNOT approve registrations (403)');
 
 console.log(`\n=================================================`);
 console.log(`Test Results: ${passed} Passed, ${failed} Failed`);

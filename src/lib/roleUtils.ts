@@ -127,13 +127,6 @@ export function canActOnProposal(
   const active = activeChainStep(chain);
   if (!active) return false;
 
-  // HOD cannot approve or endorse their own request
-  if (userRole === 'HOD' && proposal && currentUserId) {
-    const isOwner = (proposal.submitterId && proposal.submitterId === currentUserId) ||
-                    (proposal.faculty_id && proposal.faculty_id === currentUserId);
-    if (isOwner) return false;
-  }
-
   const roleMap: Record<string, Role> = {
     HOD: 'HOD',
     Dean: 'Dean',

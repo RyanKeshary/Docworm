@@ -1262,7 +1262,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                   )}
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Direct faculty registrations require official Principal approval before portal login and event request submissions are unlocked.
+                  Direct faculty registrations require verification & official approval by HOD, Dean, or Principal before portal access is unlocked.
                 </p>
               </div>
             </div>
@@ -1272,53 +1272,56 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                 <CheckCircle size={32} className="text-emerald-500 mx-auto" />
                 <p className="text-sm font-semibold text-slate-700">No Pending Faculty Registrations</p>
                 <p className="text-xs text-slate-500 max-w-md mx-auto">
-                  All faculty accounts are reviewed and active. New registrations from the registration page will appear here for Principal verification.
+                  All faculty accounts are reviewed and active. New registrations from the sign-up page will appear here for verification and approval.
                 </p>
               </div>
             ) : (
               <div className="grid md:grid-cols-2 gap-3.5">
-                {pendingFaculty.map((u) => (
-                  <div key={u.id} className="p-4 rounded-xl border border-amber-200 bg-amber-50/40 hover:bg-amber-50/70 transition-all flex flex-col justify-between space-y-3">
-                    <div className="flex items-start gap-3">
-                      <span className="w-10 h-10 rounded-full bg-amber-100 border border-amber-300 text-amber-800 font-bold flex items-center justify-center shrink-0">
-                        {u.name.charAt(0).toUpperCase()}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-sm text-slate-900">{u.name}</span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-                            Dept of {u.department}
-                          </span>
+                {pendingFaculty.map((u) => {
+                  const canApprove = isPrincipal || isDean || isHod;
+                  return (
+                    <div key={u.id} className="p-4 rounded-xl border border-amber-200 bg-amber-50/40 hover:bg-amber-50/70 transition-all flex flex-col justify-between space-y-3">
+                      <div className="flex items-start gap-3">
+                        <span className="w-10 h-10 rounded-full bg-amber-100 border border-amber-300 text-amber-800 font-bold flex items-center justify-center shrink-0">
+                          {u.name.charAt(0).toUpperCase()}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-slate-900">{u.name}</span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                              Dept of {u.department}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 mt-0.5">{u.designation || 'Faculty Coordinator'} • <span className="font-mono text-slate-700">{u.email}</span></p>
+                          {u.phone && <p className="text-[11px] text-slate-500 mt-0.5">Phone: {u.phone}</p>}
+                          {u.registeredAt && <p className="text-[10px] text-slate-400 mt-1">Submitted: {u.registeredAt}</p>}
                         </div>
-                        <p className="text-xs text-slate-600 mt-0.5">{u.designation || 'Faculty Coordinator'} • <span className="font-mono text-slate-700">{u.email}</span></p>
-                        {u.phone && <p className="text-[11px] text-slate-500 mt-0.5">Phone: {u.phone}</p>}
-                        {u.registeredAt && <p className="text-[10px] text-slate-400 mt-1">Submitted: {u.registeredAt}</p>}
+                      </div>
+
+                      <div className="pt-3 border-t border-amber-200/60 flex items-center justify-end gap-2">
+                        {canApprove ? (
+                          <>
+                            <button
+                              onClick={() => approveFaculty(u.id)}
+                              className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors flex items-center gap-1.5"
+                            >
+                              <CheckCircle2 size={13} />
+                              Approve Registration
+                            </button>
+                            <button
+                              onClick={() => rejectFaculty(u.id)}
+                              className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 transition-colors"
+                            >
+                              Reject
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-xs text-amber-700 font-medium">Pending Verification</span>
+                        )}
                       </div>
                     </div>
-
-                    <div className="pt-3 border-t border-amber-200/60 flex items-center justify-end gap-2">
-                      {isPrincipal ? (
-                        <>
-                          <button
-                            onClick={() => approveFaculty(u.id)}
-                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors flex items-center gap-1.5"
-                          >
-                            <CheckCircle2 size={13} />
-                            Approve Registration
-                          </button>
-                          <button
-                            onClick={() => rejectFaculty(u.id)}
-                            className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 transition-colors"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      ) : (
-                        <span className="text-xs text-amber-700 font-medium">Pending Principal Approval</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
