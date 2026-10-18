@@ -756,6 +756,7 @@ export function NotificationsCenter() {
                 className={inputCls}
               >
                 <option value="all">All Faculty & Staff (Institution-wide)</option>
+                <option value="HODs">All HODs (Heads of Department Only)</option>
                 {options.departments.map((d) => (
                   <option key={d} value={d}>Department of {d} Only</option>
                 ))}
@@ -961,6 +962,35 @@ export function SettingsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const nav = useNavigate();
 
+  const [selectedPolicy, setSelectedPolicy] = useState<'both' | 'principal_only'>(
+    (options.approvalPolicy as any) || 'principal_only'
+  );
+  const [savingPolicy, setSavingPolicy] = useState(false);
+  const [policyFeedback, setPolicyFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  useEffect(() => {
+    if (options.approvalPolicy) {
+      setSelectedPolicy(options.approvalPolicy);
+    }
+  }, [options.approvalPolicy]);
+
+  const handleSavePolicy = async () => {
+    setSavingPolicy(true);
+    setPolicyFeedback(null);
+    try {
+      await api.settings.updateApprovalPolicy(selectedPolicy);
+      await saveOptions({ ...options, approvalPolicy: selectedPolicy });
+      setPolicyFeedback({
+        type: 'success',
+        msg: `Approval policy set to: ${selectedPolicy === 'both' ? 'Both Dean & Principal required' : 'Principal Only required'}.`,
+      });
+    } catch (err: any) {
+      setPolicyFeedback({ type: 'error', msg: err.message || 'Failed to update approval policy.' });
+    } finally {
+      setSavingPolicy(false);
+    }
+  };
+
   // Redirect faculty if they attempt to view leadership tab directly
   useEffect(() => {
     if (!canManageStaff && currentTab === 'leadership') {
@@ -1159,6 +1189,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
               ]
             : []),
           { id: 'profile', label: 'My Profile', icon: <UserIcon size={15} /> },
+          ...(isPrincipal ? [{ id: 'approval_policy', label: 'Approval Policy', icon: <SlidersHorizontal size={15} /> }] : []),
           ...(isPrincipal || isDean ? [{ id: 'options', label: 'Academic Options', icon: null }] : []),
           ...(isPrincipal ? [{ id: 'letterhead', label: 'College Letterhead', icon: null }] : []),
           { id: 'auth', label: 'Role Permissions', icon: <Shield size={15} /> },
@@ -1672,6 +1703,103 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        </ErrorBoundary>
+      )}
+
+      {/* 4b. APPROVAL POLICY TAB (Principal Only) */}
+      {currentTab === 'approval_policy' && isPrincipal && (
+        <ErrorBoundary fallbackTitle="Approval Policy">
+          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-6 animate-fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div>
+                <h2 className="font-bold text-slate-900 text-base">Institutional Permission Approval Policy</h2>
+                <p className="text-xs text-slate-500">Configure whether permissions require sign-off by both Dean & Principal, or Principal only.</p>
+              </div>
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-violet-100 text-violet-800 border border-violet-300">
+                👑 Principal Authority
+              </span>
+            </div>
+
+            {policyFeedback && (
+              <div className={`p-3.5 rounded-card text-xs font-medium flex items-center gap-2 ${
+                policyFeedback.type === 'success'
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                  : 'bg-rose-50 border border-rose-200 text-rose-800'
+              }`}>
+                {policyFeedback.type === 'success' ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <AlertCircle size={16} className="text-rose-600 shrink-0" />}
+                <span>{policyFeedback.msg}</span>
+              </div>
+            )}
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <label
+                onClick={() => setSelectedPolicy('principal_only')}
+                className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                  selectedPolicy === 'principal_only'
+                    ? 'border-primary bg-primary-pale/40 ring-1 ring-primary/20'
+                    : 'border-gray-200 hover:border-gray-300 bg-white'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-slate-900">Principal Only</span>
+                    <input
+                      type="radio"
+                      name="approvalPolicy"
+                      checked={selectedPolicy === 'principal_only'}
+                      onChange={() => setSelectedPolicy('principal_only')}
+                      className="text-primary focus:ring-primary"
+                    />
+                  </div>
+                  <p className="text-xs text-slate-600 mt-2">
+                    Only the Principal's approval is required. Once the Principal sanctions the permission, it immediately shows as <span className="font-semibold text-emerald-700">Approved</span>. The Dean step acts as an optional advisory review.
+                  </p>
+                </div>
+                <div className="mt-4 pt-3 border-t border-gray-100 text-[11px] font-semibold text-primary">
+                  ⚡ Fast & Streamlined Executive Decision
+                </div>
+              </label>
+
+              <label
+                onClick={() => setSelectedPolicy('both')}
+                className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                  selectedPolicy === 'both'
+                    ? 'border-primary bg-primary-pale/40 ring-1 ring-primary/20'
+                    : 'border-gray-200 hover:border-gray-300 bg-white'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-slate-900">Both Dean & Principal Required</span>
+                    <input
+                      type="radio"
+                      name="approvalPolicy"
+                      checked={selectedPolicy === 'both'}
+                      onChange={() => setSelectedPolicy('both')}
+                      className="text-primary focus:ring-primary"
+                    />
+                  </div>
+                  <p className="text-xs text-slate-600 mt-2">
+                    Dual institutional endorsement. The request only transitions to <span className="font-semibold text-emerald-700">Approved</span> when <span className="font-semibold">BOTH</span> the Dean of Student Welfare has recommended/approved AND the Principal has sanctioned it.
+                  </p>
+                </div>
+                <div className="mt-4 pt-3 border-t border-gray-100 text-[11px] font-semibold text-violet-700">
+                  🏛️ Full Academic & Administrative Consensus
+                </div>
+              </label>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={handleSavePolicy}
+                disabled={savingPolicy}
+                className={`${btnPrimary} !px-6`}
+              >
+                {savingPolicy ? 'Saving Setting...' : 'Save Approval Policy'}
+              </button>
             </div>
           </div>
         </ErrorBoundary>

@@ -85,7 +85,7 @@ declare global {
 
 // Authentication Middleware
 async function authenticate(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const token = req.cookies?.docworm_session || (req.headers.authorization?.replace(/^Bearer\s+/i, ''));
+  const token = (req.headers.authorization?.replace(/^Bearer\s+/i, '')) || req.cookies?.docworm_session;
   if (!token) {
     res.status(401).json({ error: 'Authentication required. Please sign in.' });
     return;
@@ -893,12 +893,14 @@ app.get('/api/permission-requests', authenticate, async (req, res) => {
     let steps: any[] = [];
     let resources: any[] = [];
     let budgetItems: any[] = [];
+    let attachments: any[] = [];
 
     if (reqIds.length > 0) {
-      [steps, resources, budgetItems] = await Promise.all([
+      [steps, resources, budgetItems, attachments] = await Promise.all([
         sql`SELECT * FROM public.permission_request_approval_steps WHERE permission_request_id IN ${sql(reqIds)} ORDER BY step_order ASC`,
         sql`SELECT * FROM public.permission_request_resources WHERE permission_request_id IN ${sql(reqIds)}`,
         sql`SELECT * FROM public.permission_request_budget_items WHERE permission_request_id IN ${sql(reqIds)}`,
+        sql`SELECT * FROM public.permission_request_attachments WHERE permission_request_id IN ${sql(reqIds)} ORDER BY created_at ASC`,
       ]);
     }
 
@@ -923,6 +925,13 @@ app.get('/api/permission-requests', authenticate, async (req, res) => {
       budgetMap.set(b.permission_request_id, arr);
     }
 
+    const attMap = new Map<string, any[]>();
+    for (const a of attachments) {
+      const arr = attMap.get(a.permission_request_id) || [];
+      arr.push(a);
+      attMap.set(a.permission_request_id, arr);
+    }
+
     const enriched = requests.map((r) => ({
       ...r,
       approvalChain: (stepMap.get(r.id) || []).map((s) => ({
@@ -936,6 +945,7 @@ app.get('/api/permission-requests', authenticate, async (req, res) => {
       })),
       resources: resMap.get(r.id) || [],
       budgetItems: budgetMap.get(r.id) || [],
+      attachments: attMap.get(r.id) || [],
     }));
 
     res.json({ requests: enriched });
@@ -985,6 +995,12 @@ app.post('/api/permission-requests', authenticate, async (req, res) => {
       category: z.string().default(''),
       quantity: z.number().default(1),
       unitCost: z.number().default(0),
+    })).default([]),
+    attachments: z.array(z.object({
+      name: z.string(),
+      sizeText: z.string().default(''),
+      kind: z.string().default(''),
+      storagePath: z.string(),
     })).default([]),
   });
 
@@ -1047,8 +1063,20 @@ app.post('/api/permission-requests', authenticate, async (req, res) => {
       `;
     }
 
-    // 5. Construct Hierarchical Approval Steps Chain: HOD -> Dean -> Principal
-    // Lookup HOD, Dean, Principal
+    // 5. Insert Attachments
+    for (const a of d.attachments) {
+      const attId = `att-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      await sql`
+        INSERT INTO public.permission_request_attachments (
+          id, permission_request_id, name, size_text, kind, storage_path
+        ) VALUES (
+          ${attId}, ${requestId}, ${a.name}, ${a.sizeText}, ${a.kind}, ${a.storagePath}
+        )
+      `;
+    }
+
+    // 6. Construct Hierarchical Approval Steps Chain:
+    // If submitter is HOD, skip HOD step and route directly to Dean then Principal!
     const [hodRows, deanRows, prinRows] = await Promise.all([
       sql`SELECT id, name FROM public.users WHERE role = 'HOD' AND department_id = ${user.department_id} LIMIT 1`,
       sql`SELECT id, name FROM public.users WHERE role = 'Dean' LIMIT 1`,
@@ -1062,11 +1090,19 @@ app.post('/api/permission-requests', authenticate, async (req, res) => {
     const prinId = prinRows[0]?.id || null;
     const prinName = prinRows[0]?.name || 'Principal Office';
 
-    const steps = [
-      { id: `${requestId}-step-hod`, order: 1, role: 'HOD', userId: hodId, userName: hodName },
-      { id: `${requestId}-step-dean`, order: 2, role: 'Dean', userId: deanId, userName: deanName },
-      { id: `${requestId}-step-prin`, order: 3, role: 'Principal', userId: prinId, userName: prinName },
-    ];
+    let steps: any[] = [];
+    if (user.role === 'HOD') {
+      steps = [
+        { id: `${requestId}-step-dean`, order: 1, role: 'Dean', userId: deanId, userName: deanName },
+        { id: `${requestId}-step-prin`, order: 2, role: 'Principal', userId: prinId, userName: prinName },
+      ];
+    } else {
+      steps = [
+        { id: `${requestId}-step-hod`, order: 1, role: 'HOD', userId: hodId, userName: hodName },
+        { id: `${requestId}-step-dean`, order: 2, role: 'Dean', userId: deanId, userName: deanName },
+        { id: `${requestId}-step-prin`, order: 3, role: 'Principal', userId: prinId, userName: prinName },
+      ];
+    }
 
     for (const s of steps) {
       await sql`
@@ -1083,7 +1119,7 @@ app.post('/api/permission-requests', authenticate, async (req, res) => {
     res.status(201).json({
       id: requestId,
       refNo,
-      message: `Permission request ${refNo} has been submitted for departmental review!`,
+      message: `Permission request ${refNo} has been submitted for review!`,
     });
   } catch (err) {
     console.error('Submit permission request error:', err);
@@ -1117,20 +1153,65 @@ app.post('/api/permission-requests/:id/decide', authenticate, async (req, res) =
     }
     const prop = propRows[0];
 
-    // Enforce RBAC Decision Authority:
-    // Dean CANNOT approve/deny.
+    // Fetch institutional approval policy ('principal_only' vs 'both')
+    const policyRows = await sql`SELECT value FROM public.app_settings WHERE key = 'approval_policy'`;
+    const policy = policyRows.length ? (policyRows[0].value?.policy || 'principal_only') : 'principal_only';
+
     if (user.role === 'Dean') {
-      res.status(403).json({ error: 'Forbidden: Dean is a reviewing & recommending authority and cannot make final sanction decisions.' });
+      // Dean reviews and recommends
+      await sql`
+        UPDATE public.permission_request_approval_steps
+        SET action = ${action}, acted_at = NOW(), remark = ${remark}
+        WHERE permission_request_id = ${requestId} AND role = 'Dean'
+      `;
+
+      if (action === 'Rejected') {
+        await sql`UPDATE public.permission_requests SET status = 'Rejected', updated_at = NOW() WHERE id = ${requestId}`;
+        await logAudit(user.id, user.name, 'DEAN_REJECTED', `permission_requests:${requestId}`, { refNo: prop.ref_no, remark });
+        res.json({ message: `Permission request ${prop.ref_no} rejected by Dean.` });
+        return;
+      }
+      if (action === 'Changes Requested') {
+        await sql`UPDATE public.permission_requests SET status = 'Changes Requested', updated_at = NOW() WHERE id = ${requestId}`;
+        await logAudit(user.id, user.name, 'DEAN_CHANGES_REQUESTED', `permission_requests:${requestId}`, { refNo: prop.ref_no, remark });
+        res.json({ message: `Changes requested by Dean for ${prop.ref_no}.` });
+        return;
+      }
+
+      if (policy === 'both' && action === 'Approved') {
+        const prinStep = await sql`SELECT action FROM public.permission_request_approval_steps WHERE permission_request_id = ${requestId} AND role = 'Principal'`;
+        if (prinStep.length && prinStep[0].action === 'Approved') {
+          await sql`UPDATE public.permission_requests SET status = 'Approved', updated_at = NOW() WHERE id = ${requestId}`;
+          await logAudit(user.id, user.name, 'PROPOSAL_FULLY_APPROVED', `permission_requests:${requestId}`, { refNo: prop.ref_no, note: 'Approved by BOTH Dean & Principal' });
+          res.json({ message: `Permission request ${prop.ref_no} officially Approved (Both Dean & Principal signed off)!` });
+          return;
+        }
+      }
+
+      await sql`UPDATE public.permission_requests SET status = 'Under Review', updated_at = NOW() WHERE id = ${requestId}`;
+      await logAudit(user.id, user.name, 'DEAN_RECOMMENDED', `permission_requests:${requestId}`, { refNo: prop.ref_no, remark });
+      res.json({ message: `Dean review & recommendation recorded for ${prop.ref_no}. Forwarded for Principal sanction.` });
       return;
     }
 
     if (user.role === 'Principal') {
-      // Principal has exclusive institutional sanction authority
       let newStatus: string = prop.status;
-      if (action === 'Approved') newStatus = 'Approved';
-      else if (action === 'Rejected') newStatus = 'Rejected';
+      if (action === 'Rejected') newStatus = 'Rejected';
       else if (action === 'Changes Requested') newStatus = 'Changes Requested';
       else if (action === 'Pending') newStatus = 'Under Review';
+      else if (action === 'Approved') {
+        if (policy === 'principal_only') {
+          newStatus = 'Approved';
+        } else {
+          // Policy is 'both': requires BOTH Dean and Principal
+          const deanStep = await sql`SELECT action FROM public.permission_request_approval_steps WHERE permission_request_id = ${requestId} AND role = 'Dean'`;
+          if (!deanStep.length || deanStep[0].action === 'Approved') {
+            newStatus = 'Approved';
+          } else {
+            newStatus = 'Under Review';
+          }
+        }
+      }
 
       await sql`
         UPDATE public.permission_requests
@@ -1143,20 +1224,27 @@ app.post('/api/permission-requests/:id/decide', authenticate, async (req, res) =
         WHERE id = ${requestId}
       `;
 
-      // Update Principal step in chain
       await sql`
         UPDATE public.permission_request_approval_steps
         SET action = ${action}, acted_at = NOW(), remark = ${remark}
         WHERE permission_request_id = ${requestId} AND role = 'Principal'
       `;
 
-      await logAudit(user.id, user.name, `PRINCIPAL_${action.toUpperCase()}`, `permission_requests:${requestId}`, { refNo: prop.ref_no, remark });
-      res.json({ message: `Permission request ${prop.ref_no} successfully updated to ${newStatus} by Principal!` });
+      await logAudit(user.id, user.name, `PRINCIPAL_${action.toUpperCase()}`, `permission_requests:${requestId}`, { refNo: prop.ref_no, remark, policy, finalStatus: newStatus });
+      res.json({
+        message: newStatus === 'Approved'
+          ? `Permission request ${prop.ref_no} officially Approved by Principal!`
+          : `Principal sanction recorded for ${prop.ref_no}. Status: ${newStatus}${policy === 'both' && action === 'Approved' ? ' (Awaiting Dean sign-off under dual approval policy)' : ''}`,
+        status: newStatus,
+      });
       return;
     }
 
     if (user.role === 'HOD') {
-      // Check department scoping
+      if (prop.faculty_id === user.id) {
+        res.status(403).json({ error: 'Forbidden: HOD cannot endorse or approve their own permission request.' });
+        return;
+      }
       if (prop.submitter_dept !== user.department_code) {
         res.status(403).json({ error: 'Forbidden: You can only endorse requests from your own department.' });
         return;
@@ -1198,7 +1286,11 @@ app.get('/api/announcements', authenticate, async (req, res) => {
       FROM public.announcements a
       LEFT JOIN public.users u ON a.created_by = u.id
       LEFT JOIN public.announcement_receipts ar ON ar.announcement_id = a.id AND ar.user_id = ${user.id}
-      WHERE a.audience_dept IS NULL OR a.audience_dept = ${user.department_code || ''} OR ${user.role} = 'Principal'
+      WHERE a.audience_dept IS NULL
+         OR a.audience_dept = ${user.department_code || ''}
+         OR (${user.role} = 'HOD' AND a.audience_dept = 'HODs')
+         OR ${user.role} = 'Principal'
+         OR ${user.role} = 'Dean'
       ORDER BY a.created_at DESC
     `;
     res.json({ announcements: rows });
@@ -1217,7 +1309,13 @@ app.post('/api/announcements', authenticate, async (req, res) => {
   const schema = z.object({
     title: z.string().min(3),
     body: z.string().min(5),
-    priority: z.enum(['Low', 'Medium', 'High', 'Urgent']).default('Medium'),
+    priority: z.string().optional().default('Medium').transform((p) => {
+      const lower = (p || '').toLowerCase();
+      if (lower === 'high') return 'High';
+      if (lower === 'urgent') return 'Urgent';
+      if (lower === 'low') return 'Low';
+      return 'Medium';
+    }),
     audience_dept: z.string().nullable().optional(),
   });
 
@@ -1239,7 +1337,12 @@ app.post('/api/announcements', authenticate, async (req, res) => {
 
     // Find recipient users
     let recipients: { id: string; email: string; name: string }[];
-    if (audience_dept) {
+    if (audience_dept === 'HODs') {
+      recipients = await sql`
+        SELECT u.id, u.email, u.name FROM public.users u
+        WHERE u.role = 'HOD' AND u.status = 'active'
+      `;
+    } else if (audience_dept) {
       recipients = await sql`
         SELECT u.id, u.email, u.name FROM public.users u
         JOIN public.departments d ON u.department_id = d.id
@@ -1879,7 +1982,11 @@ app.get('/api/options', async (_req, res) => {
       }
     }
 
-    res.json({ options: grouped, all: rows });
+    const policyRows = await sql`SELECT value FROM public.app_settings WHERE key = 'approval_policy'`;
+    const approvalPolicy = policyRows.length ? (policyRows[0].value?.policy || 'principal_only') : 'principal_only';
+    grouped.approvalPolicy = [approvalPolicy];
+
+    res.json({ options: grouped, all: rows, approvalPolicy });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch academic options.' });
   }
@@ -2194,6 +2301,45 @@ app.put('/api/settings/letterhead', authenticate, async (req, res) => {
     res.json({ message: 'Letterhead header configuration saved.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to save letterhead.' });
+  }
+});
+
+// Approval Policy Config
+app.get('/api/settings/approval-policy', async (_req, res) => {
+  try {
+    const rows = await sql`SELECT value FROM public.app_settings WHERE key = 'approval_policy'`;
+    const policy = rows.length ? (rows[0].value?.policy || 'principal_only') : 'principal_only';
+    res.json({ policy });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch approval policy.' });
+  }
+});
+
+app.put('/api/settings/approval-policy', authenticate, async (req, res) => {
+  const user = req.user!;
+  if (user.role !== 'Principal') {
+    res.status(403).json({ error: 'Forbidden: Only the Principal has authority to set institutional approval policy.' });
+    return;
+  }
+
+  const schema = z.object({ policy: z.enum(['both', 'principal_only']) });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid approval policy. Must be "both" or "principal_only".' });
+    return;
+  }
+
+  const { policy } = parsed.data;
+  try {
+    await sql`
+      INSERT INTO public.app_settings (key, value, updated_at)
+      VALUES ('approval_policy', ${JSON.stringify({ policy })}, NOW())
+      ON CONFLICT (key) DO UPDATE SET value = ${JSON.stringify({ policy })}, updated_at = NOW()
+    `;
+    await logAudit(user.id, user.name, 'APPROVAL_POLICY_UPDATED', 'app_settings:approval_policy', { policy });
+    res.json({ message: 'Institutional approval policy updated successfully.', policy });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save approval policy.' });
   }
 });
 

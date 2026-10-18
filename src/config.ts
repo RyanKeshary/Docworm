@@ -23,6 +23,7 @@ export interface AppOptions {
   priorities: string[];
   taskStatuses: string[];
   academicYears: string[];
+  approvalPolicy?: 'both' | 'principal_only';
 }
 
 export const DEFAULT_OPTIONS: AppOptions = {
@@ -40,6 +41,7 @@ export const DEFAULT_OPTIONS: AppOptions = {
   priorities: ['Low', 'Medium', 'High', 'Urgent'],
   taskStatuses: ['Not Started', 'In Progress', 'Completed', 'Overdue'],
   academicYears: ['2024-25', '2025-26', '2026-27', '2027-28'],
+  approvalPolicy: 'principal_only',
 };
 
 export const PO_LIST: { code: string; name: string }[] = [

@@ -35,8 +35,8 @@ function checkRateLimit(ip: string, key: string, max: number, windowMs: number):
 // Authentication helper
 async function getAuth(req: NextRequest): Promise<AuthUser | null> {
   const token =
-    req.cookies.get('docworm_session')?.value ||
-    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ||
+    req.cookies.get('docworm_session')?.value;
 
   if (!token) return null;
 
@@ -171,7 +171,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ all?
           grouped[r.type].push(r.value);
         }
       }
-      return NextResponse.json({ options: grouped, all: rows });
+      const policyRows = await sql`SELECT value FROM public.app_settings WHERE key = 'approval_policy'`;
+      const approvalPolicy = policyRows.length ? (policyRows[0].value?.policy || 'principal_only') : 'principal_only';
+      grouped.approvalPolicy = [approvalPolicy];
+
+      return NextResponse.json({ options: grouped, all: rows, approvalPolicy });
     } catch (err: any) {
       return jsonError('Failed to fetch academic options.', 500);
     }
@@ -204,6 +208,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ all?
       return NextResponse.json({ letterhead: rows.length ? rows[0].value : {} });
     } catch {
       return jsonError('Failed to fetch letterhead.', 500);
+    }
+  }
+
+  // 7b. Approval Policy
+  if (path === '/settings/approval-policy') {
+    try {
+      const rows = await sql`SELECT value FROM public.app_settings WHERE key = 'approval_policy'`;
+      const policy = rows.length ? (rows[0].value?.policy || 'principal_only') : 'principal_only';
+      return NextResponse.json({ policy });
+    } catch {
+      return jsonError('Failed to fetch approval policy.', 500);
     }
   }
 
@@ -286,12 +301,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ all?
       let steps: any[] = [];
       let resources: any[] = [];
       let budgetItems: any[] = [];
+      let attachments: any[] = [];
 
       if (reqIds.length > 0) {
-        [steps, resources, budgetItems] = await Promise.all([
+        [steps, resources, budgetItems, attachments] = await Promise.all([
           sql`SELECT * FROM public.permission_request_approval_steps WHERE permission_request_id IN ${sql(reqIds)} ORDER BY step_order ASC`,
           sql`SELECT * FROM public.permission_request_resources WHERE permission_request_id IN ${sql(reqIds)}`,
           sql`SELECT * FROM public.permission_request_budget_items WHERE permission_request_id IN ${sql(reqIds)}`,
+          sql`SELECT * FROM public.permission_request_attachments WHERE permission_request_id IN ${sql(reqIds)} ORDER BY created_at ASC`,
         ]);
       }
 
@@ -316,6 +333,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ all?
         budgetMap.set(b.permission_request_id, arr);
       }
 
+      const attMap = new Map<string, any[]>();
+      for (const a of attachments) {
+        const arr = attMap.get(a.permission_request_id) || [];
+        arr.push(a);
+        attMap.set(a.permission_request_id, arr);
+      }
+
       const enriched = requests.map((r) => ({
         ...r,
         approvalChain: (stepMap.get(r.id) || []).map((s) => ({
@@ -329,6 +353,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ all?
         })),
         resources: resMap.get(r.id) || [],
         budgetItems: budgetMap.get(r.id) || [],
+        attachments: attMap.get(r.id) || [],
       }));
 
       return NextResponse.json({ requests: enriched });
@@ -346,7 +371,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ all?
         FROM public.announcements a
         LEFT JOIN public.users u ON a.created_by = u.id
         LEFT JOIN public.announcement_receipts ar ON ar.announcement_id = a.id AND ar.user_id = ${user.id}
-        WHERE a.audience_dept IS NULL OR a.audience_dept = ${user.department_code || ''} OR ${user.role} = 'Principal'
+        WHERE a.audience_dept IS NULL
+           OR a.audience_dept = ${user.department_code || ''}
+           OR (${user.role} = 'HOD' AND a.audience_dept = 'HODs')
+           OR ${user.role} = 'Principal'
+           OR ${user.role} = 'Dean'
         ORDER BY a.created_at DESC
       `;
       return NextResponse.json({ announcements: rows });
@@ -998,6 +1027,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
         quantity: z.number().default(1),
         unitCost: z.number().default(0),
       })).default([]),
+      attachments: z.array(z.object({
+        name: z.string(),
+        sizeText: z.string().default(''),
+        kind: z.string().default(''),
+        storagePath: z.string(),
+      })).default([]),
     });
 
     const parsed = schema.safeParse(body);
@@ -1050,17 +1085,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
         `;
       }
 
+      for (const a of d.attachments) {
+        const attId = `att-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        await sql`
+          INSERT INTO public.permission_request_attachments (
+            id, permission_request_id, name, size_text, kind, storage_path
+          ) VALUES (
+            ${attId}, ${requestId}, ${a.name}, ${a.sizeText}, ${a.kind}, ${a.storagePath}
+          )
+        `;
+      }
+
       const [hodRows, deanRows, prinRows] = await Promise.all([
         sql`SELECT id, name FROM public.users WHERE role = 'HOD' AND department_id = ${user.department_id} LIMIT 1`,
         sql`SELECT id, name FROM public.users WHERE role = 'Dean' LIMIT 1`,
         sql`SELECT id, name FROM public.users WHERE role = 'Principal' LIMIT 1`,
       ]);
 
-      const steps = [
-        { id: `${requestId}-step-hod`, order: 1, role: 'HOD', userId: hodRows[0]?.id || null, userName: hodRows[0]?.name || 'Head of Department' },
-        { id: `${requestId}-step-dean`, order: 2, role: 'Dean', userId: deanRows[0]?.id || null, userName: deanRows[0]?.name || 'Dean, Student Welfare' },
-        { id: `${requestId}-step-prin`, order: 3, role: 'Principal', userId: prinRows[0]?.id || null, userName: prinRows[0]?.name || 'Principal Office' },
-      ];
+      let steps: any[] = [];
+      if (user.role === 'HOD') {
+        // HOD submitting a permission directly goes to the immediate higher authority (Dean)
+        steps = [
+          { id: `${requestId}-step-dean`, order: 1, role: 'Dean', userId: deanRows[0]?.id || null, userName: deanRows[0]?.name || 'Dean, Student Welfare' },
+          { id: `${requestId}-step-prin`, order: 2, role: 'Principal', userId: prinRows[0]?.id || null, userName: prinRows[0]?.name || 'Principal Office' },
+        ];
+      } else {
+        steps = [
+          { id: `${requestId}-step-hod`, order: 1, role: 'HOD', userId: hodRows[0]?.id || null, userName: hodRows[0]?.name || 'Head of Department' },
+          { id: `${requestId}-step-dean`, order: 2, role: 'Dean', userId: deanRows[0]?.id || null, userName: deanRows[0]?.name || 'Dean, Student Welfare' },
+          { id: `${requestId}-step-prin`, order: 3, role: 'Principal', userId: prinRows[0]?.id || null, userName: prinRows[0]?.name || 'Principal Office' },
+        ];
+      }
 
       for (const s of steps) {
         await sql`
@@ -1073,7 +1128,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       }
 
       await logAudit(user.id, user.name, 'PERMISSION_REQUEST_SUBMITTED', `permission_requests:${requestId}`, { refNo, eventName: d.eventName });
-      return NextResponse.json({ id: requestId, refNo, message: `Permission request ${refNo} has been submitted for departmental review!` }, { status: 201 });
+      return NextResponse.json({ id: requestId, refNo, message: `Permission request ${refNo} has been submitted for review!` }, { status: 201 });
     } catch (err: any) {
       console.error('Submit permission request error:', err);
       return jsonError('Failed to create permission request.', 500);
@@ -1097,16 +1152,61 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       if (!propRows.length) return jsonError('Permission request not found.', 404);
       const prop = propRows[0];
 
+      // Fetch institutional approval policy ('principal_only' vs 'both')
+      const policyRows = await sql`SELECT value FROM public.app_settings WHERE key = 'approval_policy'`;
+      const policy = policyRows.length ? (policyRows[0].value?.policy || 'principal_only') : 'principal_only';
+
       if (user.role === 'Dean') {
-        return jsonError('Forbidden: Dean is a reviewing & recommending authority and cannot make final sanction decisions.', 403);
+        // Dean reviews and recommends
+        await sql`
+          UPDATE public.permission_request_approval_steps
+          SET action = ${action}, acted_at = NOW(), remark = ${remark}
+          WHERE permission_request_id = ${requestId} AND role = 'Dean'
+        `;
+
+        if (action === 'Rejected') {
+          await sql`UPDATE public.permission_requests SET status = 'Rejected', updated_at = NOW() WHERE id = ${requestId}`;
+          await logAudit(user.id, user.name, 'DEAN_REJECTED', `permission_requests:${requestId}`, { refNo: prop.ref_no, remark });
+          return NextResponse.json({ message: `Permission request ${prop.ref_no} rejected by Dean.` });
+        }
+        if (action === 'Changes Requested') {
+          await sql`UPDATE public.permission_requests SET status = 'Changes Requested', updated_at = NOW() WHERE id = ${requestId}`;
+          await logAudit(user.id, user.name, 'DEAN_CHANGES_REQUESTED', `permission_requests:${requestId}`, { refNo: prop.ref_no, remark });
+          return NextResponse.json({ message: `Changes requested by Dean for ${prop.ref_no}.` });
+        }
+
+        if (policy === 'both' && action === 'Approved') {
+          const prinStep = await sql`SELECT action FROM public.permission_request_approval_steps WHERE permission_request_id = ${requestId} AND role = 'Principal'`;
+          if (prinStep.length && prinStep[0].action === 'Approved') {
+            await sql`UPDATE public.permission_requests SET status = 'Approved', updated_at = NOW() WHERE id = ${requestId}`;
+            await logAudit(user.id, user.name, 'PROPOSAL_FULLY_APPROVED', `permission_requests:${requestId}`, { refNo: prop.ref_no, note: 'Approved by BOTH Dean & Principal' });
+            return NextResponse.json({ message: `Permission request ${prop.ref_no} officially Approved (Both Dean & Principal signed off)!` });
+          }
+        }
+
+        await sql`UPDATE public.permission_requests SET status = 'Under Review', updated_at = NOW() WHERE id = ${requestId}`;
+        await logAudit(user.id, user.name, 'DEAN_RECOMMENDED', `permission_requests:${requestId}`, { refNo: prop.ref_no, remark });
+        return NextResponse.json({ message: `Dean review & recommendation recorded for ${prop.ref_no}. Forwarded for Principal sanction.` });
       }
 
       if (user.role === 'Principal') {
         let newStatus = prop.status;
-        if (action === 'Approved') newStatus = 'Approved';
-        else if (action === 'Rejected') newStatus = 'Rejected';
+        if (action === 'Rejected') newStatus = 'Rejected';
         else if (action === 'Changes Requested') newStatus = 'Changes Requested';
         else if (action === 'Pending') newStatus = 'Under Review';
+        else if (action === 'Approved') {
+          if (policy === 'principal_only') {
+            newStatus = 'Approved';
+          } else {
+            // Policy is 'both': requires BOTH Dean and Principal
+            const deanStep = await sql`SELECT action FROM public.permission_request_approval_steps WHERE permission_request_id = ${requestId} AND role = 'Dean'`;
+            if (!deanStep.length || deanStep[0].action === 'Approved') {
+              newStatus = 'Approved';
+            } else {
+              newStatus = 'Under Review';
+            }
+          }
+        }
 
         await sql`
           UPDATE public.permission_requests
@@ -1119,11 +1219,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
           WHERE permission_request_id = ${requestId} AND role = 'Principal'
         `;
 
-        await logAudit(user.id, user.name, `PRINCIPAL_${action.toUpperCase()}`, `permission_requests:${requestId}`, { refNo: prop.ref_no, remark });
-        return NextResponse.json({ message: `Permission request ${prop.ref_no} successfully updated to ${newStatus} by Principal!` });
+        await logAudit(user.id, user.name, `PRINCIPAL_${action.toUpperCase()}`, `permission_requests:${requestId}`, { refNo: prop.ref_no, remark, policy, finalStatus: newStatus });
+        return NextResponse.json({
+          message: newStatus === 'Approved'
+            ? `Permission request ${prop.ref_no} officially Approved by Principal!`
+            : `Principal sanction recorded for ${prop.ref_no}. Status: ${newStatus}${policy === 'both' && action === 'Approved' ? ' (Awaiting Dean sign-off under dual approval policy)' : ''}`,
+          status: newStatus,
+        });
       }
 
       if (user.role === 'HOD') {
+        if (prop.faculty_id === user.id) {
+          return jsonError('Forbidden: HOD cannot endorse or approve their own permission request.', 403);
+        }
         if (prop.submitter_dept !== user.department_code) {
           return jsonError('Forbidden: You can only endorse requests from your own department.', 403);
         }
@@ -1153,7 +1261,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
     const schema = z.object({
       title: z.string().min(3),
       body: z.string().min(5),
-      priority: z.enum(['Low', 'Medium', 'High', 'Urgent']).default('Medium'),
+      priority: z.string().optional().default('Medium').transform((p) => {
+        const lower = (p || '').toLowerCase();
+        if (lower === 'high') return 'High';
+        if (lower === 'urgent') return 'Urgent';
+        if (lower === 'low') return 'Low';
+        return 'Medium';
+      }),
       audience_dept: z.string().nullable().optional(),
     });
     const parsed = schema.safeParse(body);
@@ -1169,7 +1283,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       const ann = inserted[0];
 
       let recipients: { id: string; email: string; name: string }[];
-      if (audience_dept) {
+      if (audience_dept === 'HODs') {
+        recipients = await sql`
+          SELECT u.id, u.email, u.name FROM public.users u
+          WHERE u.role = 'HOD' AND u.status = 'active'
+        `;
+      } else if (audience_dept) {
         recipients = await sql`
           SELECT u.id, u.email, u.name FROM public.users u
           JOIN public.departments d ON u.department_id = d.id
@@ -1769,6 +1888,28 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ all?
       return NextResponse.json({ message: 'Letterhead header configuration saved.' });
     } catch {
       return jsonError('Failed to save letterhead.', 500);
+    }
+  }
+
+  // 6. Settings: Approval Policy
+  if (path === '/settings/approval-policy') {
+    if (user.role !== 'Principal') {
+      return jsonError('Forbidden: Only the Principal has authority to set institutional approval policy.', 403);
+    }
+    const schema = z.object({ policy: z.enum(['both', 'principal_only']) });
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) return jsonError('Invalid approval policy. Must be "both" or "principal_only".');
+    const { policy } = parsed.data;
+    try {
+      await sql`
+        INSERT INTO public.app_settings (key, value, updated_at)
+        VALUES ('approval_policy', ${JSON.stringify({ policy })}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${JSON.stringify({ policy })}, updated_at = NOW()
+      `;
+      await logAudit(user.id, user.name, 'APPROVAL_POLICY_UPDATED', 'app_settings:approval_policy', { policy });
+      return NextResponse.json({ message: 'Institutional approval policy updated successfully.', policy });
+    } catch {
+      return jsonError('Failed to save approval policy.', 500);
     }
   }
 

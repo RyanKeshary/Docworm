@@ -181,6 +181,9 @@ export const api = {
       apiFetch('/api/settings/email', { method: 'PUT', body: JSON.stringify(data) }),
     testEmail: (email?: string) =>
       apiFetch('/api/settings/test-email', { method: 'POST', body: JSON.stringify({ email }) }),
+    getApprovalPolicy: () => apiFetch('/api/settings/approval-policy'),
+    updateApprovalPolicy: (policy: 'both' | 'principal_only') =>
+      apiFetch('/api/settings/approval-policy', { method: 'PUT', body: JSON.stringify({ policy }) }),
   },
 
   admin: {

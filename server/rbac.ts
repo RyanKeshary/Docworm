@@ -182,9 +182,11 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
       return role === 'Principal';
 
     case 'request:endorse_hod':
-      // HOD can endorse requests originating from their own department
+      // HOD can endorse requests originating from their own department (CANNOT endorse own requests)
       if (role !== 'HOD') return false;
       if (!resource) return true;
+      if (resource.faculty_id && resource.faculty_id === user.id) return false;
+      if (resource.submitter_id && resource.submitter_id === user.id) return false;
       const dept = resource.submitter_dept || resource.department_code || resource.department_id;
       return dept === user.department_code || dept === user.department_id;
 

@@ -164,7 +164,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           })),
           budgetJustification: r.budget_justification || '',
           poMappings: [],
-          attachments: [],
+          attachments: (r.attachments || []).map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            size: a.size_text || a.size || '',
+            kind: a.kind || '',
+            storagePath: a.storage_path || a.storagePath || '',
+          })),
           submitterId: r.faculty_id || '',
           submitterName: r.submitter_name || '',
           submitterDept: r.submitter_dept || '',
@@ -264,22 +270,33 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // High-efficiency background poll timer
+    // High-efficiency background poll timer (4s for near-instant updates)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         refresh();
       }
-    }, 20000);
+    }, 4000);
 
-    // Instant refresh when user switches back to this browser tab
+    // Instant refresh when user switches back to this browser tab or window
     const handleFocus = () => {
       refresh();
     };
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refresh();
+      }
+    };
     window.addEventListener('focus', handleFocus);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
     };
   }, [isAuthenticated, refresh]);
 
@@ -359,6 +376,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         budgetJustification: latest.budgetJustification,
         resources: latest.resources,
         budgetItems: latest.budgetItems,
+        attachments: (latest.attachments || []).map((a) => ({
+          name: a.name,
+          sizeText: a.size,
+          kind: a.kind,
+          storagePath: a.storagePath || '',
+        })),
       }).then(() => {
         // Silent sync to reconcile server generated ID and reference numbers
         refresh();
@@ -461,25 +484,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const uploadFile = async (file: File) => {
-    // Highly efficient chunked processing: processes files in 512KB slices
-    // without blocking the main browser thread, keeping the UI instantly responsive
-    const CHUNK_SIZE = 512 * 1024;
-    const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
-    for (let i = 0; i < totalChunks; i++) {
-      // Yield to event loop between chunks
-      await new Promise((r) => setTimeout(r, 0));
-    }
+    return new Promise<{ name: string; size: string; kind: string; storagePath: string }>((resolve, reject) => {
+      const readableSize = file.size < 1024 * 1024
+        ? `${(file.size / 1024).toFixed(1)} KB`
+        : `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
 
-    const readableSize = file.size < 1024 * 1024
-      ? `${(file.size / 1024).toFixed(1)} KB`
-      : `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
-
-    return {
-      name: file.name,
-      size: readableSize,
-      kind: file.type || 'application/octet-stream',
-      storagePath: `/uploads/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`,
-    };
+      const reader = new FileReader();
+      reader.onload = () => {
+        resolve({
+          name: file.name,
+          size: readableSize,
+          kind: file.type || 'application/octet-stream',
+          storagePath: reader.result as string,
+        });
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
+    });
   };
 
   const value: DataState = {
