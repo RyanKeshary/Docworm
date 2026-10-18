@@ -27,7 +27,20 @@ interface DataState {
   lastSyncedAt: string | null;
   liveTick: number;
   isAuthenticated: boolean;
-  signIn: (email: string, password: string) => Promise<string | null>;
+  signIn: (email: string, password: string, captchaAnswer?: string, captchaToken?: string) => Promise<{
+    error?: string | null;
+    require2fa?: boolean;
+    tempToken?: string;
+    hasTotp?: boolean;
+    emailMasked?: string;
+    methods?: string[];
+    message?: string;
+    requiresCaptcha?: boolean;
+    captchaQuestion?: string;
+    captchaToken?: string;
+    lockedUntil?: string;
+  }>;
+  verify2fa: (tempToken: string, code: string, method?: 'email' | 'totp' | 'backup_code') => Promise<string | null>;
   signUp: (user: any) => Promise<string | null>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -321,10 +334,32 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
   }, [isAuthenticated, refresh]);
 
-  // Sign In
-  const signIn = async (email: string, pass: string): Promise<string | null> => {
+  // Sign In with 2FA, CAPTCHA, and Lockout Handling
+  const signIn = async (
+    email: string,
+    pass: string,
+    captchaAnswer?: string,
+    captchaToken?: string
+  ) => {
     try {
-      const res = await api.auth.login({ email, password: pass });
+      const res = await api.auth.login({
+        email,
+        password: pass,
+        captchaAnswer,
+        captchaToken,
+      });
+
+      if (res.requires2fa || res.require2fa) {
+        return {
+          require2fa: true,
+          tempToken: res.tempToken,
+          hasTotp: (res.methods || []).includes('totp') || Boolean(res.hasTotp),
+          emailMasked: res.email || res.emailMasked,
+          methods: res.methods || ['email', 'totp', 'backup'],
+          message: res.message,
+        };
+      }
+
       if (res.user) {
         setCurrentUser({
           ...res.user,
@@ -339,11 +374,41 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           Notification.requestPermission().catch(() => {});
         }
 
+        return { error: null };
+      }
+      return { error: 'Authentication failed.' };
+    } catch (err: any) {
+      const data = err.data || {};
+      return {
+        error: err.message || 'Login failed.',
+        requiresCaptcha: data.requiresCaptcha || false,
+        captchaQuestion: data.captchaQuestion,
+        captchaToken: data.captchaToken,
+        lockedUntil: data.lockedUntil,
+      };
+    }
+  };
+
+  // Verify 2FA / OTP
+  const verify2fa = async (
+    tempToken: string,
+    code: string,
+    method: 'email' | 'totp' | 'backup_code' = 'email'
+  ): Promise<string | null> => {
+    try {
+      const res = await api.auth.verify2fa({ tempToken, code, method });
+      if (res.user) {
+        setCurrentUser({
+          ...res.user,
+          department: (res.user.role === 'Principal' || res.user.role === 'Dean') ? null : res.user.department,
+        });
+        setIsAuthenticated(true);
+        refresh().catch(console.error);
         return null;
       }
-      return 'Authentication failed.';
+      return '2FA verification failed.';
     } catch (err: any) {
-      return err.message || 'Login failed.';
+      return err.message || 'Verification failed.';
     }
   };
 
@@ -544,6 +609,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     liveTick,
     isAuthenticated,
     signIn,
+    verify2fa,
     signUp,
     signOut,
     refresh,

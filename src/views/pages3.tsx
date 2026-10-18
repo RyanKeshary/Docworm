@@ -987,7 +987,6 @@ export function SettingsPage() {
   const isPrincipal = currentUser.role === 'Principal';
   const isDean = currentUser.role === 'Dean';
   const isHod = currentUser.role === 'HOD';
-  const isAdmin = isPrincipal;
   const canManageStaff = isPrincipal || isDean || isHod;
 
   const availableRolesToAdd = useMemo(() => {
@@ -1891,7 +1890,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                 <h2 className="font-bold text-slate-900 text-base">College Letterhead Header</h2>
                 <p className="text-xs text-slate-500">Appears on every exported PDF and DOCX permission letter.</p>
               </div>
-              {!isAdmin && (
+              {currentUser.role !== 'Principal' && (
                 <span className="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full font-medium">
                   <Lock size={12} /> Admin Managed
                 </span>
@@ -1901,17 +1900,17 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
             <Field label="College Name">
               <input
                 value={letterhead.collegeName}
-                onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, collegeName: e.target.value })}
-                disabled={!isAdmin}
-                className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+                onChange={(e) => saveLetterhead({ ...letterhead, collegeName: e.target.value })}
+                disabled={currentUser.role !== 'Principal'}
+                className={`${inputCls} ${currentUser.role !== 'Principal' ? 'bg-slate-50 cursor-not-allowed' : ''}`}
               />
             </Field>
             <Field label="Official Address">
               <textarea
                 value={letterhead.address}
-                onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, address: e.target.value })}
-                disabled={!isAdmin}
-                className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+                onChange={(e) => saveLetterhead({ ...letterhead, address: e.target.value })}
+                disabled={currentUser.role !== 'Principal'}
+                className={`${inputCls} ${currentUser.role !== 'Principal' ? 'bg-slate-50 cursor-not-allowed' : ''}`}
                 rows={2}
               />
             </Field>
@@ -1919,17 +1918,17 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
               <Field label="Phone">
                 <input
                   value={letterhead.phone}
-                  onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, phone: e.target.value })}
-                  disabled={!isAdmin}
-                  className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+                  onChange={(e) => saveLetterhead({ ...letterhead, phone: e.target.value })}
+                  disabled={currentUser.role !== 'Principal'}
+                  className={`${inputCls} ${currentUser.role !== 'Principal' ? 'bg-slate-50 cursor-not-allowed' : ''}`}
                 />
               </Field>
               <Field label="Official Email">
                 <input
                   value={letterhead.email}
-                  onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, email: e.target.value })}
-                  disabled={!isAdmin}
-                  className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+                  onChange={(e) => saveLetterhead({ ...letterhead, email: e.target.value })}
+                  disabled={currentUser.role !== 'Principal'}
+                  className={`${inputCls} ${currentUser.role !== 'Principal' ? 'bg-slate-50 cursor-not-allowed' : ''}`}
                 />
               </Field>
             </div>

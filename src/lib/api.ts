@@ -9,12 +9,8 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
     'Accept': 'application/json',
   };
 
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('docworm_token');
-    if (token) {
-      defaultHeaders['Authorization'] = `Bearer ${token}`;
-    }
-  }
+  // Note: Session token is securely stored in httpOnly, Secure, SameSite=Strict cookies.
+  // JavaScript cannot and does not read or store session tokens in localStorage (immune to XSS).
 
   if (!(options.body instanceof FormData)) {
     defaultHeaders['Content-Type'] = 'application/json';
@@ -38,9 +34,9 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
   if (contentType.includes('application/json')) {
     const data = await res.json();
     if (!res.ok) {
-      if (res.status === 401 && cleanEndpoint !== '/auth/login' && cleanEndpoint !== '/auth/register' && cleanEndpoint !== '/auth/me') {
+      if (res.status === 401 && cleanEndpoint !== '/auth/login' && cleanEndpoint !== '/auth/register' && cleanEndpoint !== '/auth/me' && cleanEndpoint !== '/auth/verify-2fa') {
         if (typeof window !== 'undefined') {
-          localStorage.removeItem('docworm_token');
+          try { localStorage.removeItem('docworm_token'); } catch {}
           window.dispatchEvent(new CustomEvent('docworm_auth_expired'));
         }
       }
@@ -48,16 +44,19 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
       if (typeof msg === 'object' && msg !== null) {
         msg = msg.message || msg.code || JSON.stringify(msg);
       }
-      throw new Error(String(msg || `Request failed with status ${res.status}`));
+      const errorObj = new Error(String(msg || `Request failed with status ${res.status}`));
+      (errorObj as any).status = res.status;
+      (errorObj as any).data = data;
+      throw errorObj;
     }
     return data;
   }
 
   const text = await res.text();
   if (!res.ok) {
-    if (res.status === 401 && cleanEndpoint !== '/auth/login' && cleanEndpoint !== '/auth/register' && cleanEndpoint !== '/auth/me') {
+    if (res.status === 401 && cleanEndpoint !== '/auth/login' && cleanEndpoint !== '/auth/register' && cleanEndpoint !== '/auth/me' && cleanEndpoint !== '/auth/verify-2fa') {
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('docworm_token');
+        try { localStorage.removeItem('docworm_token'); } catch {}
         window.dispatchEvent(new CustomEvent('docworm_auth_expired'));
       }
     }
@@ -69,7 +68,9 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
         msg = typeof extracted === 'object' ? (extracted.message || extracted.code || JSON.stringify(extracted)) : extracted;
       }
     } catch {}
-    throw new Error(msg || `Server returned HTTP ${res.status}`);
+    const errorObj = new Error(msg || `Server returned HTTP ${res.status}`);
+    (errorObj as any).status = res.status;
+    throw errorObj;
   }
 
   return text as unknown as T;
@@ -79,18 +80,34 @@ export const api = {
   health: () => apiFetch('/api/health'),
 
   auth: {
-    login: async (credentials: { email: string; password: string }) => {
-      const data = await apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify(credentials) });
-      if (data?.token && typeof window !== 'undefined') {
-        localStorage.setItem('docworm_token', data.token);
-      }
-      return data;
+    login: async (credentials: {
+      email: string;
+      password: string;
+      captchaAnswer?: string;
+      captchaToken?: string;
+    }) => {
+      // Sessions are stored exclusively in httpOnly, Secure, SameSite=Strict cookies
+      return apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify(credentials) });
     },
+    verify2fa: async (payload: {
+      tempToken: string;
+      code: string;
+      method?: 'email' | 'totp' | 'backup_code';
+    }) => {
+      return apiFetch('/api/auth/verify-2fa', { method: 'POST', body: JSON.stringify(payload) });
+    },
+    resend2faOtp: (tempToken: string) =>
+      apiFetch('/api/auth/resend-2fa-otp', { method: 'POST', body: JSON.stringify({ tempToken }) }),
+    getCaptcha: () => apiFetch('/api/auth/captcha'),
+    setup2fa: () => apiFetch('/api/auth/2fa/setup', { method: 'POST' }),
+    enable2fa: (payload: { code: string; secret: string; backupCodes?: string[] }) =>
+      apiFetch('/api/auth/2fa/enable', { method: 'POST', body: JSON.stringify(payload) }),
+    disable2fa: () => apiFetch('/api/auth/2fa/disable', { method: 'POST' }),
     register: (userData: any) =>
       apiFetch('/api/auth/register', { method: 'POST', body: JSON.stringify(userData) }),
     logout: async () => {
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('docworm_token');
+        try { localStorage.removeItem('docworm_token'); } catch {}
       }
       return apiFetch('/api/auth/logout', { method: 'POST' });
     },

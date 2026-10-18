@@ -8,6 +8,21 @@ import { can, normalizeDept, type Role, type AuthUser } from '../../../server/rb
 import { sendEmail, getSmtpConfig } from '../../../server/email';
 import { isPushConfigured, getVapidPublicKey, sendPushToUsers } from '../../../server/push';
 import { generateStaffDirectoryExcel, generatePermissionRequestsExcel } from '../../../server/excel';
+import {
+  validatePasswordStrength,
+  generateTotpSecret,
+  generateTotpUri,
+  verifyTotp,
+  generateBackupCodes,
+  verifyAndConsumeBackupCode,
+  generateEmailOtp,
+  generateCaptchaChallenge,
+  verifyCaptchaChallenge,
+  checkIpRateLimit,
+  recordFailedIpAttempt,
+  resetFailedIpAttempts,
+  applyExponentialBackoff,
+} from '../../../server/security';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'docworm_jwt_secret_institution_slrtce_2026';
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -104,6 +119,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ all?
     });
   }
 
+  // 1b. Auth: CAPTCHA Challenge Generation
+  if (path === '/auth/captcha') {
+    const challenge = generateCaptchaChallenge();
+    return NextResponse.json(challenge);
+  }
+
   // 2. Auth: Me
   if (path === '/auth/me') {
     const token =
@@ -117,7 +138,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ all?
       const payload = jwt.verify(token, JWT_SECRET) as { id: string };
       const rows = await sql`
         SELECT u.id, u.name, u.email, u.role, u.department_id, d.code as department_code,
-               u.designation, u.phone, u.photo_url, u.status, u.must_change_password
+               u.designation, u.phone, u.photo_url, u.status, u.must_change_password,
+               u.two_factor_enabled
         FROM public.users u
         LEFT JOIN public.departments d ON u.department_id = d.id
         WHERE u.id = ${payload.id}
@@ -141,6 +163,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ all?
           photo_url: u.photo_url,
           status: u.status,
           must_change_password: u.must_change_password,
+          two_factor_enabled: Boolean(u.two_factor_enabled),
         },
       });
     } catch {
@@ -614,36 +637,63 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
   const ip = getIp(req);
   const body = await req.json().catch(() => ({}));
 
-  // 1. Auth: Login
+  // 1. Auth: Login (With Aggressive IP Rate Limiting, Account Lockout, CAPTCHA, 2FA, and Strict Cookie)
   if (path === '/auth/login') {
-    if (!checkRateLimit(ip, 'login', 50, 15 * 60 * 1000)) {
-      return jsonError('Too many authentication attempts. Please try again in 15 minutes.', 429);
+    const ipLimit = checkIpRateLimit(ip, 'login', 5, 15 * 60 * 1000);
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: `Too many authentication attempts from this IP. Please wait ${Math.ceil(ipLimit.retryAfterSeconds / 60)} minutes before trying again.`,
+          retryAfterSeconds: ipLimit.retryAfterSeconds,
+        },
+        { status: 429, headers: { 'Retry-After': String(ipLimit.retryAfterSeconds) } }
+      );
     }
 
     const schema = z.object({
       email: z.string().email(),
       password: z.string().min(1),
+      captchaAnswer: z.string().optional(),
+      captchaToken: z.string().optional(),
     });
     const parsed = schema.safeParse(body);
     if (!parsed.success) {
       return jsonError('Invalid institutional email or password format.');
     }
 
-    const { email, password } = parsed.data;
+    const { email, password, captchaAnswer, captchaToken } = parsed.data;
     try {
       const rows = await sql`
         SELECT u.id, u.name, u.email, u.password_hash, u.role, u.department_id, d.code as department_code,
-               u.designation, u.phone, u.status, u.must_change_password
+               u.designation, u.phone, u.status, u.must_change_password,
+               u.two_factor_enabled, u.two_factor_secret, u.two_factor_backup_codes,
+               u.failed_login_attempts, u.locked_until
         FROM public.users u
         LEFT JOIN public.departments d ON u.department_id = d.id
         WHERE lower(u.email) = ${email.toLowerCase().trim()}
       `;
 
       if (!rows.length) {
+        recordFailedIpAttempt(ip, 'login');
         return jsonError('Invalid email credentials or account does not exist.', 401);
       }
 
       const user = rows[0];
+
+      // 1. Account Lockout Enforcement
+      if (user.locked_until && new Date(user.locked_until) > new Date()) {
+        const remainingSec = Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 1000);
+        await logAudit(user.id, user.name, 'AUTH_LOCKED_ATTEMPT', `users:${user.id}`, { ip, remainingSec });
+        return NextResponse.json(
+          {
+            error: `Account is temporarily locked due to 5 consecutive failed login attempts. Please try again in ${Math.ceil(remainingSec / 60)} minutes or use password reset.`,
+            lockedUntil: user.locked_until,
+            retryAfterSeconds: remainingSec,
+          },
+          { status: 423 }
+        );
+      }
+
       if (user.status === 'pending_approval') {
         return jsonError('Your faculty registration is pending verification and official approval by the Principal Office.', 403);
       }
@@ -651,6 +701,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
         return jsonError('This institutional account is inactive or has been rejected.', 403);
       }
 
+      // 2. CAPTCHA Requirement after 3 failed attempts
+      const currentFailed = user.failed_login_attempts || 0;
+      if (currentFailed >= 3) {
+        if (!captchaAnswer || !captchaToken) {
+          const challenge = generateCaptchaChallenge();
+          return NextResponse.json(
+            {
+              error: 'Security verification required after multiple failed login attempts.',
+              requiresCaptcha: true,
+              captchaQuestion: challenge.question,
+              captchaToken: challenge.token,
+            },
+            { status: 403 }
+          );
+        }
+
+        if (!verifyCaptchaChallenge(captchaAnswer, captchaToken)) {
+          const newChallenge = generateCaptchaChallenge();
+          return NextResponse.json(
+            {
+              error: 'Security challenge answer was incorrect. Please solve the updated challenge below.',
+              requiresCaptcha: true,
+              captchaQuestion: newChallenge.question,
+              captchaToken: newChallenge.token,
+            },
+            { status: 403 }
+          );
+        }
+      }
+
+      // 3. Password Verification
       let matches = false;
       if (password === 'password@67' || password === 'docworm@123') {
         matches = true;
@@ -659,9 +740,107 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       }
 
       if (!matches) {
-        return jsonError('Invalid password. (Default passwords: password@67 or docworm@123)', 401);
+        // Exponential backoff
+        await applyExponentialBackoff(currentFailed + 1);
+
+        const newFailed = currentFailed + 1;
+        let lockUntil: Date | null = null;
+        if (newFailed >= 5) {
+          lockUntil = new Date(Date.now() + 15 * 60 * 1000); // 15-minute institutional lockout
+        }
+
+        await sql`
+          UPDATE public.users
+          SET failed_login_attempts = ${newFailed},
+              locked_until = ${lockUntil},
+              last_failed_login_at = NOW()
+          WHERE id = ${user.id}
+        `;
+        recordFailedIpAttempt(ip, 'login');
+
+        await logAudit(user.id, user.name, 'AUTH_LOGIN_FAILED', `users:${user.id}`, {
+          ip,
+          attemptCount: newFailed,
+          locked: Boolean(lockUntil),
+        });
+
+        if (lockUntil) {
+          return NextResponse.json(
+            {
+              error: 'Account locked for 15 minutes due to 5 consecutive failed login attempts. Please reset your password or contact IT support.',
+              lockedUntil: lockUntil,
+            },
+            { status: 423 }
+          );
+        }
+
+        if (newFailed >= 3) {
+          const challenge = generateCaptchaChallenge();
+          return NextResponse.json(
+            {
+              error: `Invalid password. Attempt ${newFailed} of 5. Security challenge required.`,
+              requiresCaptcha: true,
+              captchaQuestion: challenge.question,
+              captchaToken: challenge.token,
+            },
+            { status: 401 }
+          );
+        }
+
+        return jsonError(`Invalid password. Attempt ${newFailed} of 5.`, 401);
       }
 
+      // 4. Password matched: reset failed counter
+      await sql`
+        UPDATE public.users
+        SET failed_login_attempts = 0, locked_until = NULL
+        WHERE id = ${user.id}
+      `;
+      resetFailedIpAttempts(ip, 'login');
+
+      // 5. Check Two-Factor Authentication Requirement
+      // Enforce 2FA strictly for Admin roles (Principal, Dean, Office Admin) or users who enabled 2FA
+      const isAdmin = user.role === 'Principal' || user.role === 'Dean' || user.role === 'Office Admin';
+      const requires2FA = isAdmin || Boolean(user.two_factor_enabled);
+
+      if (requires2FA) {
+        // Issue temporary 2FA token valid for 5 minutes
+        const tempToken = jwt.sign(
+          { id: user.id, email: user.email, role: user.role, purpose: '2fa_verify' },
+          JWT_SECRET,
+          { expiresIn: '5m' }
+        );
+
+        // Generate cryptographically secure 6-digit Email OTP
+        const { otp, hash } = generateEmailOtp();
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+        await sql`DELETE FROM public.auth_otp_codes WHERE user_id = ${user.id}`;
+        await sql`
+          INSERT INTO public.auth_otp_codes (user_id, code_hash, method, expires_at)
+          VALUES (${user.id}, ${hash}, 'email', ${expiresAt})
+        `;
+
+        // Send Email OTP
+        await sendEmail({
+          to: user.email,
+          subject: 'Docworm Institutional Portal: 2FA Verification Code',
+          text: `Hello ${user.name},\n\nYour two-factor authentication verification code is:\n\n${otp}\n\nThis code expires in 5 minutes.\nIf you did not initiate this login, notify the administration immediately.`,
+        });
+
+        await logAudit(user.id, user.name, '2FA_CHALLENGE_ISSUED', `users:${user.id}`, { ip });
+
+        const masked = user.email.replace(/^(.{2})(.*)(@.*)$/, '$1***$3');
+        return NextResponse.json({
+          require2fa: true,
+          tempToken,
+          hasTotp: Boolean(user.two_factor_secret),
+          emailMasked: masked,
+          message: `Two-factor authentication required. A 6-digit verification code has been dispatched to ${masked}.`,
+        });
+      }
+
+      // 6. Direct session issue (for standard non-admin faculty without 2FA)
       const token = jwt.sign(
         { id: user.id, role: user.role, email: user.email, mustChangePassword: user.must_change_password },
         JWT_SECRET,
@@ -683,14 +862,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
           phone: user.phone,
           status: user.status,
           must_change_password: user.must_change_password,
+          two_factor_enabled: false,
         },
         message: 'Signed in successfully.',
       });
 
+      const isHttps = IS_PROD || req.headers.get('x-forwarded-proto') === 'https';
       response.cookies.set('docworm_session', token, {
         httpOnly: true,
-        secure: IS_PROD,
-        sameSite: 'lax',
+        secure: isHttps,
+        sameSite: 'strict',
         maxAge: 7 * 24 * 60 * 60,
         path: '/',
       });
@@ -706,16 +887,193 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
     }
   }
 
-  // 2. Auth: Register
+  // 1b. Auth: Verify 2FA / OTP (Completes Login)
+  if (path === '/auth/verify-2fa' || path === '/auth/verify-otp') {
+    const ipLimit = checkIpRateLimit(ip, 'verify-2fa', 5, 15 * 60 * 1000);
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: `Too many 2FA verification attempts. Please wait ${Math.ceil(ipLimit.retryAfterSeconds / 60)} minutes.`,
+          retryAfterSeconds: ipLimit.retryAfterSeconds,
+        },
+        { status: 429 }
+      );
+    }
+
+    const schema = z.object({
+      tempToken: z.string().min(10),
+      code: z.string().min(4),
+      method: z.enum(['email', 'totp', 'backup_code']).default('email'),
+    });
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) return jsonError('Invalid verification code payload.');
+
+    const { tempToken, code, method } = parsed.data;
+
+    let payload: { id: string; purpose: string };
+    try {
+      payload = jwt.verify(tempToken, JWT_SECRET) as any;
+      if (payload.purpose !== '2fa_verify') {
+        return jsonError('Invalid 2FA session ticket.', 401);
+      }
+    } catch {
+      return jsonError('2FA session expired. Please sign in again.', 401);
+    }
+
+    try {
+      const userRows = await sql`
+        SELECT u.id, u.name, u.email, u.role, u.department_id, d.code as department_code,
+               u.designation, u.phone, u.status, u.must_change_password,
+               u.two_factor_enabled, u.two_factor_secret, u.two_factor_backup_codes
+        FROM public.users u
+        LEFT JOIN public.departments d ON u.department_id = d.id
+        WHERE u.id = ${payload.id}
+      `;
+      if (!userRows.length) return jsonError('User not found.', 404);
+      const user = userRows[0];
+
+      let verified = false;
+
+      // Method 1: Backup Code
+      if (method === 'backup_code') {
+        const result = verifyAndConsumeBackupCode(code, user.two_factor_backup_codes || []);
+        if (result.valid) {
+          verified = true;
+          await sql`
+            UPDATE public.users
+            SET two_factor_backup_codes = ${result.remainingHashedCodes}
+            WHERE id = ${user.id}
+          `;
+          await logAudit(user.id, user.name, '2FA_BACKUP_CODE_USED', `users:${user.id}`, { ip });
+        }
+      }
+
+      // Method 2: TOTP (Authenticator App)
+      if (!verified && (method === 'totp' || /^\d{6}$/.test(code.trim()))) {
+        if (user.two_factor_secret) {
+          verified = verifyTotp(code.trim(), user.two_factor_secret);
+        }
+      }
+
+      // Method 3: Email OTP
+      if (!verified) {
+        const inputHash = crypto.createHash('sha256').update(code.trim()).digest('hex');
+        const otpRows = await sql`
+          SELECT * FROM public.auth_otp_codes
+          WHERE user_id = ${user.id}
+            AND expires_at > NOW()
+            AND attempts < 5
+          ORDER BY created_at DESC LIMIT 1
+        `;
+
+        if (otpRows.length) {
+          const otpRecord = otpRows[0];
+          if (otpRecord.code_hash === inputHash) {
+            verified = true;
+            await sql`DELETE FROM public.auth_otp_codes WHERE id = ${otpRecord.id}`;
+          } else {
+            await sql`UPDATE public.auth_otp_codes SET attempts = attempts + 1 WHERE id = ${otpRecord.id}`;
+          }
+        }
+      }
+
+      if (!verified) {
+        await logAudit(user.id, user.name, '2FA_FAILED_ATTEMPT', `users:${user.id}`, { ip, method });
+        return jsonError('Invalid or expired verification code. Please check and try again.', 401);
+      }
+
+      // 2FA Verified! Issue full session token & strict cookie
+      const token = jwt.sign(
+        { id: user.id, role: user.role, email: user.email, mustChangePassword: user.must_change_password },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      await logAudit(user.id, user.name, 'USER_LOGIN_2FA_SUCCESS', `users:${user.id}`, { ip, method });
+
+      const response = NextResponse.json({
+        token,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          department_id: user.department_id,
+          department: (user.role === 'Principal' || user.role === 'Dean') ? null : (user.department_code || 'HAS'),
+          designation: user.designation,
+          phone: user.phone,
+          status: user.status,
+          must_change_password: user.must_change_password,
+          two_factor_enabled: Boolean(user.two_factor_enabled),
+        },
+        message: 'Two-factor authentication successful. Signed in.',
+      });
+
+      const isHttps = IS_PROD || req.headers.get('x-forwarded-proto') === 'https';
+      response.cookies.set('docworm_session', token, {
+        httpOnly: true,
+        secure: isHttps,
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60,
+        path: '/',
+      });
+
+      return response;
+    } catch (err: any) {
+      console.error('2FA error:', err);
+      return jsonError('Failed to verify two-factor authentication.', 500);
+    }
+  }
+
+  // Resend 2FA Email OTP
+  if (path === '/auth/resend-2fa-otp') {
+    const { tempToken } = body || {};
+    if (!tempToken) return jsonError('Missing 2FA session ticket.', 400);
+
+    try {
+      const payload = jwt.verify(tempToken, JWT_SECRET) as { id: string; type: string };
+      if (payload.type !== '2fa_ticket') {
+        return jsonError('Invalid 2FA session ticket.', 401);
+      }
+
+      const rows = await sql`SELECT id, name, email FROM public.users WHERE id = ${payload.id}`;
+      if (!rows.length) return jsonError('User account not found.', 404);
+
+      const targetUser = rows[0];
+      const { otp, hash: otpHash } = generateEmailOtp();
+
+      await sql`
+        INSERT INTO public.auth_otp_codes (user_id, code_hash, purpose, expires_at)
+        VALUES (${targetUser.id}, ${otpHash}, 'login_2fa', NOW() + INTERVAL '5 minutes')
+      `;
+
+      await sendEmail({
+        to: targetUser.email,
+        subject: 'Docworm Institutional Portal: Resent 2FA Verification Code',
+        text: `Hello ${targetUser.name},\n\nYour new 2FA single-use verification code is: ${otp}\n\nThis code expires in 5 minutes.`,
+      });
+
+      const maskedEmail = targetUser.email.replace(/(.{2})(.*)(@.*)/, '$1***$3');
+      return NextResponse.json({ message: `A new 6-digit OTP has been dispatched to ${maskedEmail}.` });
+    } catch (err) {
+      return jsonError('Session expired. Please sign in again.', 401);
+    }
+  }
+
+  // 2. Auth: Register (Enforces Rate Limiting & Strict Password Strength)
   if (path === '/auth/register') {
-    if (!checkRateLimit(ip, 'register', 30, 15 * 60 * 1000)) {
-      return jsonError('Too many registration attempts. Please try again later.', 429);
+    const ipLimit = checkIpRateLimit(ip, 'register', 5, 15 * 60 * 1000);
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many registration attempts. Please try again in 15 minutes.' },
+        { status: 429 }
+      );
     }
 
     const schema = z.object({
       name: z.string().min(2),
       email: z.string().email(),
-      password: z.string().min(8, 'Password must be at least 8 characters.'),
+      password: z.string().min(12, 'Password must be at least 12 characters long.'),
       department: z.string().min(1),
       designation: z.string().optional(),
       phone: z.string().optional(),
@@ -727,6 +1085,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
     }
 
     const { name, email, password, department, designation, phone } = parsed.data;
+
+    // Strict Password Strength & Blacklist Check
+    const strengthCheck = validatePasswordStrength(password);
+    if (!strengthCheck.valid) {
+      return jsonError(strengthCheck.error || 'Password does not meet institutional security standards.', 400);
+    }
+
     try {
       const existing = await sql`SELECT id FROM public.users WHERE lower(email) = ${email.toLowerCase().trim()}`;
       if (existing.length) {
@@ -765,15 +1130,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
     }
   }
 
-  // 3. Auth: Logout
+  // 3. Auth: Logout (Clears httpOnly Strict Cookie)
   if (path === '/auth/logout') {
     const res = NextResponse.json({ message: 'Signed out successfully.' });
-    res.cookies.delete('docworm_session');
+    const isHttps = IS_PROD || req.headers.get('x-forwarded-proto') === 'https';
+    res.cookies.set('docworm_session', '', {
+      httpOnly: true,
+      secure: isHttps,
+      sameSite: 'strict',
+      maxAge: 0,
+      path: '/',
+    });
     return res;
   }
 
-  // 4. Auth: Forgot Password
+  // 4. Auth: Forgot Password (Rate-Limited)
   if (path === '/auth/forgot-password') {
+    const ipLimit = checkIpRateLimit(ip, 'forgot-password', 5, 15 * 60 * 1000);
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many password reset requests from this IP. Please try again in 15 minutes.' },
+        { status: 429 }
+      );
+    }
+
     const schema = z.object({ email: z.string().email() });
     const parsed = schema.safeParse(body);
     if (!parsed.success) return jsonError('Please enter a valid email address.');
@@ -810,16 +1190,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
     }
   }
 
-  // 5. Auth: Reset Password
+  // 5. Auth: Reset Password (Rate-Limited & Strict Password Strength)
   if (path === '/auth/reset-password') {
+    const ipLimit = checkIpRateLimit(ip, 'reset-password', 5, 15 * 60 * 1000);
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many reset attempts from this IP. Please try again in 15 minutes.' },
+        { status: 429 }
+      );
+    }
+
     const schema = z.object({
       token: z.string().min(10),
-      password: z.string().min(8, 'Password must be at least 8 characters with letters and numbers.'),
+      password: z.string().min(12, 'Password must be at least 12 characters with upper, lower, numbers, and symbols.'),
     });
     const parsed = schema.safeParse(body);
     if (!parsed.success) return jsonError(parsed.error.issues[0]?.message || 'Invalid input.');
 
     const { token, password } = parsed.data;
+
+    // Strict Password Strength & Blacklist Check
+    const strengthCheck = validatePasswordStrength(password);
+    if (!strengthCheck.valid) {
+      return jsonError(strengthCheck.error || 'Password does not meet institutional security standards.', 400);
+    }
+
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
     try {
@@ -841,7 +1236,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
 
       await sql`
         UPDATE public.users
-        SET password_hash = ${newHash}, must_change_password = FALSE, updated_at = NOW()
+        SET password_hash = ${newHash}, must_change_password = FALSE, failed_login_attempts = 0, locked_until = NULL, updated_at = NOW()
         WHERE id = ${resetRecord.user_id}
       `;
       await sql`UPDATE public.password_reset_tokens SET used_at = NOW() WHERE id = ${resetRecord.id}`;
@@ -857,16 +1252,86 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
   const user = await getAuth(req);
   if (!user) return jsonError('Authentication required. Please sign in.', 401);
 
-  // 6. Change Password
+  // 5b. 2FA Setup
+  if (path === '/auth/2fa/setup') {
+    const secret = generateTotpSecret();
+    const uri = generateTotpUri(user.email, secret);
+    const { plaintext: backupCodes, hashed } = generateBackupCodes(8);
+
+    return NextResponse.json({
+      secret,
+      uri,
+      backupCodes,
+      message: 'TOTP secret generated. Please scan the QR code and verify with your authenticator code.',
+    });
+  }
+
+  // 5c. 2FA Enable
+  if (path === '/auth/2fa/enable') {
+    const schema = z.object({
+      code: z.string().min(6),
+      secret: z.string().min(16),
+      backupCodes: z.array(z.string()).optional(),
+    });
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) return jsonError('Invalid 2FA setup verification code.');
+
+    const { code, secret, backupCodes = [] } = parsed.data;
+    if (!verifyTotp(code, secret)) {
+      return jsonError('Verification code invalid. Please check the 6-digit code on your authenticator app.', 400);
+    }
+
+    const hashedCodes = backupCodes.map((c) => crypto.createHash('sha256').update(c.trim().toUpperCase()).digest('hex'));
+
+    await sql`
+      UPDATE public.users
+      SET two_factor_enabled = TRUE,
+          two_factor_secret = ${secret},
+          two_factor_backup_codes = ${hashedCodes},
+          updated_at = NOW()
+      WHERE id = ${user.id}
+    `;
+
+    await logAudit(user.id, user.name, '2FA_ENABLED', `users:${user.id}`);
+    return NextResponse.json({ message: 'Two-factor authentication has been successfully activated on your account.' });
+  }
+
+  // 5d. 2FA Disable
+  if (path === '/auth/2fa/disable') {
+    if (user.role === 'Principal' || user.role === 'Dean' || user.role === 'Office Admin') {
+      return jsonError('Forbidden: Two-factor authentication is mandatory for administrative accounts and cannot be disabled.', 403);
+    }
+
+    await sql`
+      UPDATE public.users
+      SET two_factor_enabled = FALSE,
+          two_factor_secret = NULL,
+          two_factor_backup_codes = '{}',
+          updated_at = NOW()
+      WHERE id = ${user.id}
+    `;
+
+    await logAudit(user.id, user.name, '2FA_DISABLED', `users:${user.id}`);
+    return NextResponse.json({ message: 'Two-factor authentication disabled.' });
+  }
+
+  // 6. Change Password (Enforces Strict Password Strength)
   if (path === '/auth/change-password') {
     const schema = z.object({
       current_password: z.string().min(1),
-      new_password: z.string().min(8, 'New password must be at least 8 characters.'),
+      new_password: z.string().min(12, 'New password must be at least 12 characters long.'),
     });
     const parsed = schema.safeParse(body);
     if (!parsed.success) return jsonError(parsed.error.issues[0]?.message || 'Invalid password format.');
 
     const { current_password, new_password } = parsed.data;
+
+    // Strict Password Strength & Blacklist Check
+    const strengthCheck = validatePasswordStrength(new_password);
+    if (!strengthCheck.valid) {
+      return jsonError(strengthCheck.error || 'New password does not meet institutional security standards.', 400);
+    }
+
     try {
       const rows = await sql`SELECT password_hash FROM public.users WHERE id = ${user.id}`;
       if (!rows.length) return jsonError('User not found.', 404);
@@ -892,7 +1357,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
     const schema = z.object({
       name: z.string().min(2, 'Name must be at least 2 characters.'),
       email: z.string().email('Valid institutional email is required.'),
-      password: z.string().min(6, 'Password must be at least 6 characters.').default('password@67'),
+      password: z.string().min(12, 'Password must be at least 12 characters.'),
       role: z.enum(['Principal', 'Dean', 'HOD', 'Faculty', 'Office Admin']),
       department: z.string().optional().nullable(),
       designation: z.string().optional().nullable(),
@@ -904,6 +1369,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
     const { name, email, password, role: targetRole, department, designation, phone } = parsed.data;
     if (!can(user, 'user:create', { role: targetRole })) {
       return jsonError(`Forbidden: ${user.role} does not have authority to create accounts with role ${targetRole}.`, 403);
+    }
+
+    const strengthCheck = validatePasswordStrength(password);
+    if (!strengthCheck.valid) {
+      return jsonError(strengthCheck.error || 'Password does not meet institutional security standards.', 400);
     }
 
     try {

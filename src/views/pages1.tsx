@@ -5,14 +5,15 @@ import { Link, useNavigate, useSearchParams } from '../lib/router-compat';
 import {
   FileText, Clock, CheckCircle2, AlertTriangle, ListTodo, Search, Plus,
   GraduationCap, Building2, Landmark, Briefcase, Zap, User, ArrowRight,
-  ShieldCheck, Sparkles, Check, Eye, EyeOff, Lock, Mail, KeyRound, AlertCircle, RefreshCw
+  ShieldCheck, ShieldAlert, Sparkles, Check, Eye, EyeOff, Lock, Mail, KeyRound, AlertCircle, RefreshCw, Shield, HelpCircle
 } from 'lucide-react';
 import { useData } from '../store';
 import { Badge, Drawer, EmptyState, ExportMenu, btnGhost, btnPrimary, inputCls } from '../components';
 import { computedTaskStatus, detectClashes, exportCSV, exportPDF, exportXLSX, flattenProposal } from '../utils';
 import { api } from '../lib/api';
+import { PasswordStrengthMeter } from '../components/PasswordStrengthMeter';
 
-type AuthMode = 'signin' | 'signup' | 'forgot' | 'reset' | 'force_change';
+type AuthMode = 'signin' | 'signup' | 'forgot' | 'reset' | 'force_change' | 'verify_2fa';
 
 function getPasswordStrength(pass: string): { score: number; label: string; color: string } {
   if (!pass) return { score: 0, label: 'Empty', color: 'bg-slate-200' };
@@ -30,7 +31,7 @@ function getPasswordStrength(pass: string): { score: number; label: string; colo
 }
 
 export function Login() {
-  const { signIn, signUp, isAuthenticated, refresh, letterhead, options } = useData();
+  const { signIn, verify2fa, signUp, isAuthenticated, refresh, letterhead, options } = useData();
   const nav = useNavigate();
   const [params] = useSearchParams();
 
@@ -40,6 +41,21 @@ export function Login() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [resetToken, setResetToken] = useState('');
+
+  // 2FA state
+  const [twoFactorToken, setTwoFactorToken] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [twoFactorMethod, setTwoFactorMethod] = useState<'email' | 'totp' | 'backup_code'>('email');
+  const [twoFactorMaskedEmail, setTwoFactorMaskedEmail] = useState('');
+  const [twoFactorMessage, setTwoFactorMessage] = useState('');
+  const [twoFactorResendCooldown, setTwoFactorResendCooldown] = useState(0);
+
+  // Security CAPTCHA & Lockout state
+  const [requiresCaptcha, setRequiresCaptcha] = useState(false);
+  const [captchaQuestion, setCaptchaQuestion] = useState('');
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaAnswer, setCaptchaAnswer] = useState('');
+  const [lockedUntil, setLockedUntil] = useState<string | null>(null);
 
   // Faculty signup fields
   const [signupName, setSignupName] = useState('');
@@ -62,6 +78,13 @@ export function Login() {
     }
   }, [params]);
 
+  // Resend OTP cooldown timer
+  useEffect(() => {
+    if (twoFactorResendCooldown <= 0) return;
+    const timer = setInterval(() => setTwoFactorResendCooldown((c) => c - 1), 1000);
+    return () => clearInterval(timer);
+  }, [twoFactorResendCooldown]);
+
   // If already authenticated, redirect to dashboard
   useEffect(() => {
     if (isAuthenticated) {
@@ -69,7 +92,29 @@ export function Login() {
     }
   }, [isAuthenticated, nav]);
 
-  const strength = useMemo(() => getPasswordStrength(password), [password]);
+  const handleRefreshCaptcha = async () => {
+    try {
+      const c = await api.auth.getCaptcha();
+      setCaptchaQuestion(c.question);
+      setCaptchaToken(c.token);
+      setCaptchaAnswer('');
+    } catch {}
+  };
+
+  const handleResendOtp = async () => {
+    if (!twoFactorToken || twoFactorResendCooldown > 0) return;
+    setBusy(true);
+    try {
+      const res = await api.auth.resend2faOtp(twoFactorToken);
+      setInfoMessage(res.message || 'A new 6-digit OTP has been dispatched to your institutional email.');
+      setTwoFactorResendCooldown(60);
+      setError('');
+    } catch (err: any) {
+      setError(err.message || 'Failed to resend OTP.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,10 +124,46 @@ export function Login() {
 
     try {
       if (mode === 'signin') {
-        const err = await signIn(email.trim(), password);
+        const res = await signIn(email.trim(), password, captchaAnswer, captchaToken);
+        if (res.require2fa) {
+          setTwoFactorToken(res.tempToken || '');
+          setTwoFactorMaskedEmail(res.emailMasked || '');
+          setTwoFactorMessage(res.message || 'Two-factor authentication required for this administrative account.');
+          setMode('verify_2fa');
+          setPassword('');
+          setBusy(false);
+          return;
+        }
+
+        if (res.requiresCaptcha) {
+          setRequiresCaptcha(true);
+          setCaptchaQuestion(res.captchaQuestion || '');
+          setCaptchaToken(res.captchaToken || '');
+          setCaptchaAnswer('');
+          setError(res.error || 'Security challenge required. Please solve the question below.');
+          setBusy(false);
+          return;
+        }
+
+        if (res.lockedUntil) {
+          setLockedUntil(res.lockedUntil);
+          setError(res.error || 'Account is temporarily locked.');
+          setBusy(false);
+          return;
+        }
+
+        if (res.error) {
+          setError(res.error);
+          setBusy(false);
+          return;
+        }
+        nav('/');
+        return;
+      } else if (mode === 'verify_2fa') {
+        if (!twoFactorCode.trim()) throw new Error('Please enter the 6-digit verification code.');
+        const err = await verify2fa(twoFactorToken, twoFactorCode.trim(), twoFactorMethod);
         if (err) {
-          const errMsg = typeof err === 'object' ? ((err as any).message || JSON.stringify(err)) : String(err);
-          setError(errMsg);
+          setError(err);
           setBusy(false);
           return;
         }
@@ -92,7 +173,7 @@ export function Login() {
         if (!signupName.trim()) throw new Error('Please enter your full name.');
         if (!email.trim()) throw new Error('Please enter your institutional email.');
         if (!email.toLowerCase().includes('@')) throw new Error('A valid email address is required.');
-        if (password.length < 8) throw new Error('Password must be at least 8 characters long.');
+        if (password.length < 12) throw new Error('Password must be at least 12 characters and meet institutional complexity standards.');
         if (password !== confirmPassword) throw new Error('Passwords do not match.');
 
         const err = await signUp({
@@ -121,7 +202,7 @@ export function Login() {
         setInfoMessage(res.message || 'If an account exists with this email, password reset instructions have been dispatched.');
       } else if (mode === 'reset') {
         if (!resetToken.trim()) throw new Error('Reset token is missing or invalid.');
-        if (password.length < 8) throw new Error('Password must be at least 8 characters long.');
+        if (password.length < 12) throw new Error('Password must be at least 12 characters and meet institutional complexity standards.');
         if (password !== confirmPassword) throw new Error('Passwords do not match.');
 
         const res = await api.auth.resetPassword({ token: resetToken.trim(), password });
@@ -132,7 +213,7 @@ export function Login() {
         setMode('signin');
       } else if (mode === 'force_change') {
         if (!currentPassword) throw new Error('Current temporary password is required.');
-        if (password.length < 8) throw new Error('New password must be at least 8 characters long.');
+        if (password.length < 12) throw new Error('New password must be at least 12 characters and meet institutional complexity standards.');
         if (password !== confirmPassword) throw new Error('Passwords do not match.');
 
         await api.auth.changePassword({ current_password: currentPassword, new_password: password });
@@ -184,6 +265,7 @@ export function Login() {
                 {mode === 'forgot' && 'Reset Your Password'}
                 {mode === 'reset' && 'Set New Permanent Password'}
                 {mode === 'force_change' && 'First-Login Password Change'}
+                {mode === 'verify_2fa' && 'Two-Factor Authentication (2FA)'}
               </h2>
               <p className="text-xs text-slate-500 mt-1">
                 {mode === 'signin' && 'Enter your institutional credentials to access your portal.'}
@@ -191,8 +273,22 @@ export function Login() {
                 {mode === 'forgot' && 'Enter your registered email to receive reset instructions.'}
                 {mode === 'reset' && 'Enter your security token and select a new password.'}
                 {mode === 'force_change' && 'Change your temporary password before proceeding.'}
+                {mode === 'verify_2fa' && (twoFactorMessage || 'Provide your 6-digit verification code to complete institutional authentication.')}
               </p>
             </div>
+
+            {/* Lockout Warning */}
+            {lockedUntil && (
+              <div className="mb-4 p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2.5 animate-fade-in shadow-xs">
+                <ShieldAlert size={18} className="shrink-0 mt-0.5 text-amber-700" />
+                <div className="flex-1">
+                  <span className="font-bold">Account Temporarily Locked for Protection</span>
+                  <p className="mt-1 text-[11px] text-amber-800">
+                    5 consecutive failed attempts detected. Access is suspended for 15 minutes to safeguard institutional data. If you have forgotten your password, use the reset option below.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Alerts */}
             {error && (
@@ -218,6 +314,88 @@ export function Login() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* 2FA Verification Mode */}
+              {mode === 'verify_2fa' && (
+                <div className="space-y-4 animate-fade-in">
+                  <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl flex items-start gap-2.5 text-xs text-blue-900">
+                    <ShieldCheck size={18} className="shrink-0 mt-0.5 text-primary" />
+                    <div>
+                      <p className="font-semibold text-blue-950">Administrative Multi-Factor Security</p>
+                      <p className="text-[11px] text-blue-800 mt-0.5">
+                        {twoFactorMethod === 'email' && `A single-use 6-digit OTP was dispatched to ${twoFactorMaskedEmail || 'your institutional email'}.`}
+                        {twoFactorMethod === 'totp' && 'Open your Authenticator app (Google Authenticator, Authy, etc.) and enter the current 6-digit code.'}
+                        {twoFactorMethod === 'backup_code' && 'Enter one of your emergency recovery backup codes.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Method Selector Tabs */}
+                  <div className="flex rounded-lg bg-slate-100 p-1 text-xs font-semibold text-slate-600">
+                    <button
+                      type="button"
+                      onClick={() => { setTwoFactorMethod('email'); setError(''); }}
+                      className={`flex-1 py-1.5 rounded-md transition-all ${
+                        twoFactorMethod === 'email' ? 'bg-white text-primary shadow-xs font-bold' : 'hover:text-slate-900'
+                      }`}
+                    >
+                      Email OTP
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setTwoFactorMethod('totp'); setError(''); }}
+                      className={`flex-1 py-1.5 rounded-md transition-all ${
+                        twoFactorMethod === 'totp' ? 'bg-white text-primary shadow-xs font-bold' : 'hover:text-slate-900'
+                      }`}
+                    >
+                      Authenticator (TOTP)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setTwoFactorMethod('backup_code'); setError(''); }}
+                      className={`flex-1 py-1.5 rounded-md transition-all ${
+                        twoFactorMethod === 'backup_code' ? 'bg-white text-primary shadow-xs font-bold' : 'hover:text-slate-900'
+                      }`}
+                    >
+                      Backup Code
+                    </button>
+                  </div>
+
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-700">
+                      {twoFactorMethod === 'email' && `6-digit Email OTP`}
+                      {twoFactorMethod === 'totp' && '6-digit Authenticator Code'}
+                      {twoFactorMethod === 'backup_code' && '8-character Emergency Backup Code'}
+                    </span>
+                    <div className="relative mt-1">
+                      <input
+                        value={twoFactorCode}
+                        onChange={(e) => setTwoFactorCode(e.target.value.trim())}
+                        placeholder={twoFactorMethod === 'backup_code' ? 'A1B2-C3D4' : '123456'}
+                        maxLength={twoFactorMethod === 'backup_code' ? 12 : 6}
+                        className={`${inputCls} text-center font-mono text-base tracking-widest pl-10`}
+                        autoFocus
+                        required
+                      />
+                      <KeyRound size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    </div>
+                  </label>
+
+                  {twoFactorMethod === 'email' && (
+                    <div className="flex items-center justify-between text-xs pt-1">
+                      <span className="text-slate-500 text-[11px]">Valid for 5 minutes</span>
+                      <button
+                        type="button"
+                        disabled={twoFactorResendCooldown > 0 || busy}
+                        onClick={handleResendOtp}
+                        className="text-primary hover:underline font-semibold disabled:text-slate-400 disabled:no-underline text-xs"
+                      >
+                        {twoFactorResendCooldown > 0 ? `Resend OTP in ${twoFactorResendCooldown}s` : 'Resend Email OTP'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Force Change Password: Current Password */}
               {mode === 'force_change' && (
                 <label className="block">
@@ -337,7 +515,7 @@ export function Login() {
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-700">
-                      {mode === 'force_change' || mode === 'reset' ? 'New Password *' : 'Password *'}
+                      {mode === 'force_change' || mode === 'reset' ? 'New Password (min 12 chars) *' : 'Password *'}
                     </span>
                     {mode === 'signin' && (
                       <button
@@ -371,18 +549,7 @@ export function Login() {
 
                   {/* Password strength meter for new passwords */}
                   {(mode === 'signup' || mode === 'reset' || mode === 'force_change') && password && (
-                    <div className="mt-2 space-y-1.5">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-slate-500">Strength: <b className="text-slate-700">{strength.label}</b></span>
-                        <span className="text-slate-400">Min 8 chars, numbers & uppercase</span>
-                      </div>
-                      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden flex">
-                        <div
-                          className={`h-full transition-all duration-300 ${strength.color}`}
-                          style={{ width: `${(strength.score / 4) * 100}%` }}
-                        />
-                      </div>
-                    </div>
+                    <PasswordStrengthMeter password={password} />
                   )}
                 </div>
               )}
@@ -405,6 +572,34 @@ export function Login() {
                 </label>
               )}
 
+              {/* Security CAPTCHA Challenge */}
+              {mode === 'signin' && requiresCaptcha && (
+                <div className="p-3.5 rounded-xl border border-amber-300 bg-amber-50/70 space-y-2 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                      <Shield size={14} className="text-amber-700" />
+                      <span>Security Verification</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRefreshCaptcha}
+                      className="text-[11px] text-amber-800 hover:text-amber-950 flex items-center gap-1 font-medium"
+                    >
+                      <RefreshCw size={11} /> Refresh
+                    </button>
+                  </div>
+                  <p className="text-xs text-amber-800 font-medium">{captchaQuestion || 'Please solve security question'}</p>
+                  <input
+                    type="text"
+                    value={captchaAnswer}
+                    onChange={(e) => setCaptchaAnswer(e.target.value)}
+                    placeholder="Type numeric answer here"
+                    className={`${inputCls} !bg-white text-xs`}
+                    required
+                  />
+                </div>
+              )}
+
               {/* Submit Button */}
               <button
                 className={`${btnPrimary} w-full justify-center py-2.5 text-sm !mt-5 shadow-sm`}
@@ -419,6 +614,7 @@ export function Login() {
                 ) : (
                   <>
                     {mode === 'signin' && 'Sign In'}
+                    {mode === 'verify_2fa' && 'Verify Code & Sign In'}
                     {mode === 'signup' && 'Sign Up as Faculty (Submit for Approval)'}
                     {mode === 'forgot' && 'Send Password Reset Link'}
                     {mode === 'reset' && 'Update Password & Sign In'}
@@ -443,12 +639,12 @@ export function Login() {
                 </div>
               )}
 
-              {/* Back to signin button when in signup, forgot or reset */}
-              {(mode === 'signup' || mode === 'forgot' || mode === 'reset') && (
+              {/* Back to signin button when in signup, forgot, reset, or verify_2fa */}
+              {(mode === 'signup' || mode === 'forgot' || mode === 'reset' || mode === 'verify_2fa') && (
                 <div className="text-center pt-2">
                   <button
                     type="button"
-                    onClick={() => { setMode('signin'); setError(''); setInfoMessage(''); }}
+                    onClick={() => { setMode('signin'); setError(''); setInfoMessage(''); setRequiresCaptcha(false); }}
                     className="text-xs text-slate-500 hover:text-slate-800 font-medium"
                   >
                     ← Return to Sign In
