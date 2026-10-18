@@ -57,6 +57,14 @@ export const ROLE_META: Record<Role, {
     border: 'border-amber-300',
     icon: '👤',
   },
+  'Office Admin': {
+    label: 'Office Admin',
+    badge: 'bg-slate-100 text-slate-800 border-slate-300',
+    accent: 'text-slate-700',
+    bg: 'bg-slate-50',
+    border: 'border-slate-300',
+    icon: '📋',
+  },
 };
 
 /**

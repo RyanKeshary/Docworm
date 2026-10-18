@@ -991,7 +991,7 @@ export function SettingsPage() {
   const canManageStaff = isPrincipal || isDean || isHod;
 
   const availableRolesToAdd = useMemo(() => {
-    if (isPrincipal) return ['Dean', 'HOD', 'Faculty', 'Office Admin'] as const;
+    if (isPrincipal) return ['Principal', 'Dean', 'HOD', 'Faculty', 'Office Admin'] as const;
     if (isDean) return ['HOD', 'Faculty', 'Office Admin'] as const;
     if (isHod) return ['Faculty'] as const;
     return [] as const;
@@ -1126,7 +1126,8 @@ export function SettingsPage() {
     }
     const targetDept = isHod ? (currentUser.department || 'IT') : (leadershipForm.role === 'Principal' || leadershipForm.role === 'Dean' ? '' : (leadershipForm.department || 'IT'));
     const targetDesignation = leadershipForm.designation.trim() || (
-      leadershipForm.role === 'Dean' ? 'Dean' :
+      leadershipForm.role === 'Principal' ? 'Principal & Head of Institution' :
+      leadershipForm.role === 'Dean' ? 'Dean, Student Welfare & Academic Affairs' :
       leadershipForm.role === 'HOD' ? `Head of Department, ${targetDept}` :
       leadershipForm.role === 'Office Admin' ? 'Administrative Officer' :
       'Assistant Professor'
@@ -1485,7 +1486,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                         })}
                         className={inputCls}
                       >
-                        {(options.departments || ['IT', 'CMPN', 'EXTC', 'MECH', 'CIVIL', 'AIDS', 'HAS']).map((d) => (
+                        {(options.departments || ['IT', 'CMPN', 'CS', 'EXTC', 'ECS', 'ETRX', 'MECH', 'CIVIL', 'HAS', 'AIML', 'AIDS', 'CYBER', 'MCA', 'B.VOC', 'TPO', 'EXAM', 'IQAC']).map((d) => (
                           <option key={d} value={d}>{d}</option>
                         ))}
                       </select>

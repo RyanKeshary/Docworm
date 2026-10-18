@@ -243,6 +243,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             department: (me.user.role === 'Principal' || me.user.role === 'Dean') ? null : me.user.department,
           });
           setIsAuthenticated(true);
+        } else if (mounted) {
+          setIsAuthenticated(false);
+          setCurrentUser(GUEST_USER);
         }
       } catch (err) {
         if (mounted) {
@@ -254,7 +257,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
     }
     checkAuth();
-    return () => { mounted = false; };
+
+    const handleAuthExpired = () => {
+      setIsAuthenticated(false);
+      setCurrentUser(GUEST_USER);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('docworm_auth_expired', handleAuthExpired);
+    }
+
+    return () => {
+      mounted = false;
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('docworm_auth_expired', handleAuthExpired);
+      }
+    };
   }, []);
 
   // Track known notification IDs to alert only on newly arrived notifications

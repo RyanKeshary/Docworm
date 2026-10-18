@@ -38,6 +38,12 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
   if (contentType.includes('application/json')) {
     const data = await res.json();
     if (!res.ok) {
+      if (res.status === 401 && cleanEndpoint !== '/auth/login' && cleanEndpoint !== '/auth/register' && cleanEndpoint !== '/auth/me') {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('docworm_token');
+          window.dispatchEvent(new CustomEvent('docworm_auth_expired'));
+        }
+      }
       let msg = data.error || data.message;
       if (typeof msg === 'object' && msg !== null) {
         msg = msg.message || msg.code || JSON.stringify(msg);
@@ -49,6 +55,12 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
 
   const text = await res.text();
   if (!res.ok) {
+    if (res.status === 401 && cleanEndpoint !== '/auth/login' && cleanEndpoint !== '/auth/register' && cleanEndpoint !== '/auth/me') {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('docworm_token');
+        window.dispatchEvent(new CustomEvent('docworm_auth_expired'));
+      }
+    }
     let msg = text;
     try {
       const parsed = JSON.parse(text);

@@ -2,7 +2,7 @@
 // Implements the institutional permission matrix for Docworm.
 // Enforced on the server and mirrored in the UI.
 
-export type Role = 'Principal' | 'Dean' | 'HOD' | 'Faculty';
+export type Role = 'Principal' | 'Dean' | 'HOD' | 'Faculty' | 'Office Admin';
 
 export interface AuthUser {
   id: string;

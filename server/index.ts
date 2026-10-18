@@ -1252,6 +1252,20 @@ app.post('/api/permission-requests/:id/decide', authenticate, async (req, res) =
         WHERE permission_request_id = ${requestId} AND role = 'Principal'
       `;
 
+      if (newStatus === 'Approved') {
+        await sql`
+          UPDATE public.permission_request_resources
+          SET status = 'Approved', decided_by = ${user.name}, decided_at = NOW()
+          WHERE permission_request_id = ${requestId}
+        `;
+      } else if (newStatus === 'Rejected') {
+        await sql`
+          UPDATE public.permission_request_resources
+          SET status = 'Rejected', decided_by = ${user.name}, decided_at = NOW()
+          WHERE permission_request_id = ${requestId}
+        `;
+      }
+
       await logAudit(user.id, user.name, `PRINCIPAL_${action.toUpperCase()}`, `permission_requests:${requestId}`, { refNo: prop.ref_no, remark, policy, finalStatus: newStatus });
       res.json({
         message: newStatus === 'Approved'

@@ -385,7 +385,7 @@ export function PermissionPortal() {
     } else if (decisionAction === 'Changes Requested') {
       overallStatus = 'Changes Requested';
     } else {
-      const policy = options?.approvalPolicy ?? 'both';
+      const policy = options?.approvalPolicy ?? 'principal_only';
       if (role === 'Principal') {
         if (policy === 'principal_only') {
           overallStatus = 'Approved';
@@ -435,8 +435,12 @@ export function PermissionPortal() {
         action: decisionAction,
         remark: decisionRemark.trim() || undefined,
       });
-    } catch (apiErr) {
+      await refresh();
+    } catch (apiErr: any) {
       console.warn('API decide fallback to local store:', apiErr);
+      if (apiErr?.message?.includes('Authentication') || apiErr?.message?.includes('401') || apiErr?.message?.includes('sign in')) {
+        alert('Your session has expired. Please sign in again.');
+      }
     }
 
     // Specific notifications per role
@@ -496,6 +500,7 @@ export function PermissionPortal() {
     Dean: { label: 'Dean Review Panel', desc: 'Cross-department oversight: review endorsed proposals before Principal sanction.' },
     HOD: { label: 'HOD Department Panel', desc: 'Department authority: review submissions from your faculty before forwarding to Dean.' },
     Faculty: { label: 'Faculty Submission Desk', desc: 'Submit activity permission requests and track their approval status.' },
+    'Office Admin': { label: 'Office Admin Desk', desc: 'Administrative staff view: manage records, notices, and institutional operations.' },
   }[role] ?? { label: 'Permission Portal', desc: '' };
 
   const meta = ROLE_META[role];
@@ -611,11 +616,14 @@ export function PermissionPortal() {
           onClick={() => setStatusFilter('Pending')} active={statusFilter === 'Pending'} />
         <StatCard label="Approved / Sanctioned" value={stats.approved} sub="Letters issued" color="emerald"
           onClick={() => setStatusFilter('Approved')} active={statusFilter === 'Approved'} />
-        <StatCard label="Rejected / Revise" value={canApprove ? stats.awaitingMe : stats.rejected}
+        <StatCard
+          label={canApprove ? "Awaiting My Action" : "Rejected / Revise"}
+          value={canApprove ? stats.awaitingMe : stats.rejected}
           sub={canApprove ? 'Needs your action' : 'Needs revision'}
           color={canApprove ? 'violet' : 'rose'}
           onClick={() => setStatusFilter(canApprove ? 'Awaiting Me' : 'Rejected')}
-          active={statusFilter === (canApprove ? 'Awaiting Me' : 'Rejected')} />
+          active={statusFilter === (canApprove ? 'Awaiting Me' : 'Rejected')}
+        />
       </div>
 
       {/* ── FILTER & ACTION BAR ─────────────────────────────── */}

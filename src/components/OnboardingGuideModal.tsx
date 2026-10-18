@@ -77,6 +77,12 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
       accentBg: 'bg-[#1B365D]',
       badgeBg: 'bg-white/15 text-blue-200',
     },
+    'Office Admin': {
+      title: 'Office Administration & Records Guide',
+      badge: '📋 Office Admin',
+      accentBg: 'bg-slate-800',
+      badgeBg: 'bg-slate-700 text-slate-200',
+    },
   }[role] || {
     title: 'Portal Walkthrough & Guide',
     badge: 'Docworm Guide',
@@ -95,6 +101,7 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
               {role === 'Dean' && <GraduationCap size={22} />}
               {role === 'HOD' && <Building size={22} />}
               {role === 'Faculty' && <User size={22} />}
+              {role === 'Office Admin' && <Building size={22} />}
             </span>
             <div>
               <div className="flex items-center gap-2">

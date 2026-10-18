@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import postgres from 'postgres';
+import bcrypt from 'bcryptjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -55,11 +56,18 @@ async function inspectAndClean() {
     }
   }
 
-  const users = await sql`SELECT id, name, email, role, department_id FROM public.users ORDER BY email`;
-  console.log('\n--- Current Users in DB ---');
-  for (const u of users) {
-    console.log(`- ${u.role}: ${u.name} (${u.email}) [dept: ${u.department_id}]`);
-  }
+  const reqs = await sql`SELECT id, ref_no, event_name, status, submitter_name FROM public.permission_requests`;
+  console.log('\n--- Permission Requests ---', JSON.stringify(reqs, null, 2));
+
+  const steps = await sql`SELECT id, permission_request_id, step_order, role, action, remark FROM public.permission_request_approval_steps ORDER BY step_order`;
+  console.log('\n--- Approval Steps ---', JSON.stringify(steps, null, 2));
+
+  const cons = await sql`
+    SELECT conname, pg_get_constraintdef(oid) as def
+    FROM pg_constraint
+    WHERE conrelid = 'public.users'::regclass
+  `;
+  console.log('\n--- Constraints on public.users ---', JSON.stringify(cons, null, 2));
 
   await sql.end();
 }

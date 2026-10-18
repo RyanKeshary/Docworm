@@ -3,7 +3,7 @@
 // BudgetItems, POMappings, ApprovalSteps, Comments, CompletionReports,
 // Tasks, TaskUpdates, Notifications, AuditLogs, Settings.
 
-export type Role = 'Principal' | 'Dean' | 'HOD' | 'Faculty';
+export type Role = 'Principal' | 'Dean' | 'HOD' | 'Faculty' | 'Office Admin';
 export type ProposalStatus =
   | 'Draft' | 'Submitted' | 'Under Review' | 'Approved'
   | 'Rejected' | 'Changes Requested' | 'Withdrawn' | 'Completed';
