@@ -1008,7 +1008,7 @@ export function SettingsPage() {
       return users;
     }
     if (isDean) {
-      return users.filter((u) => u.role === 'HOD' || u.role === 'Faculty');
+      return users.filter((u) => u.role === 'HOD' || u.role === 'Faculty' || u.role === 'Dean');
     }
     if (isHod) {
       return users.filter((u) => u.role === 'Faculty' && (u.department === currentUser.department || !u.department));
@@ -1018,7 +1018,7 @@ export function SettingsPage() {
 
   const availableStaffFilters = useMemo(() => {
     if (isPrincipal) return ['All', 'Principal', 'Dean', 'HOD', 'Faculty'] as const;
-    if (isDean) return ['All', 'HOD', 'Faculty'] as const;
+    if (isDean) return ['All', 'Dean', 'HOD', 'Faculty'] as const;
     if (isHod) return ['All', 'Faculty'] as const;
     return ['All'] as const;
   }, [isPrincipal, isDean, isHod]);
@@ -1051,9 +1051,9 @@ export function SettingsPage() {
       setLeadershipFeedback({ type: 'error', msg: 'Full name and institutional email are required.' });
       return;
     }
-    const targetDept = isHod ? (currentUser.department || 'IT') : (leadershipForm.role === 'Principal' ? '' : (leadershipForm.department || 'IT'));
+    const targetDept = isHod ? (currentUser.department || 'IT') : (leadershipForm.role === 'Principal' || leadershipForm.role === 'Dean' ? '' : (leadershipForm.department || 'IT'));
     const targetDesignation = leadershipForm.designation.trim() || (
-      leadershipForm.role === 'Dean' ? 'Dean, Student Welfare' :
+      leadershipForm.role === 'Dean' ? 'Dean' :
       leadershipForm.role === 'HOD' ? `Head of Department, ${targetDept}` :
       leadershipForm.role === 'Office Admin' ? 'Administrative Officer' :
       'Assistant Professor'
@@ -1289,7 +1289,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-sm text-slate-900">{u.name}</span>
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-                              Dept of {u.department}
+                              {u.department ? `Dept of ${u.department}` : 'All Departments'}
                             </span>
                           </div>
                           <p className="text-xs text-slate-600 mt-0.5">{u.designation || 'Faculty Coordinator'} • <span className="font-mono text-slate-700">{u.email}</span></p>
@@ -1396,9 +1396,9 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                         disabled
                         className={`${inputCls} bg-slate-50 text-slate-600 font-semibold cursor-not-allowed`}
                       />
-                    ) : leadershipForm.role === 'Principal' ? (
+                    ) : (leadershipForm.role === 'Principal' || leadershipForm.role === 'Dean') ? (
                       <input
-                        value="Institutional Master (All Departments)"
+                        value="Institutional Oversight (All Departments)"
                         disabled
                         className={`${inputCls} bg-slate-50 text-slate-500 cursor-not-allowed`}
                       />
@@ -1551,7 +1551,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                           )}
                         </div>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          {u.designation} • Dept of {u.department} • <span className="font-mono text-slate-700">{u.email}</span>
+                          {u.designation} • {u.role === 'Principal' || u.role === 'Dean' || !u.department ? 'All Departments' : `Dept of ${u.department}`} • <span className="font-mono text-slate-700">{u.email}</span>
                           {u.phone && ` • ${u.phone}`}
                         </p>
                       </div>

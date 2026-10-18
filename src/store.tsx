@@ -236,7 +236,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         if (mounted && me.user) {
           setCurrentUser({
             ...me.user,
-            department: me.user.role === 'Principal' ? null : me.user.department,
+            department: (me.user.role === 'Principal' || me.user.role === 'Dean') ? null : me.user.department,
           });
           setIsAuthenticated(true);
         }
@@ -307,7 +307,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (res.user) {
         setCurrentUser({
           ...res.user,
-          department: res.user.role === 'Principal' ? null : res.user.department,
+          department: (res.user.role === 'Principal' || res.user.role === 'Dean') ? null : res.user.department,
         });
         setIsAuthenticated(true);
         // Refresh workspace data concurrently in background so navigation is instant

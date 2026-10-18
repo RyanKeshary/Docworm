@@ -542,7 +542,7 @@ export function Dashboard() {
             Welcome, {currentUser.name || currentUser.role}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Department of {currentUser.department} • {currentUser.designation || currentUser.role}
+            {(currentUser.role === 'Principal' || currentUser.role === 'Dean' || !currentUser.department) ? 'All Departments Oversight' : `Department of ${currentUser.department}`} • {currentUser.designation || currentUser.role}
           </p>
         </div>
 

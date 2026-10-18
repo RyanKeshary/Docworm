@@ -265,7 +265,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold text-ink truncate">{currentUser.name}</p>
                 <p className={`text-[11px] truncate ${roleMeta.accent}`}>
-                  {currentUser.role}{currentUser.department ? ` • ${currentUser.department}` : ''}
+                  {currentUser.role}{currentUser.department ? ` • ${currentUser.department}` : (currentUser.role === 'Principal' || currentUser.role === 'Dean' ? ' • All Depts' : '')}
                 </p>
               </div>
             </div>
