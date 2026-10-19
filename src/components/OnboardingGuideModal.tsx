@@ -284,7 +284,7 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
                       <div className="w-6 h-6 rounded-full bg-blue-700 text-white flex items-center justify-center shrink-0 font-bold text-[11px]">1</div>
                       <div>
                         <span className="font-bold text-slate-900 block">Inter-Departmental Oversight</span>
-                        <span>View proposals from all engineering branches and centralized bodies (Student Council, NSS, Rotaract, Sports Committee).</span>
+                        <span>View proposals from all engineering branches and centralized bodies (Student Council, NSS, DLLE, Sports Committee).</span>
                       </div>
                     </div>
                     <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl flex items-start gap-3">

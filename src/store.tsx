@@ -65,6 +65,7 @@ interface DataState {
   updateCurrentUser: (updates: Partial<User>) => void;
   resetDemo: () => void;
   purgeFakeData: () => void;
+  purgeAllDataWithExport: () => Promise<{ success: boolean; message: string; filename?: string }>;
 }
 
 const Ctx = createContext<DataState | null>(null);
@@ -167,7 +168,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         })));
       }
 
-      if (propRes.status === 'fulfilled' && propRes.value.requests) {
+      if (propRes.status === 'fulfilled' && propRes.value?.requests) {
         setProposals(propRes.value.requests.map((r: any) => ({
           id: r.id,
           refNo: r.ref_no,
@@ -227,18 +228,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         })));
       }
 
-      if (optRes.status === 'fulfilled' && optRes.value.options) {
+      if (optRes.status === 'fulfilled' && optRes.value?.options) {
         setOptions((prev) => ({
           ...prev,
           ...optRes.value.options,
         }));
       }
 
-      if (lhRes.status === 'fulfilled' && lhRes.value.letterhead?.collegeName) {
+      if (lhRes.status === 'fulfilled' && lhRes.value?.letterhead?.collegeName) {
         setLetterhead(lhRes.value.letterhead);
       }
 
-      if (annRes.status === 'fulfilled' && annRes.value.announcements) {
+      if (annRes.status === 'fulfilled' && annRes.value?.announcements) {
         setNotifications(
           annRes.value.announcements
             .filter((a: any) => !a.is_archived)
@@ -254,7 +255,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         );
       }
 
-      if (auditRes.status === 'fulfilled' && auditRes.value.logs) {
+      if (auditRes.status === 'fulfilled' && auditRes.value?.logs) {
         setAudit(auditRes.value.logs.map((l: any) => ({
           id: l.id,
           actorId: l.actor_id || '',
@@ -265,6 +266,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
 
       setSyncState('live');
+      setBackendError('');
       setLastSyncedAt(nowStr());
       setLiveTick((t) => t + 1);
     } catch (err: any) {
@@ -620,7 +622,53 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Purge Fake Data
+  // Purge All Data across all places after full export (Jarvis-style Export & Purge)
+  const purgeAllDataWithExport = async (): Promise<{ success: boolean; message: string; filename?: string }> => {
+    try {
+      // 1. Fetch full database backup bundle
+      const backupData = await api.admin.exportAllData();
+
+      // 2. Trigger automatic client-side download of backup file
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const filename = `Docworm_Complete_Institutional_Archive_${new Date().toISOString().slice(0, 10)}.json`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      // 3. Once exported across all places, completely delete operational data from database
+      await api.admin.purgeAllData();
+
+      // 4. Clean local storage mock keys & cached datasets
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('docworm:') || k.startsWith('docworm_gp_cache_'))) {
+          localStorage.removeItem(k);
+        }
+      }
+
+      // 5. Fresh reload
+      await refresh(true);
+
+      return {
+        success: true,
+        message: 'All operational data was successfully exported and completely purged from the database.',
+        filename,
+      };
+    } catch (err: any) {
+      console.error('Export & Purge error:', err);
+      return {
+        success: false,
+        message: err.message || 'Failed to export and purge database records.',
+      };
+    }
+  };
+
+  // Legacy Purge Fake Data
   const purgeFakeData = () => {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
@@ -699,6 +747,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     updateCurrentUser,
     resetDemo: () => {},
     purgeFakeData,
+    purgeAllDataWithExport,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

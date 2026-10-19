@@ -321,8 +321,8 @@ export function PermissionPortal() {
 
     saveProposals([newProposal, ...proposals]);
 
-    // Route first notification: if submitter is HOD, notify Dean directly!
-    const firstReviewer = currentUser.role === 'HOD' ? deanUser : hodUser;
+    // Route first notification: if submitter is Dean, notify Principal directly; if HOD, notify Dean directly!
+    const firstReviewer = currentUser.role === 'Dean' ? principalUser : currentUser.role === 'HOD' ? deanUser : hodUser;
     if (firstReviewer) {
       pushNotification({
         userId: firstReviewer.id,
@@ -1107,7 +1107,7 @@ export function PermissionPortal() {
                     {[
                       'IT', 'CMPN', 'EXTC', 'ECS', 'MECH', 'CIVIL', 'HAS',
                       'Cultural Committee', 'Student Council', 'Sports Committee',
-                      'E-Cell', 'NSS', 'Training & Placement', 'Rotaract Club', 'Technical Committee',
+                      'E-Cell', 'NSS', 'Training & Placement', 'DLLE', 'Technical Committee',
                     ].map((d) => (
                       <option key={d} value={d}>{d}</option>
                     ))}
@@ -1495,22 +1495,24 @@ export function PermissionPortal() {
                   <p className="font-semibold text-slate-900">{letterProposal.submitterName}</p>
                   <p className="text-slate-500">Event Coordinator, Dept of {letterProposal.submitterDept}</p>
                 </div>
-                <div className="text-right">
-                  {letterProposal.status === 'Approved' ? (
-                    <div className="border-2 border-emerald-600 bg-emerald-50/50 p-2 rounded-lg inline-block text-center">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 block">Digitally Approved & Sanctioned</span>
-                      <span className="font-bold text-xs text-emerald-900 block mt-0.5">Principal Office</span>
-                      <span className="text-[9px] text-emerald-700 block">{letterProposal.updatedAt}</span>
-                    </div>
-                  ) : letterProposal.status === 'Rejected' ? (
-                    <div className="border-2 border-rose-500 bg-rose-50 p-2 rounded-lg inline-block text-center">
-                      <span className="text-[10px] font-bold uppercase text-rose-700 block">Not Sanctioned</span>
-                    </div>
-                  ) : (
-                    <div className="border border-dashed border-slate-300 p-2 rounded-lg inline-block text-center text-slate-400">
-                      <span className="text-[10px] block">Pending Approval Chain</span>
-                    </div>
-                  )}
+                <div className="text-right flex flex-col items-end">
+                  <div className="text-right mb-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-800 block">
+                      Approved By:
+                    </span>
+                    <span className="font-bold text-xs text-slate-950 block">
+                      {letterProposal.approvalChain.find((s) => s.role === 'Principal')?.userName || 'Principal Office'}
+                    </span>
+                    <span className="text-[10px] text-slate-600 block">
+                      Status: <span className="font-semibold text-emerald-700">{letterProposal.status === 'Approved' ? 'Officially Sanctioned & Approved' : letterProposal.status}</span>
+                    </span>
+                  </div>
+
+                  {/* Principal Physical Signature Block - Left Empty for Physical Signature */}
+                  <div className="w-56 border-t-2 border-black pt-1.5 mt-8 text-center">
+                    <p className="font-bold text-xs text-black uppercase tracking-wide">Principal Signature & Seal</p>
+                    <p className="text-[10px] text-slate-500 italic mt-0.5">(Sign and stamp physically)</p>
+                  </div>
                 </div>
               </div>
             </div>

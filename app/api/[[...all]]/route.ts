@@ -511,6 +511,82 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ all?
     });
   }
 
+  // 12b. Full Database Export (Jarvis-style Institutional Backup)
+  if (path === '/admin/export-all-data') {
+    if (user.role !== 'Principal') {
+      return jsonError('Forbidden: Only the Principal has authority to export full institutional data.', 403);
+    }
+    try {
+      const [
+        proposals,
+        resources,
+        budgetItems,
+        approvalSteps,
+        comments,
+        gatePasses,
+        tasks,
+        announcements,
+        auditLog,
+        departments,
+        categories,
+        options,
+        settings,
+        usersList,
+      ] = await Promise.all([
+        sql`SELECT * FROM public.permission_requests ORDER BY created_at DESC`,
+        sql`SELECT * FROM public.permission_request_resources`,
+        sql`SELECT * FROM public.permission_request_budget_items`,
+        sql`SELECT * FROM public.permission_request_approval_steps`,
+        sql`SELECT * FROM public.permission_request_comments`,
+        sql`SELECT * FROM public.employee_gate_passes ORDER BY created_at DESC`,
+        sql`SELECT * FROM public.tasks ORDER BY created_at DESC`,
+        sql`SELECT * FROM public.announcements ORDER BY created_at DESC`,
+        sql`SELECT * FROM public.audit_log ORDER BY created_at DESC LIMIT 5000`,
+        sql`SELECT * FROM public.departments`,
+        sql`SELECT * FROM public.event_categories`,
+        sql`SELECT * FROM public.academic_options`,
+        sql`SELECT * FROM public.app_settings`,
+        sql`SELECT id, email, name, role, department, department_id, phone, is_approved, created_at FROM public.users`,
+      ]);
+
+      const exportBundle = {
+        exportedAt: new Date().toISOString(),
+        exportedBy: { id: user.id, name: user.name, role: user.role, email: user.email },
+        system: 'Docworm Institutional Platform',
+        institution: 'Shree L. R. Tiwari College of Engineering',
+        version: '1.0.0',
+        counts: {
+          permission_requests: proposals.length,
+          gate_passes: gatePasses.length,
+          tasks: tasks.length,
+          announcements: announcements.length,
+          audit_log: auditLog.length,
+          users: usersList.length,
+        },
+        data: {
+          permission_requests: proposals,
+          permission_request_resources: resources,
+          permission_request_budget_items: budgetItems,
+          permission_request_approval_steps: approvalSteps,
+          permission_request_comments: comments,
+          employee_gate_passes: gatePasses,
+          tasks,
+          announcements,
+          audit_log: auditLog,
+          departments,
+          event_categories: categories,
+          academic_options: options,
+          app_settings: settings,
+          users: usersList,
+        },
+      };
+
+      return NextResponse.json(exportBundle);
+    } catch (err: any) {
+      return jsonError(err.message || 'Failed to export institutional database.', 500);
+    }
+  }
+
   // 13. Admin Tables
   if (path === '/admin/tables') {
     if (!can(user, 'admin:table_editor_read')) {
@@ -2245,6 +2321,47 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       return NextResponse.json({ message: `Category '${name}' created.` }, { status: 201 });
     } catch {
       return jsonError('Failed to create category.', 500);
+    }
+  }
+
+  // 18b. Complete Database Purge (Jarvis-style Wipe after Export)
+  if (path === '/admin/purge-all-data') {
+    if (user.role !== 'Principal') {
+      return jsonError('Forbidden: Only the Principal has authority to purge institutional data.', 403);
+    }
+    try {
+      // 1. Delete all permission requests (cascades to resources, budget, approval steps, comments, attachments, completions)
+      await sql`DELETE FROM public.permission_requests`;
+      // 2. Delete all employee gate passes
+      await sql`DELETE FROM public.employee_gate_passes`;
+      // 3. Delete all tasks (cascades to assignees, updates)
+      await sql`DELETE FROM public.tasks`;
+      // 4. Delete announcements and receipts
+      await sql`DELETE FROM public.announcement_receipts`;
+      await sql`DELETE FROM public.announcements`;
+      // 5. Delete audit log
+      await sql`DELETE FROM public.audit_log`;
+      // 6. Reset reference counters
+      await sql`DELETE FROM public.ref_counters`;
+
+      // 7. Log this major purge in a fresh audit log entry
+      await logAudit(user.id, user.name, 'ALL_DATABASE_DATA_PURGED', 'database:complete_purge', {
+        initiatedBy: user.email,
+        timestamp: new Date().toISOString(),
+        note: 'All proposals, gate passes, tasks, announcements, and receipts completely purged following full data export.',
+      });
+
+      broadcastRealtime({ type: 'sync_all' });
+      broadcastRealtime({ type: 'requests_updated', action: 'purge' });
+      broadcastRealtime({ type: 'gate_passes_updated', action: 'purge' });
+      broadcastRealtime({ type: 'announcements_updated' });
+
+      return NextResponse.json({
+        ok: true,
+        message: 'All operational data (proposals, gate passes, tasks, announcements, and audit records) has been completely deleted.',
+      });
+    } catch (err: any) {
+      return jsonError(err.message || 'Failed to purge database records.', 500);
     }
   }
 

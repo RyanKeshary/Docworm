@@ -185,11 +185,11 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
       return resource.faculty_id === user.id || resource.submitter_id === user.id;
 
     case 'request:create':
-      // Faculty and HOD can submit their own requests. Principal optional. Dean cannot.
-      return role === 'Faculty' || role === 'HOD' || role === 'Principal';
+      // Faculty, HOD, Dean, and Principal can submit permission requests.
+      return role === 'Faculty' || role === 'HOD' || role === 'Dean' || role === 'Principal';
 
     case 'request:edit_own':
-      if (!resource) return role === 'Faculty' || role === 'HOD';
+      if (!resource) return role === 'Faculty' || role === 'HOD' || role === 'Dean';
       const isOwner = resource.faculty_id === user.id || resource.submitter_id === user.id;
       const isEditable = resource.status === 'Draft' || resource.status === 'Changes Requested';
       return (isOwner && isEditable) || role === 'Principal';
@@ -261,7 +261,7 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
 
     case 'gatepass:create':
     case 'leave:create':
-      return role === 'Faculty' || role === 'HOD';
+      return role === 'Faculty' || role === 'HOD' || role === 'Dean';
 
     case 'gatepass:endorse_hod':
     case 'leave:endorse_hod': {
@@ -277,7 +277,7 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
 
     case 'gatepass:cancel_own':
     case 'leave:cancel_own':
-      if (!resource) return role === 'Faculty' || role === 'HOD';
+      if (!resource) return role === 'Faculty' || role === 'HOD' || role === 'Dean';
       return (resource.employee_id || resource.faculty_id) === user.id && (resource.status === 'Pending' || resource.status === 'Draft');
 
 

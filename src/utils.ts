@@ -174,13 +174,42 @@ export function exportLetterPDF(p: Proposal, college: { collegeName: string; add
   doc.text(body, 14, 94);
   let y = 94 + body.length * 5 + 8;
   doc.text(`Date and time: ${p.startDate} to ${p.endDate}, ${p.startTime} to ${p.endTime}. Participants: ${p.participants}.`, 14, y);
+  y += 12;
+
+  const principalName = p.approvalChain.find((s) => s.role === 'Principal')?.userName || 'Principal';
+  const hodName = p.approvalChain.find((s) => s.role === 'HOD')?.userName || '';
+
+  // Explicit "Approved by" section
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(30, 41, 59);
+  doc.text('Approved by:', 14, y);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`${principalName} (Office of the Principal, ${college.collegeName})`, 42, y);
+  y += 6;
+  doc.setFontSize(8.5);
+  doc.setTextColor(70, 70, 80);
+  doc.text(`Sanction Status: ${p.status === 'Approved' ? 'Officially Sanctioned & Approved' : p.status}`, 42, y);
   y += 10;
+
+  // Signatures table with empty space for Principal physical signature
   autoTable(doc, {
     startY: y,
-    head: [['Coordinator', 'HOD', 'Dean / Principal']],
-    body: [[p.submitterName, p.approvalChain.find((s) => s.role === 'HOD')?.userName ?? '', p.approvalChain.find((s) => s.role === 'Principal')?.userName ?? 'Principal']],
+    head: [['Event Coordinator', 'Head of Department (HOD)', 'Principal Signature & Seal']],
+    body: [
+      [
+        p.submitterName,
+        hodName || 'Verified & Endorsed',
+        '', // Empty signature space so the principal will sign it themselves
+      ],
+      [
+        'Coordinator Sign',
+        'HOD Sign',
+        '\n\n\n_______________________\n(Sign & Seal Physically)',
+      ],
+    ],
     headStyles: { fillColor: [27, 54, 93], fontSize: 9 },
-    styles: { fontSize: 9 },
+    styles: { fontSize: 8.5, cellPadding: 3 },
   });
   doc.setFontSize(8);
   doc.setTextColor(120, 120, 130);
@@ -205,11 +234,12 @@ export async function exportLetterDOCX(p: Proposal, college: { collegeName: stri
         para('Respected Sir,'),
         para(`With reference to the subject cited above, the ${p.organizingBody} in association with ${p.departments.join(', ')} proposes to organise ${p.eventName} (${p.eventCategory}) on ${p.startDate} from ${p.startTime} to ${p.endTime}. Purpose: ${p.purpose}`),
         para('We assure disciplined conduct without disturbing academics, and we will submit a completion report after the event. We kindly request permission for the same. Thanking you, Yours faithfully.'),
+        para(`Approved by: ${p.approvalChain.find((s) => s.role === 'Principal')?.userName || 'Principal Office'} (Principal, ${college.collegeName})`, true),
         new Table({
           width: { size: 100, type: WidthType.PERCENTAGE },
           rows: [
-            new TableRow({ children: ['Coordinator', 'HOD', 'Dean / Principal'].map((h) => new TableCell({ children: [para(h, true)] })) }),
-            new TableRow({ children: [p.submitterName, p.approvalChain.find((s) => s.role === 'HOD')?.userName ?? '', 'Principal'].map((h) => new TableCell({ children: [para(h)] })) }),
+            new TableRow({ children: ['Event Coordinator', 'Head of Department', 'Principal Signature & Seal'].map((h) => new TableCell({ children: [para(h, true)] })) }),
+            new TableRow({ children: [p.submitterName, p.approvalChain.find((s) => s.role === 'HOD')?.userName ?? 'Verified', '(To be signed physically by Principal)'].map((h) => new TableCell({ children: [para(h)] })) }),
           ],
         }),
         para('Generated via Docworm, SLRTCE Digital Permission and Task System.'),

@@ -226,6 +226,8 @@ export const api = {
     runSql: (query: string, writeMode = false) =>
       apiFetch('/api/admin/sql', { method: 'POST', body: JSON.stringify({ query, writeMode }) }),
     getAuditLog: () => apiFetch('/api/audit-log'),
+    exportAllData: () => apiFetch('/api/admin/export-all-data'),
+    purgeAllData: () => apiFetch('/api/admin/purge-all-data', { method: 'POST' }),
   },
 
   push: {

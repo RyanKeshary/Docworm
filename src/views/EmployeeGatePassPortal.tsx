@@ -29,6 +29,7 @@ import {
   MapPin,
   LogOut as ExitIcon,
   LogIn as ReturnIcon,
+  UploadCloud,
 } from 'lucide-react';
 import { useData } from '../store';
 import { api } from '../lib/api';
@@ -87,6 +88,7 @@ export function EmployeeGatePassPortal() {
   const [decisionRemark, setDecisionRemark] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [isBlankPrint, setIsBlankPrint] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState('');
 
   // Application Form State
   const todayStr = new Date().toISOString().split('T')[0];
@@ -180,9 +182,16 @@ export function EmployeeGatePassPortal() {
     try {
       setSubmitting(true);
       setError('');
-      await api.gatePasses.create(form);
-      setSuccessMsg('Gate pass request submitted successfully! Awaiting HOD endorsement.');
+      const finalPurpose = uploadedFileName
+        ? `${form.purpose.trim()} [Uploaded Duty Proof / Document: ${uploadedFileName}]`
+        : form.purpose;
+      await api.gatePasses.create({
+        ...form,
+        purpose: finalPurpose,
+      });
+      setSuccessMsg('Gate pass request submitted successfully! Awaiting institutional endorsement.');
       setApplyModalOpen(false);
+      setUploadedFileName('');
       setForm({
         date: todayStr,
         department: currentUser.department || 'IT',
@@ -276,7 +285,7 @@ export function EmployeeGatePassPortal() {
       if (action === 'exit') {
         setSuccessMsg('Faculty departure recorded! Status updated to "Outside Premises" and real-time alert sent to the Principal.');
       } else {
-        setSuccessMsg('Faculty return confirmed! Status updated to "Returned / Inside Campus".');
+        setSuccessMsg('✅ You have successfully entered the campus! Your entry has been recorded and verified.');
       }
       realtime.broadcastLocal({ type: 'gate_passes_updated', action: `movement_${action}`, timestamp: new Date().toISOString() });
       await fetchPasses(true);
@@ -361,9 +370,9 @@ export function EmployeeGatePassPortal() {
     if (status === 'returned') {
       const returnFormatted = returnTime ? new Date(returnTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : null;
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-          <CheckCircle2 size={12} className="text-blue-600" />
-          Returned {returnFormatted ? `(${returnFormatted})` : ''}
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
+          <CheckCircle2 size={13} className="text-emerald-700" />
+          Successfully Entered {returnFormatted ? `(${returnFormatted})` : ''}
         </span>
       );
     }
@@ -415,7 +424,7 @@ export function EmployeeGatePassPortal() {
             <span>Export CSV</span>
           </button>
 
-          {(currentUser.role === 'Faculty' || currentUser.role === 'HOD') && (
+          {(currentUser.role === 'Faculty' || currentUser.role === 'HOD' || currentUser.role === 'Dean') && (
             <button
               onClick={() => {
                 setForm((prev) => ({
@@ -424,6 +433,7 @@ export function EmployeeGatePassPortal() {
                   department: currentUser.department || 'IT',
                   contact_phone: currentUser.phone || '',
                 }));
+                setUploadedFileName('');
                 setApplyModalOpen(true);
               }}
               className={btnPrimary}
@@ -501,6 +511,72 @@ export function EmployeeGatePassPortal() {
           </div>
         </div>
 
+        {/* Personal Faculty Movement / Campus Status Indicator */}
+        {(() => {
+          const myOutsidePass = gatePasses.find(
+            (p) => p.employee_id === currentUser.id && p.movement_status === 'outside'
+          );
+          const myReturnedPass = gatePasses.find(
+            (p) => p.employee_id === currentUser.id && p.movement_status === 'returned'
+          );
+
+          if (myOutsidePass) {
+            return (
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border-2 border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-800 flex items-center justify-center shrink-0 font-bold">
+                    <ExitIcon size={18} />
+                  </div>
+                  <div>
+                    <span className="font-bold text-amber-950 text-xs sm:text-sm block">
+                      Active Campus Departure: You Are Marked Outside
+                    </span>
+                    <span className="text-amber-800 text-[11px]">
+                      Out from <strong className="font-semibold">{myOutsidePass.time_out}</strong> until <strong className="font-semibold">{myOutsidePass.time_in}</strong>. Tap below once you return through the campus gate.
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleMovement(myOutsidePass.id, 'return')}
+                  disabled={submitting}
+                  className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm shrink-0"
+                >
+                  <ReturnIcon size={15} />
+                  <span>Mark Entry into Campus</span>
+                </button>
+              </div>
+            );
+          }
+
+          if (myReturnedPass) {
+            return (
+              <div className="p-3.5 rounded-xl bg-emerald-500/15 border-2 border-emerald-500/40 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/25 text-emerald-800 flex items-center justify-center shrink-0 font-bold">
+                    <CheckCircle2 size={18} />
+                  </div>
+                  <div>
+                    <span className="font-bold text-emerald-950 text-xs sm:text-sm block">
+                      ✓ Successfully Entered Campus
+                    </span>
+                    <span className="text-emerald-800 text-[11px]">
+                      Your gate re-entry has been officially logged and verified. You are recorded as present inside campus.
+                      {myReturnedPass.actual_return_at && (
+                        <> (Entered at: {new Date(myReturnedPass.actual_return_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })})</>
+                      )}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100/90 px-2.5 py-1 rounded-md border border-emerald-300">
+                  Status: Inside Campus
+                </span>
+              </div>
+            );
+          }
+
+          return null;
+        })()}
+
         {/* Presence Cards / Active Departure Grid */}
         <div>
           {stats.currentlyOutside === 0 ? (
@@ -540,9 +616,15 @@ export function EmployeeGatePassPortal() {
                       </p>
                       <div className="mt-2 text-[11px] space-y-0.5">
                         <div className="flex justify-between">
-                          <span className="text-ink-muted">Departed at:</span>
+                          <span className="text-ink-muted">Recorded Departure:</span>
                           <span className="font-mono text-rose-700 font-semibold">
                             {pass.actual_exit_at ? new Date(pass.actual_exit_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : pass.time_out}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-ink-muted">Outside Period:</span>
+                          <span className="font-semibold text-amber-900">
+                            From {pass.time_out} until {pass.time_in}
                           </span>
                         </div>
                         <div className="flex justify-between">
@@ -1198,10 +1280,10 @@ export function EmployeeGatePassPortal() {
               </div>
             </div>
 
-            {/* Row 1: Date & Department */}
+            {/* Row 1: Start Date (Single date only) & Department */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-semibold text-ink block mb-1">Date *</label>
+                <label className="text-xs font-semibold text-ink block mb-1">Start Date *</label>
                 <input
                   type="date"
                   required
@@ -1209,6 +1291,7 @@ export function EmployeeGatePassPortal() {
                   onChange={(e) => setForm({ ...form, date: e.target.value })}
                   className={inputCls}
                 />
+                <span className="text-[11px] text-ink-muted mt-0.5 block">Recorded movement date (single date only; no multi-day gate pass)</span>
               </div>
 
               <div>
@@ -1271,10 +1354,10 @@ export function EmployeeGatePassPortal() {
               </div>
             </div>
 
-            {/* Row 4: Timing (Time Out & Time In) */}
+            {/* Row 4: Timing (Start Timing & End Timing) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-slate-50 rounded-xl border border-slate-200">
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Time Out (Departure) *</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Start Timing (Time Out / Departure) *</label>
                 <input
                   type="text"
                   required
@@ -1283,11 +1366,11 @@ export function EmployeeGatePassPortal() {
                   onChange={(e) => setForm({ ...form, time_out: e.target.value })}
                   className={inputCls}
                 />
-                <span className="text-[11px] text-slate-500 mt-0.5 block">Expected time leaving campus</span>
+                <span className="text-[11px] text-slate-500 mt-0.5 block">Recorded time leaving campus</span>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Time In (Expected Return) *</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">End Timing (Expected Return) *</label>
                 <input
                   type="text"
                   required
@@ -1296,7 +1379,41 @@ export function EmployeeGatePassPortal() {
                   onChange={(e) => setForm({ ...form, time_in: e.target.value })}
                   className={inputCls}
                 />
-                <span className="text-[11px] text-slate-500 mt-0.5 block">Expected time returning or End of Day</span>
+                <span className="text-[11px] text-slate-500 mt-0.5 block">Expected return timing (same day)</span>
+              </div>
+            </div>
+
+            {/* Mobile / Phone Direct Upload */}
+            <div className="p-3 bg-primary-pale/30 border border-primary/20 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-ink flex items-center gap-1.5">
+                  <UploadCloud size={14} className="text-primary" />
+                  <span>Upload from Phone (Duty Slip / Letter / Photo)</span>
+                </label>
+                <span className="text-[10px] text-ink-muted">Optional</span>
+              </div>
+              <p className="text-[11px] text-ink-muted">
+                You can capture a photo directly from your smartphone camera or upload a file from your device.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="file"
+                  id="mobileDutyProof"
+                  accept="image/*,application/pdf"
+                  capture="environment"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setUploadedFileName(file.name);
+                    }
+                  }}
+                  className="text-xs text-ink file:mr-2 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-primary file:text-white hover:file:opacity-90 cursor-pointer"
+                />
+                {uploadedFileName && (
+                  <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 flex items-center gap-1">
+                    <Check size={12} /> {uploadedFileName}
+                  </span>
+                )}
               </div>
             </div>
 

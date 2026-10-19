@@ -81,7 +81,7 @@ export function buildApprovalChain(
 ) {
   const prefix = proposalId ? `${proposalId}-` : `step-${Date.now().toString(36)}-`;
   const chain = [];
-  if (submitterRole !== 'HOD') {
+  if (submitterRole !== 'HOD' && submitterRole !== 'Dean') {
     chain.push({
       id: `${prefix}hod`,
       role: 'HOD',
@@ -90,13 +90,15 @@ export function buildApprovalChain(
       action: 'Pending' as const,
     });
   }
-  chain.push({
-    id: `${prefix}dean`,
-    role: 'Dean',
-    userId: deanUser?.id ?? '',
-    userName: deanUser?.name ?? 'Dean (Student Welfare)',
-    action: 'Pending' as const,
-  });
+  if (submitterRole !== 'Dean') {
+    chain.push({
+      id: `${prefix}dean`,
+      role: 'Dean',
+      userId: deanUser?.id ?? '',
+      userName: deanUser?.name ?? 'Dean (Student Welfare)',
+      action: 'Pending' as const,
+    });
+  }
   chain.push({
     id: `${prefix}prin`,
     role: 'Principal',
@@ -147,11 +149,11 @@ export function canActOnProposal(
  * Permission matrix for UI actions.
  * - Faculty: submits proposals, tracks own requests.
  * - HOD: sees everything in their department; endorses & forwards to Dean.
- * - Dean: sees all HODs and faculties across all departments; recommends & forwards to Principal.
+ * - Dean: sees all HODs and faculties across all departments; can create permissions; recommends & forwards to Principal.
  * - Principal: sees all institutional requests & staff; holds the EXCLUSIVE final sanction / approval authority.
  */
 export const PERMISSIONS = {
-  canCreateProposal: (role: Role) => role === 'Faculty' || role === 'HOD',
+  canCreateProposal: (role: Role) => role === 'Faculty' || role === 'HOD' || role === 'Dean',
   canReviewInChain: (role: Role) => hasAuthority(role, 'HOD'),
   canEndorseAsHOD: (role: Role) => role === 'HOD',
   canRecommendAsDean: (role: Role) => role === 'Dean',
@@ -164,8 +166,9 @@ export const PERMISSIONS = {
   canViewDepartmentProposals: (role: Role) => role === 'HOD',
   canViewAuditLogs: (role: Role) => hasAuthority(role, 'HOD'),
   canViewAllTasks: (role: Role) => hasAuthority(role, 'HOD'),
-  canSubmitCompletion: (role: Role) => role === 'Faculty' || role === 'HOD',
-  canWithdrawProposal: (role: Role) => role === 'Faculty' || role === 'HOD',
+  canSubmitCompletion: (role: Role) => role === 'Faculty' || role === 'HOD' || role === 'Dean',
+  canWithdrawProposal: (role: Role) => role === 'Faculty' || role === 'HOD' || role === 'Dean',
+  canRequestGatePass: (role: Role) => role === 'Faculty' || role === 'HOD' || role === 'Dean',
   canViewAnalytics: (role: Role) => hasAuthority(role, 'HOD'),
   canViewAllDepartments: (role: Role) => hasAuthority(role, 'Dean'),
 } as const;
