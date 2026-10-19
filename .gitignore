@@ -3,6 +3,7 @@ node_modules/
 
 # Build
 dist/
+.next/
 
 # Env (never commit keys)
 .env*
@@ -15,3 +16,4 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
+*.tsbuildinfo

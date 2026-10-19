@@ -3,7 +3,7 @@
 // BudgetItems, POMappings, ApprovalSteps, Comments, CompletionReports,
 // Tasks, TaskUpdates, Notifications, AuditLogs, Settings.
 
-export type Role = 'Principal' | 'Dean' | 'HOD' | 'Faculty';
+export type Role = 'Principal' | 'Dean' | 'HOD' | 'Faculty' | 'Office Admin';
 export type ProposalStatus =
   | 'Draft' | 'Submitted' | 'Under Review' | 'Approved'
   | 'Rejected' | 'Changes Requested' | 'Withdrawn' | 'Completed';
@@ -194,6 +194,43 @@ export type LeaveStatus =
   | 'Rejected'
   | 'Cancelled';
 
+export type GatePassStatus =
+  | 'Pending'
+  | 'Recommended'
+  | 'Approved'
+  | 'Rejected'
+  | 'Cancelled';
+
+export interface EmployeeGatePass {
+  id: string;
+  ref_no: string;
+  employee_id: string;
+  employee_name: string;
+  employee_email?: string;
+  employee_phone?: string;
+  department_id?: string;
+  department: string;
+  date: string;
+  purpose: string;
+  time_out: string;
+  time_in: string;
+  contact_phone?: string;
+  status: GatePassStatus;
+  movement_status?: 'inside' | 'outside' | 'returned';
+  actual_exit_at?: string;
+  actual_return_at?: string;
+  hod_id?: string;
+  hod_name?: string;
+  hod_remark?: string;
+  hod_acted_at?: string;
+  principal_id?: string;
+  principal_name?: string;
+  principal_remark?: string;
+  principal_acted_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface FacultyLeave {
   id: string;
   ref_no: string;
@@ -226,4 +263,5 @@ export interface FacultyLeave {
   created_at: string;
   updated_at: string;
 }
+
 

@@ -9,27 +9,12 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
     'Accept': 'application/json',
   };
 
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('docworm_token');
-    if (token) {
-      defaultHeaders['Authorization'] = `Bearer ${token}`;
-    }
-  }
+  // Note: Session token is securely stored in httpOnly, Secure, SameSite=Strict cookies.
+  // JavaScript cannot and does not read or store session tokens in localStorage (immune to XSS).
 
   if (!(options.body instanceof FormData)) {
     defaultHeaders['Content-Type'] = 'application/json';
   }
-
-  const isLocal = typeof window !== 'undefined' && (
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1' ||
-    window.location.hostname === '0.0.0.0' ||
-    window.location.hostname.endsWith('.local')
-  );
-
-  // Direct port 3001 is ONLY applicable for local development on localhost/127.0.0.1.
-  // In production (e.g. Vercel at docworm-portal.vercel.app), all API calls go to same-origin /api.
-  const localDirectBase = isLocal ? `${window.location.protocol}//${window.location.hostname}:3001` : '';
 
   let res: Response;
   try {
@@ -41,53 +26,40 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
         ...options.headers,
       },
     });
-
-    // If local dev server returned 405 (static server without proxy), fallback to local backend on 3001
-    if (localDirectBase && (res.status === 405 || (res.status === 200 && res.headers.get('content-type')?.includes('text/html') && !apiPath.includes('health')))) {
-      res = await fetch(`${localDirectBase}${apiPath}`, {
-        credentials: 'include',
-        ...options,
-        headers: {
-          ...defaultHeaders,
-          ...options.headers,
-        },
-      });
-    }
   } catch (err: any) {
-    // If relative fetch failed and on local machine, try direct connection to port 3001
-    if (localDirectBase) {
-      try {
-        res = await fetch(`${localDirectBase}${apiPath}`, {
-          credentials: 'include',
-          ...options,
-          headers: {
-            ...defaultHeaders,
-            ...options.headers,
-          },
-        });
-      } catch {
-        throw new Error('Unable to connect to local backend server. Please verify backend is running on port 3001.');
-      }
-    } else {
-      throw new Error(err.message || 'Unable to connect to server. Please check your internet connection.');
-    }
+    throw new Error(err.message || 'Unable to connect to server. Please check your internet connection.');
   }
 
   const contentType = res.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
     const data = await res.json();
     if (!res.ok) {
+      if (res.status === 401 && cleanEndpoint !== '/auth/login' && cleanEndpoint !== '/auth/register' && cleanEndpoint !== '/auth/me' && cleanEndpoint !== '/auth/verify-2fa') {
+        if (typeof window !== 'undefined') {
+          try { localStorage.removeItem('docworm_token'); } catch {}
+          window.dispatchEvent(new CustomEvent('docworm_auth_expired'));
+        }
+      }
       let msg = data.error || data.message;
       if (typeof msg === 'object' && msg !== null) {
         msg = msg.message || msg.code || JSON.stringify(msg);
       }
-      throw new Error(String(msg || `Request failed with status ${res.status}`));
+      const errorObj = new Error(String(msg || `Request failed with status ${res.status}`));
+      (errorObj as any).status = res.status;
+      (errorObj as any).data = data;
+      throw errorObj;
     }
     return data;
   }
 
   const text = await res.text();
   if (!res.ok) {
+    if (res.status === 401 && cleanEndpoint !== '/auth/login' && cleanEndpoint !== '/auth/register' && cleanEndpoint !== '/auth/me' && cleanEndpoint !== '/auth/verify-2fa') {
+      if (typeof window !== 'undefined') {
+        try { localStorage.removeItem('docworm_token'); } catch {}
+        window.dispatchEvent(new CustomEvent('docworm_auth_expired'));
+      }
+    }
     let msg = text;
     try {
       const parsed = JSON.parse(text);
@@ -96,7 +68,9 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit =
         msg = typeof extracted === 'object' ? (extracted.message || extracted.code || JSON.stringify(extracted)) : extracted;
       }
     } catch {}
-    throw new Error(msg || `Server returned HTTP ${res.status}`);
+    const errorObj = new Error(msg || `Server returned HTTP ${res.status}`);
+    (errorObj as any).status = res.status;
+    throw errorObj;
   }
 
   return text as unknown as T;
@@ -106,18 +80,34 @@ export const api = {
   health: () => apiFetch('/api/health'),
 
   auth: {
-    login: async (credentials: { email: string; password: string }) => {
-      const data = await apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify(credentials) });
-      if (data?.token && typeof window !== 'undefined') {
-        localStorage.setItem('docworm_token', data.token);
-      }
-      return data;
+    login: async (credentials: {
+      email: string;
+      password: string;
+      captchaAnswer?: string;
+      captchaToken?: string;
+    }) => {
+      // Sessions are stored exclusively in httpOnly, Secure, SameSite=Strict cookies
+      return apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify(credentials) });
     },
+    verify2fa: async (payload: {
+      tempToken: string;
+      code: string;
+      method?: 'email' | 'totp' | 'backup_code';
+    }) => {
+      return apiFetch('/api/auth/verify-2fa', { method: 'POST', body: JSON.stringify(payload) });
+    },
+    resend2faOtp: (tempToken: string) =>
+      apiFetch('/api/auth/resend-2fa-otp', { method: 'POST', body: JSON.stringify({ tempToken }) }),
+    getCaptcha: () => apiFetch('/api/auth/captcha'),
+    setup2fa: () => apiFetch('/api/auth/2fa/setup', { method: 'POST' }),
+    enable2fa: (payload: { code: string; secret: string; backupCodes?: string[] }) =>
+      apiFetch('/api/auth/2fa/enable', { method: 'POST', body: JSON.stringify(payload) }),
+    disable2fa: () => apiFetch('/api/auth/2fa/disable', { method: 'POST' }),
     register: (userData: any) =>
       apiFetch('/api/auth/register', { method: 'POST', body: JSON.stringify(userData) }),
     logout: async () => {
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('docworm_token');
+        try { localStorage.removeItem('docworm_token'); } catch {}
       }
       return apiFetch('/api/auth/logout', { method: 'POST' });
     },
@@ -157,14 +147,28 @@ export const api = {
       apiFetch(`/api/permission-requests/${id}/decide`, { method: 'POST', body: JSON.stringify(payload) }),
   },
 
-  leaves: {
-    list: () => apiFetch('/api/leaves'),
+  gatePasses: {
+    list: () => apiFetch('/api/gate-passes'),
     create: (data: any) =>
-      apiFetch('/api/leaves', { method: 'POST', body: JSON.stringify(data) }),
+      apiFetch('/api/gate-passes', { method: 'POST', body: JSON.stringify(data) }),
     decide: (id: string, payload: { action: 'Recommend' | 'Approve' | 'Reject'; remark?: string }) =>
-      apiFetch(`/api/leaves/${id}/decide`, { method: 'POST', body: JSON.stringify(payload) }),
+      apiFetch(`/api/gate-passes/${id}/decide`, { method: 'POST', body: JSON.stringify(payload) }),
+    updateMovement: (id: string, action: 'exit' | 'return') =>
+      apiFetch(`/api/gate-passes/${id}/movement`, { method: 'POST', body: JSON.stringify({ action }) }),
+    quickApprove: (id: string, remark = 'Quick Sanctioned by Principal') =>
+      apiFetch(`/api/gate-passes/${id}/decide`, { method: 'POST', body: JSON.stringify({ action: 'Approve', remark }) }),
     cancel: (id: string) =>
-      apiFetch(`/api/leaves/${id}`, { method: 'DELETE' }),
+      apiFetch(`/api/gate-passes/${id}`, { method: 'DELETE' }),
+  },
+
+  leaves: {
+    list: () => apiFetch('/api/gate-passes'),
+    create: (data: any) =>
+      apiFetch('/api/gate-passes', { method: 'POST', body: JSON.stringify(data) }),
+    decide: (id: string, payload: { action: 'Recommend' | 'Approve' | 'Reject'; remark?: string }) =>
+      apiFetch(`/api/gate-passes/${id}/decide`, { method: 'POST', body: JSON.stringify(payload) }),
+    cancel: (id: string) =>
+      apiFetch(`/api/gate-passes/${id}`, { method: 'DELETE' }),
   },
 
   announcements: {
@@ -173,6 +177,10 @@ export const api = {
       apiFetch('/api/announcements', { method: 'POST', body: JSON.stringify(data) }),
     markRead: (id: string) =>
       apiFetch(`/api/announcements/${id}/read`, { method: 'POST' }),
+    archive: (id: string, is_archived: boolean = true) =>
+      apiFetch(`/api/announcements/${id}/archive`, { method: 'POST', body: JSON.stringify({ is_archived }) }),
+    delete: (id: string) =>
+      apiFetch(`/api/announcements/${id}`, { method: 'DELETE' }),
   },
 
   options: {
@@ -206,6 +214,9 @@ export const api = {
       apiFetch('/api/settings/email', { method: 'PUT', body: JSON.stringify(data) }),
     testEmail: (email?: string) =>
       apiFetch('/api/settings/test-email', { method: 'POST', body: JSON.stringify({ email }) }),
+    getApprovalPolicy: () => apiFetch('/api/settings/approval-policy'),
+    updateApprovalPolicy: (policy: 'both' | 'principal_only') =>
+      apiFetch('/api/settings/approval-policy', { method: 'PUT', body: JSON.stringify({ policy }) }),
   },
 
   admin: {

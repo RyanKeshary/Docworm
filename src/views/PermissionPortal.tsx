@@ -1,15 +1,17 @@
-import React, { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Link } from '../lib/router-compat';
 import {
   FileText, Plus, CheckCircle2, XCircle, Clock,
   Search, Printer, ShieldCheck, Building2,
   Calendar, MapPin, Users, X, Send, Check, AlertCircle,
   Eye, RotateCcw, ChevronRight, Star, Layers, BookOpen, RefreshCw,
-  Crown, Download,
+  Crown, Download, Upload, ChevronDown,
 } from 'lucide-react';
 import { useData, nowStr } from '../store';
 import { Badge, btnGhost, btnPrimary, inputCls } from '../components';
-import type { Proposal } from '../types';
+import { PermissionPortalSkeleton } from '../components/Boneyard';
+import type { Proposal, Attachment, Role } from '../types';
+import { api } from '../lib/api';
 import {
   ROLE_META, PERMISSIONS, canActOnProposal, buildApprovalChain,
   activeChainStep, getProposalsForRole, getRoleActionMeta,
@@ -91,6 +93,7 @@ export function PermissionPortal() {
   const {
     proposals, saveProposals, currentUser, setCurrentUserId, users,
     letterhead, pushNotification, pushAudit, getNextRefNumber,
+    options, uploadFile, refresh, syncState,
   } = useData();
 
   const role = currentUser.role;
@@ -103,13 +106,45 @@ export function PermissionPortal() {
   const [deptFilter, setDeptFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // ── Modals ────────────────────────────────────────────────
+  // ── Modals & Action State ────────────────────────────────
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [letterProposal, setLetterProposal] = useState<Proposal | null>(null);
   const [decidingProposal, setDecidingProposal] = useState<Proposal | null>(null);
   const [decisionAction, setDecisionAction] = useState<'Approved' | 'Rejected' | 'Changes Requested'>('Approved');
   const [decisionRemark, setDecisionRemark] = useState('');
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+
+  const getDefaultDecisionRemark = (action: 'Approved' | 'Rejected' | 'Changes Requested', userRole: Role) => {
+    if (action === 'Approved') {
+      if (userRole === 'Principal') return 'Sanctioned and approved by Principal Office. Permitted to proceed.';
+      if (userRole === 'Dean') return 'Reviewed and recommended for Principal sanction.';
+      return 'Department verified and endorsed.';
+    }
+    if (action === 'Changes Requested') {
+      return 'Modifications requested. Please update proposal details and clarifications and resubmit.';
+    }
+    if (action === 'Rejected') {
+      return 'Proposal cannot be accommodated at this time.';
+    }
+    return '';
+  };
+
+  // ── Document Upload State (Mandatory) ────────────────────
+  const [uploadedFile, setUploadedFile] = useState<Attachment | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Close open action menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (openActionMenuId && !(e.target as HTMLElement).closest('.action-menu-container')) {
+        setOpenActionMenuId(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [openActionMenuId]);
 
   // ── New Request Form ──────────────────────────────────────
   const [formData, setFormData] = useState({
@@ -128,9 +163,6 @@ export function PermissionPortal() {
   });
 
   // ── Scoped proposals based on role ────────────────────────
-  // - Principal & Dean: see ALL proposals across the institution (Dean oversees all departments/faculties, Principal sees all)
-  // - HOD: sees EVERYTHING in their department (all faculty proposals, department activities)
-  // - Faculty: sees only their own submissions
   const scopedProposals = useMemo(() => {
     return getProposalsForRole(proposals, currentUser);
   }, [proposals, currentUser]);
@@ -142,10 +174,10 @@ export function PermissionPortal() {
     const approved = scopedProposals.filter((p) => p.status === 'Approved').length;
     const rejected = scopedProposals.filter((p) => p.status === 'Rejected').length;
     const awaitingMe = canApprove
-      ? scopedProposals.filter((p) => canActOnProposal(role, p.approvalChain)).length
+      ? scopedProposals.filter((p) => canActOnProposal(role, p.approvalChain, p, currentUser.id)).length
       : 0;
     return { total, pending, approved, rejected, awaitingMe };
-  }, [scopedProposals, canApprove, role]);
+  }, [scopedProposals, canApprove, role, currentUser.id]);
 
   // ── Filtered list ─────────────────────────────────────────
   const filteredProposals = useMemo(() => {
@@ -161,7 +193,7 @@ export function PermissionPortal() {
     } else if (statusFilter === 'Mine') {
       list = list.filter((p) => p.submitterId === currentUser.id);
     } else if (statusFilter === 'Awaiting Me') {
-      list = list.filter((p) => canActOnProposal(role, p.approvalChain));
+      list = list.filter((p) => canActOnProposal(role, p.approvalChain, p, currentUser.id));
     }
 
     // Dept filter (available for Dean and Principal who oversee all departments)
@@ -185,6 +217,32 @@ export function PermissionPortal() {
     return list;
   }, [scopedProposals, statusFilter, deptFilter, searchQuery, canViewAll, role, currentUser.id]);
 
+  // ── File upload handler ───────────────────────────────────
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024) {
+      setUploadError('Document file exceeds 15 MB limit. Please select a smaller document.');
+      return;
+    }
+    setIsUploading(true);
+    setUploadError(null);
+    try {
+      const att = await uploadFile(file);
+      setUploadedFile({
+        id: `att-${Date.now().toString(36)}`,
+        name: att.name,
+        size: att.size,
+        kind: att.kind,
+        storagePath: att.storagePath,
+      });
+    } catch (err: any) {
+      setUploadError(err.message || 'Failed to upload document.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   // ── Create proposal ───────────────────────────────────────
   const handleCreateRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -193,18 +251,24 @@ export function PermissionPortal() {
       return;
     }
 
+    // Strictly mandatory upload
+    if (!uploadedFile) {
+      setUploadError('Uploading an official permission request document/brochure is mandatory.');
+      return;
+    }
+
     const currentYear = new Date().getFullYear();
     const acYear = `${currentYear}-${String(currentYear + 1).slice(2)}`;
     const propId = `p-${Date.now().toString(36)}`;
     const refNo = await getNextRefNumber(formData.department, 'PERM', acYear);
 
-    // Build the full 3-step chain: HOD → Dean → Principal with unique step IDs
+    // Build the chain: HOD submissions skip HOD step and route directly to Dean then Principal
     const hodUser = users.find((u) => u.role === 'HOD' && u.department === formData.department)
       ?? users.find((u) => u.role === 'HOD');
     const deanUser = users.find((u) => u.role === 'Dean');
     const principalUser = users.find((u) => u.role === 'Principal');
 
-    const chain = buildApprovalChain(hodUser, deanUser, principalUser, propId);
+    const chain = buildApprovalChain(hodUser, deanUser, principalUser, propId, currentUser.role);
 
     const newProposal: Proposal = {
       id: propId,
@@ -245,7 +309,7 @@ export function PermissionPortal() {
         ? `Estimated budget of Rs. ${formData.budgetAmount} requested for event conduct.`
         : '',
       poMappings: [],
-      attachments: [],
+      attachments: uploadedFile ? [uploadedFile] : [],
       submitterId: currentUser.id,
       submitterName: currentUser.name,
       submitterDept: formData.department,
@@ -257,10 +321,11 @@ export function PermissionPortal() {
 
     saveProposals([newProposal, ...proposals]);
 
-    // Notify first reviewer (HOD)
-    if (hodUser) {
+    // Route first notification: if submitter is HOD, notify Dean directly!
+    const firstReviewer = currentUser.role === 'HOD' ? deanUser : hodUser;
+    if (firstReviewer) {
       pushNotification({
-        userId: hodUser.id,
+        userId: firstReviewer.id,
         title: 'New Permission Request Awaiting Your Review',
         body: `${formData.eventName} submitted by ${currentUser.name} (${formData.department}) needs your review.`,
         link: `/proposals/${newProposal.id}`,
@@ -270,17 +335,20 @@ export function PermissionPortal() {
     pushAudit({
       actorId: currentUser.id,
       actorName: currentUser.name,
-      action: `Submitted permission request ${refNo} for "${formData.eventName}"`,
+      action: `Submitted permission request ${refNo} for "${formData.eventName}" with mandatory document "${uploadedFile.name}"`,
       entity: 'Proposal',
       entityId: newProposal.id,
     });
 
     setIsNewModalOpen(false);
+    setUploadedFile(null);
+    setUploadError(null);
     setFormData((prev) => ({ ...prev, eventName: '', purpose: '', budgetAmount: '' }));
+    refresh();
   };
 
   // ── Approver Decision (HOD / Dean / Principal) ────────────
-  const handleDecision = () => {
+  const handleDecision = async () => {
     if (!decidingProposal) return;
     if (decisionAction !== 'Approved' && !decisionRemark.trim()) {
       alert('A remark is required when rejecting or requesting changes.');
@@ -288,12 +356,15 @@ export function PermissionPortal() {
     }
 
     const active = activeChainStep(decidingProposal.approvalChain);
-    if (!active) return;
+    const principalStep = decidingProposal.approvalChain.find((s) => s.role === 'Principal');
+    // Principal has ultimate executive sanction power on any active pending request
+    const targetStep = role === 'Principal' ? (principalStep || active) : active;
+    if (!targetStep) return;
 
     const actionMeta = getRoleActionMeta(role);
 
     const updatedChain = decidingProposal.approvalChain.map((step) => {
-      if (step.id === active.id) {
+      if (step.id === targetStep.id || (role === 'Principal' && step.role === 'Principal')) {
         return {
           ...step,
           action: decisionAction,
@@ -306,20 +377,34 @@ export function PermissionPortal() {
       return step;
     });
 
-    // Determine overall status:
-    // IMPORTANT: "the approval part stays with principal"
-    // Only the Principal's sanction can make the overall proposal status 'Approved'!
+    // Determine overall status based on institutional approval policy:
+    // 'principal_only': Principal sanction alone marks Approved.
+    // 'both': Requires BOTH Dean recommendation AND Principal sanction before Approved.
     let overallStatus: Proposal['status'] = 'Under Review';
     if (decisionAction === 'Rejected') {
       overallStatus = 'Rejected';
     } else if (decisionAction === 'Changes Requested') {
       overallStatus = 'Changes Requested';
     } else {
-      const remaining = updatedChain.filter((s) => s.action === 'Pending');
-      if (remaining.length === 0 && role === 'Principal') {
-        overallStatus = 'Approved'; // Final official approval
+      const policy = options?.approvalPolicy ?? 'principal_only';
+      if (role === 'Principal') {
+        if (policy === 'principal_only') {
+          overallStatus = 'Approved';
+        } else {
+          // 'both' requires Dean endorsement
+          const deanStep = updatedChain.find((s) => s.role === 'Dean');
+          const deanApproved = !deanStep || deanStep.action === 'Approved';
+          overallStatus = deanApproved ? 'Approved' : 'Under Review';
+        }
+      } else if (role === 'Dean') {
+        if (policy === 'both') {
+          const pStep = updatedChain.find((s) => s.role === 'Principal');
+          overallStatus = pStep?.action === 'Approved' ? 'Approved' : 'Under Review';
+        } else {
+          overallStatus = 'Under Review';
+        }
       } else {
-        overallStatus = 'Under Review'; // Forwarded to next reviewer
+        overallStatus = 'Under Review';
       }
     }
 
@@ -344,6 +429,20 @@ export function PermissionPortal() {
     };
 
     saveProposals(proposals.map((p) => (p.id === decidingProposal.id ? updated : p)));
+
+    // Sync to backend DB
+    try {
+      await api.requests.decide(decidingProposal.id, {
+        action: decisionAction,
+        remark: decisionRemark.trim() || undefined,
+      });
+      await refresh();
+    } catch (apiErr: any) {
+      console.warn('API decide fallback to local store:', apiErr);
+      if (apiErr?.message?.includes('Authentication') || apiErr?.message?.includes('401') || apiErr?.message?.includes('sign in')) {
+        alert('Your session has expired. Please sign in again.');
+      }
+    }
 
     // Specific notifications per role
     const nextStep = updatedChain.find((s) => s.action === 'Pending');
@@ -402,6 +501,7 @@ export function PermissionPortal() {
     Dean: { label: 'Dean Review Panel', desc: 'Cross-department oversight: review endorsed proposals before Principal sanction.' },
     HOD: { label: 'HOD Department Panel', desc: 'Department authority: review submissions from your faculty before forwarding to Dean.' },
     Faculty: { label: 'Faculty Submission Desk', desc: 'Submit activity permission requests and track their approval status.' },
+    'Office Admin': { label: 'Office Admin Desk', desc: 'Administrative staff view: manage records, notices, and institutional operations.' },
   }[role] ?? { label: 'Permission Portal', desc: '' };
 
   const meta = ROLE_META[role];
@@ -415,6 +515,10 @@ export function PermissionPortal() {
     { key: 'Rejected', label: 'Rejected' },
     ...(!canViewAll ? [{ key: 'Mine' as typeof statusFilter, label: 'My Submissions' }] : []),
   ];
+
+  if (syncState === 'loading' && proposals.length === 0) {
+    return <PermissionPortalSkeleton />;
+  }
 
   // ─────────────────────────────────────────────────────────
   return (
@@ -434,6 +538,15 @@ export function PermissionPortal() {
 
         {/* Real institutional actions */}
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => refresh()}
+            className="px-3.5 py-2 text-xs font-bold rounded-lg border border-primary-border bg-white text-ink hover:bg-slate-50 shadow-xs transition-colors flex items-center gap-1.5"
+            title="Refresh latest requests and status from server"
+          >
+            <RefreshCw size={14} className="text-primary" />
+            Refresh
+          </button>
+
           <a
             href="/api/export/csv/permission_requests"
             download="permission_requests.csv"
@@ -445,18 +558,28 @@ export function PermissionPortal() {
           </a>
 
           {role === 'Principal' && (
-            <Link
-              to="/settings?tab=leadership"
-              className="px-3.5 py-2 text-xs font-bold rounded-lg border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100 transition-colors flex items-center gap-1.5 shadow-xs"
-            >
-              <Crown size={14} className="text-violet-600" />
-              Manage Leadership & Faculty
-              {users.filter((u) => u.status === 'pending_approval').length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-extrabold ml-1 animate-pulse">
-                  {users.filter((u) => u.status === 'pending_approval').length}
-                </span>
-              )}
-            </Link>
+            <>
+              <Link
+                to="/settings?tab=approval_policy"
+                className="px-3.5 py-2 text-xs font-bold rounded-lg border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100 transition-colors flex items-center gap-1.5 shadow-xs"
+                title="Institutional approval policy: Decide whether requests require BOTH Dean & Principal or ONLY Principal"
+              >
+                <ShieldCheck size={14} className="text-violet-600" />
+                Policy: <span className="font-extrabold">{options?.approvalPolicy === 'principal_only' ? 'Principal Only' : 'Both Dean & Principal'}</span>
+              </Link>
+              <Link
+                to="/settings?tab=leadership"
+                className="px-3.5 py-2 text-xs font-bold rounded-lg border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100 transition-colors flex items-center gap-1.5 shadow-xs"
+              >
+                <Crown size={14} className="text-violet-600" />
+                Manage Leadership & Faculty
+                {users.filter((u) => u.status === 'pending_approval').length > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-extrabold ml-1 animate-pulse">
+                    {users.filter((u) => u.status === 'pending_approval').length}
+                  </span>
+                )}
+              </Link>
+            </>
           )}
 
           {canCreate && (
@@ -498,11 +621,14 @@ export function PermissionPortal() {
           onClick={() => setStatusFilter('Pending')} active={statusFilter === 'Pending'} />
         <StatCard label="Approved / Sanctioned" value={stats.approved} sub="Letters issued" color="emerald"
           onClick={() => setStatusFilter('Approved')} active={statusFilter === 'Approved'} />
-        <StatCard label="Rejected / Revise" value={canApprove ? stats.awaitingMe : stats.rejected}
+        <StatCard
+          label={canApprove ? "Awaiting My Action" : "Rejected / Revise"}
+          value={canApprove ? stats.awaitingMe : stats.rejected}
           sub={canApprove ? 'Needs your action' : 'Needs revision'}
           color={canApprove ? 'violet' : 'rose'}
           onClick={() => setStatusFilter(canApprove ? 'Awaiting Me' : 'Rejected')}
-          active={statusFilter === (canApprove ? 'Awaiting Me' : 'Rejected')} />
+          active={statusFilter === (canApprove ? 'Awaiting Me' : 'Rejected')}
+        />
       </div>
 
       {/* ── FILTER & ACTION BAR ─────────────────────────────── */}
@@ -594,7 +720,7 @@ export function PermissionPortal() {
           {filteredProposals.map((p) => {
             const isPending = ['Submitted', 'Under Review'].includes(p.status);
             const isApproved = p.status === 'Approved';
-            const iCanAct = canActOnProposal(role, p.approvalChain);
+            const iCanAct = canActOnProposal(role, p.approvalChain, p, currentUser.id);
             const isMySubmission = p.submitterId === currentUser.id;
 
             return (
@@ -653,6 +779,33 @@ export function PermissionPortal() {
                     <ChainStatus chain={p.approvalChain} />
                   </div>
 
+                  {/* Document Attachment Pill */}
+                  {p.attachments && p.attachments.length > 0 ? (
+                    <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] text-ink-muted font-semibold uppercase">Document:</span>
+                      {p.attachments.map((att, idx) => (
+                        <a
+                          key={idx}
+                          href={att.storagePath || '#'}
+                          download={att.name}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary bg-primary-pale hover:bg-primary-light border border-primary-border px-2 py-0.5 rounded transition-colors"
+                          title={`Download ${att.name} (${att.size})`}
+                        >
+                          <FileText size={11} className="shrink-0" />
+                          <span className="truncate max-w-[150px]">{att.name}</span>
+                          <span className="text-[9px] text-primary/70">({att.size})</span>
+                          <Download size={10} className="shrink-0 ml-0.5" />
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-[11px] text-slate-400 italic flex items-center gap-1">
+                      <FileText size={11} /> No document uploaded
+                    </div>
+                  )}
+
                   {/* Purpose snippet */}
                   <p className="text-xs text-slate-600 mt-3 line-clamp-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                     <span className="font-semibold text-slate-700">Purpose: </span>{p.purpose}
@@ -677,70 +830,206 @@ export function PermissionPortal() {
                     </button>
                   </div>
 
-                  {/* Approver role-differentiated actions:
-                      - Principal: "Sanction & Approve" (Final institutional authority)
-                      - Dean: "Recommend to Principal" (Forwards)
-                      - HOD: "Endorse to Dean" (Forwards)
-                  */}
-                  {canApprove && iCanAct && (
-                    <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto">
-                      {role === 'Principal' ? (
-                        <button
-                          onClick={() => {
-                            setDecidingProposal(p);
-                            setDecisionAction('Approved');
-                            setDecisionRemark('Sanctioned and approved by Principal Office. Permitted to proceed.');
-                          }}
-                          className="flex-1 sm:flex-initial px-3 py-1.5 text-xs font-bold rounded-lg bg-violet-700 hover:bg-violet-800 text-white shadow-xs transition-colors flex items-center justify-center gap-1.5"
-                          title="Final sanction: officially approves event and generates signed letter"
-                        >
-                          <Crown size={13} />
-                          Sanction & Approve
-                        </button>
-                      ) : role === 'Dean' ? (
-                        <button
-                          onClick={() => {
-                            setDecidingProposal(p);
-                            setDecisionAction('Approved');
-                            setDecisionRemark('Reviewed and recommended for Principal sanction.');
-                          }}
-                          className="flex-1 sm:flex-initial px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors flex items-center justify-center gap-1.5"
-                          title="Recommend and forward to Principal Office for final sanction"
-                        >
-                          <Send size={13} />
-                          Recommend to Principal
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setDecidingProposal(p);
-                            setDecisionAction('Approved');
-                            setDecisionRemark('Department verified and endorsed. Forwarding to Dean.');
-                          }}
-                          className="flex-1 sm:flex-initial px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors flex items-center justify-center gap-1.5"
-                          title="Department clearance: endorse and forward to Dean"
-                        >
-                          <Send size={13} />
-                          Endorse to Dean
-                        </button>
-                      )}
+                  {/* Actions & Dropbox */}
+                  <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto justify-end">
+                    {/* Principal direct sanction button */}
+                    {role === 'Principal' && isPending && (
+                      <button
+                        onClick={() => {
+                          setDecidingProposal(p);
+                          setDecisionAction('Approved');
+                          setDecisionRemark('Sanctioned and approved by Principal Office. Permitted to proceed.');
+                        }}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-violet-700 hover:bg-violet-800 text-white shadow-xs transition-colors flex items-center justify-center gap-1.5"
+                        title="Final sanction: officially approves event and generates signed letter"
+                      >
+                        <Crown size={13} />
+                        Sanction & Approve
+                      </button>
+                    )}
 
+                    {/* Dean recommendation button */}
+                    {role === 'Dean' && isPending && iCanAct && (
                       <button
-                        onClick={() => { setDecidingProposal(p); setDecisionAction('Changes Requested'); setDecisionRemark(''); }}
-                        className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 transition-colors"
-                        title="Request revisions from submitter"
+                        onClick={() => {
+                          setDecidingProposal(p);
+                          setDecisionAction('Approved');
+                          setDecisionRemark('Reviewed and recommended for Principal sanction.');
+                        }}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors flex items-center justify-center gap-1.5"
+                        title="Recommend and forward to Principal Office for final sanction"
                       >
-                        Revise
+                        <Send size={13} />
+                        Recommend to Principal
                       </button>
+                    )}
+
+                    {/* HOD endorsement button */}
+                    {role === 'HOD' && isPending && iCanAct && (
                       <button
-                        onClick={() => { setDecidingProposal(p); setDecisionAction('Rejected'); setDecisionRemark(''); }}
-                        className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 transition-colors"
-                        title="Reject proposal"
+                        onClick={() => {
+                          setDecidingProposal(p);
+                          setDecisionAction('Approved');
+                          setDecisionRemark('Department verified and endorsed. Forwarding to Dean.');
+                        }}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors flex items-center justify-center gap-1.5"
+                        title="Department clearance: endorse and forward to Dean"
                       >
-                        Reject
+                        <Send size={13} />
+                        Endorse to Dean
                       </button>
+                    )}
+
+                    {/* Manage Dropdown Menu ("Dropbox" for quick permission management) */}
+                    <div className="relative action-menu-container">
+                      <button
+                        type="button"
+                        onClick={() => setOpenActionMenuId(openActionMenuId === p.id ? null : p.id)}
+                        className="px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center gap-1 border border-slate-200 transition-colors shadow-2xs"
+                        title="Manage Permission Options"
+                      >
+                        <span>Manage</span>
+                        <ChevronDown size={13} className={openActionMenuId === p.id ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                      </button>
+
+                      {openActionMenuId === p.id && (
+                        <div className="absolute right-0 bottom-full mb-1 sm:bottom-auto sm:top-full sm:mt-1 w-56 bg-white rounded-xl shadow-xl border border-primary-border py-1.5 z-30 text-xs animate-fade-in divide-y divide-gray-100">
+                          {/* Principal Executive Actions */}
+                          {role === 'Principal' && isPending && (
+                            <div className="py-1">
+                              <button
+                                onClick={() => {
+                                  setOpenActionMenuId(null);
+                                  setDecidingProposal(p);
+                                  setDecisionAction('Approved');
+                                  setDecisionRemark('Sanctioned and approved by Principal Office. Permitted to proceed.');
+                                }}
+                                className="w-full text-left px-3 py-1.5 hover:bg-violet-50 text-violet-800 font-bold flex items-center gap-2"
+                              >
+                                <Crown size={14} className="text-violet-600" />
+                                <span>⚡ Quick Sanction & Approve</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setOpenActionMenuId(null);
+                                  setDecidingProposal(p);
+                                  setDecisionAction('Approved');
+                                  setDecisionRemark(getDefaultDecisionRemark('Approved', role));
+                                }}
+                                className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700 flex items-center gap-2"
+                              >
+                                <ShieldCheck size={14} className="text-slate-500" />
+                                <span>Sanction with Custom Notes...</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setOpenActionMenuId(null);
+                                  setDecidingProposal(p);
+                                  setDecisionAction('Changes Requested');
+                                  setDecisionRemark(getDefaultDecisionRemark('Changes Requested', role));
+                                }}
+                                className="w-full text-left px-3 py-1.5 hover:bg-amber-50 text-amber-800 flex items-center gap-2"
+                              >
+                                <RotateCcw size={14} className="text-amber-600" />
+                                <span>Request Revisions</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setOpenActionMenuId(null);
+                                  setDecidingProposal(p);
+                                  setDecisionAction('Rejected');
+                                  setDecisionRemark(getDefaultDecisionRemark('Rejected', role));
+                                }}
+                                className="w-full text-left px-3 py-1.5 hover:bg-rose-50 text-rose-700 flex items-center gap-2"
+                              >
+                                <XCircle size={14} className="text-rose-600" />
+                                <span>Reject Request</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Dean / HOD endorsement options */}
+                          {role !== 'Principal' && canApprove && iCanAct && (
+                            <div className="py-1">
+                              <button
+                                onClick={() => {
+                                  setOpenActionMenuId(null);
+                                  setDecidingProposal(p);
+                                  setDecisionAction('Approved');
+                                  setDecisionRemark(role === 'Dean' ? 'Reviewed and recommended for Principal sanction.' : 'Department verified and endorsed.');
+                                }}
+                                className="w-full text-left px-3 py-1.5 hover:bg-blue-50 text-blue-800 font-bold flex items-center gap-2"
+                              >
+                                <Send size={14} className="text-blue-600" />
+                                <span>{role === 'Dean' ? 'Recommend to Principal' : 'Endorse to Dean'}</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setOpenActionMenuId(null);
+                                  setDecidingProposal(p);
+                                  setDecisionAction('Changes Requested');
+                                  setDecisionRemark(getDefaultDecisionRemark('Changes Requested', role));
+                                }}
+                                className="w-full text-left px-3 py-1.5 hover:bg-amber-50 text-amber-800 flex items-center gap-2"
+                              >
+                                <RotateCcw size={14} className="text-amber-600" />
+                                <span>Request Revisions</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setOpenActionMenuId(null);
+                                  setDecidingProposal(p);
+                                  setDecisionAction('Rejected');
+                                  setDecisionRemark(getDefaultDecisionRemark('Rejected', role));
+                                }}
+                                className="w-full text-left px-3 py-1.5 hover:bg-rose-50 text-rose-700 flex items-center gap-2"
+                              >
+                                <XCircle size={14} className="text-rose-600" />
+                                <span>Reject Request</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Common navigation options */}
+                          <div className="py-1">
+                            <button
+                              onClick={() => {
+                                setOpenActionMenuId(null);
+                                setSelectedProposal(p);
+                              }}
+                              className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700 flex items-center gap-2"
+                            >
+                              <Eye size={14} className="text-slate-500" />
+                              <span>View Full Details</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setOpenActionMenuId(null);
+                                setLetterProposal(p);
+                              }}
+                              className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700 flex items-center gap-2"
+                            >
+                              <Printer size={14} className="text-slate-500" />
+                              <span>Official Permission Letter</span>
+                            </button>
+                            {p.attachments && p.attachments.length > 0 && (
+                              <a
+                                href={p.attachments[0].storagePath || '#'}
+                                download={p.attachments[0].name}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={() => setOpenActionMenuId(null)}
+                                className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-primary font-medium flex items-center gap-2"
+                              >
+                                <Download size={14} className="text-primary" />
+                                <span className="truncate">Download {p.attachments[0].name}</span>
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
 
                   {/* Submitter status tag */}
                   {!canApprove && isPending && (
@@ -825,16 +1114,26 @@ export function PermissionPortal() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Venue / Hall Needed</label>
-                  <select
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Venue / Location Needed *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter venue or location (e.g. Seminar Hall 1, Room 302, Campus Ground...)"
                     value={formData.venue}
                     onChange={(e) => setFormData({ ...formData, venue: e.target.value })}
+                    list="venue-suggestions"
                     className={inputCls}
-                  >
-                    {['Seminar Hall 1', 'Seminar Hall 2', 'Main Auditorium', 'Lab 302 (IT)', 'Lab 405 (CMPN)', 'College Amphitheatre', 'Campus Ground'].map((v) => (
-                      <option key={v} value={v}>{v}</option>
-                    ))}
-                  </select>
+                  />
+                  <datalist id="venue-suggestions">
+                    <option value="Seminar Hall 1" />
+                    <option value="Seminar Hall 2" />
+                    <option value="Main Auditorium" />
+                    <option value="College Amphitheatre" />
+                    <option value="Campus Ground" />
+                    <option value="Lab 302 (IT)" />
+                    <option value="Lab 405 (CMPN)" />
+                    <option value="Library Conference Room" />
+                  </datalist>
                 </div>
               </div>
 
@@ -881,16 +1180,85 @@ export function PermissionPortal() {
                   className={inputCls} />
               </div>
 
+              {/* Mandatory Permission Document Upload */}
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Upload Permission Document / Brochure / Letter * <span className="text-rose-600 font-bold">(Mandatory)</span>
+                </label>
+                <div className="border-2 border-dashed border-primary-border hover:border-primary/60 rounded-xl p-4 bg-slate-50/70 transition-colors">
+                  {uploadedFile ? (
+                    <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-primary-border shadow-xs">
+                      <div className="flex items-center gap-2.5 overflow-hidden">
+                        <div className="w-9 h-9 rounded-lg bg-primary-pale text-primary flex items-center justify-center shrink-0">
+                          <FileText size={18} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-ink truncate">{uploadedFile.name}</p>
+                          <p className="text-[10px] text-ink-muted">{uploadedFile.size} • Attached & ready to upload</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setUploadedFile(null)}
+                        className="p-1 rounded-md text-ink-muted hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                        title="Remove uploaded document"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-center py-2">
+                      <input
+                        type="file"
+                        id="permission-doc-file-input"
+                        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                        onChange={handleFileChange}
+                        className="hidden"
+                        disabled={isUploading}
+                      />
+                      <label
+                        htmlFor="permission-doc-file-input"
+                        className="cursor-pointer inline-flex flex-col items-center justify-center gap-1.5"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-primary-pale text-primary flex items-center justify-center shadow-xs">
+                          <Upload size={18} />
+                        </div>
+                        <span className="text-xs font-bold text-primary hover:underline">
+                          {isUploading ? 'Processing & Encoding Document...' : 'Click to Upload Permission Document *'}
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Mandatory: PDF, Word document, or image (Max 15MB)
+                        </span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+                {uploadError && (
+                  <p className="text-xs font-semibold text-rose-600 mt-1.5 flex items-center gap-1">
+                    <AlertCircle size={13} /> {uploadError}
+                  </p>
+                )}
+              </div>
+
               {/* Approval chain preview */}
               <div className="p-3 bg-primary-pale rounded-lg border border-primary-border">
                 <p className="text-[11px] font-bold text-primary uppercase tracking-wider mb-2">Approval Chain (after submission)</p>
                 <div className="flex items-center gap-2 flex-wrap text-xs">
-                  <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded font-semibold">HOD Review</span>
-                  <ChevronRight size={12} className="text-ink-muted" />
+                  {currentUser.role !== 'HOD' && (
+                    <>
+                      <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded font-semibold">HOD Review</span>
+                      <ChevronRight size={12} className="text-ink-muted" />
+                    </>
+                  )}
                   <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded font-semibold">Dean Review</span>
                   <ChevronRight size={12} className="text-ink-muted" />
                   <span className="px-2 py-1 bg-violet-100 text-violet-800 rounded font-semibold">Principal Sanction</span>
                 </div>
+                {currentUser.role === 'HOD' && (
+                  <p className="text-[11px] text-primary/80 mt-1.5 italic">
+                    ℹ️ As Department Head, your submission routes directly to Dean for review before Principal sanction.
+                  </p>
+                )}
               </div>
 
               <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-2">
@@ -969,7 +1337,10 @@ export function PermissionPortal() {
                   {(['Approved', 'Changes Requested', 'Rejected'] as const).map((a) => (
                     <button
                       key={a}
-                      onClick={() => setDecisionAction(a)}
+                      onClick={() => {
+                        setDecisionAction(a);
+                        setDecisionRemark(getDefaultDecisionRemark(a, role));
+                      }}
                       className={`flex-1 py-2 px-2 text-xs font-semibold rounded-lg border transition-all flex items-center justify-center gap-1.5 ${
                         decisionAction === a
                           ? a === 'Approved'
@@ -1016,7 +1387,9 @@ export function PermissionPortal() {
                   placeholder={
                     decisionAction === 'Approved'
                       ? (role === 'Principal' ? 'e.g. Sanctioned and approved by Principal Office.' : role === 'Dean' ? 'e.g. Recommended for Principal sanction.' : 'e.g. Department verified and endorsed.')
-                      : 'Explain the reason for rejection or required changes...'
+                      : decisionAction === 'Changes Requested'
+                      ? 'e.g. Modifications requested. Please update proposal details and clarifications and resubmit.'
+                      : 'e.g. Proposal cannot be accommodated at this time.'
                   }
                   className={inputCls}
                 />
@@ -1191,6 +1564,41 @@ export function PermissionPortal() {
                 <p className="p-3 bg-slate-50 rounded-lg text-slate-700 leading-relaxed">{selectedProposal.purpose}</p>
               </div>
 
+              {/* Uploaded Documents */}
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold mb-1">
+                  Attached Permission Document
+                </span>
+                {selectedProposal.attachments && selectedProposal.attachments.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {selectedProposal.attachments.map((att, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <FileText size={18} className="text-primary shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-ink truncate">{att.name}</p>
+                            <p className="text-[10px] text-ink-muted">{att.size} • Uploaded Document</p>
+                          </div>
+                        </div>
+                        <a
+                          href={att.storagePath || '#'}
+                          download={att.name}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary-dark text-xs font-bold flex items-center gap-1.5 shadow-xs shrink-0"
+                        >
+                          <Download size={13} /> Download
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 italic p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+                    No document attached for this request.
+                  </p>
+                )}
+              </div>
+
               {/* Full approval timeline */}
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-semibold mb-1.5">Full Approval Chain</span>
@@ -1212,17 +1620,24 @@ export function PermissionPortal() {
               </div>
 
               <div className="pt-3 border-t border-gray-100 flex justify-end gap-2">
-                {canApprove && canActOnProposal(role, selectedProposal.approvalChain) && (
+                {canApprove && canActOnProposal(role, selectedProposal.approvalChain, selectedProposal, currentUser.id) && (
                   <button
                     onClick={() => {
                       setSelectedProposal(null);
                       setDecidingProposal(selectedProposal);
                       setDecisionAction('Approved');
-                      setDecisionRemark('');
+                      setDecisionRemark(
+                        role === 'Principal'
+                          ? 'Sanctioned and approved by Principal Office. Permitted to proceed.'
+                          : role === 'Dean'
+                          ? 'Reviewed and recommended for Principal sanction.'
+                          : 'Department verified and endorsed.'
+                      );
                     }}
                     className={btnPrimary}
                   >
-                    <ShieldCheck size={14} /> Review & Decide
+                    {role === 'Principal' ? <Crown size={14} /> : <ShieldCheck size={14} />}
+                    <span>{role === 'Principal' ? 'Review & Sanction' : 'Review & Decide'}</span>
                   </button>
                 )}
                 <button

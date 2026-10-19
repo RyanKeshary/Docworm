@@ -1,8 +1,11 @@
+'use client';
+
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import type { AppOptions } from './config';
 import { DEFAULT_OPTIONS } from './config';
 import type { AuditLog, CompletionReport, Notification, Proposal, ProposalComment, Task, User } from './types';
 import { api } from './lib/api';
+import { realtime } from './lib/realtime';
 
 export type CompletionMap = { [proposalId: string]: CompletionReport };
 
@@ -25,7 +28,20 @@ interface DataState {
   lastSyncedAt: string | null;
   liveTick: number;
   isAuthenticated: boolean;
-  signIn: (email: string, password: string) => Promise<string | null>;
+  signIn: (email: string, password: string, captchaAnswer?: string, captchaToken?: string) => Promise<{
+    error?: string | null;
+    require2fa?: boolean;
+    tempToken?: string;
+    hasTotp?: boolean;
+    emailMasked?: string;
+    methods?: string[];
+    message?: string;
+    requiresCaptcha?: boolean;
+    captchaQuestion?: string;
+    captchaToken?: string;
+    lockedUntil?: string;
+  }>;
+  verify2fa: (tempToken: string, code: string, method?: 'email' | 'totp' | 'backup_code') => Promise<string | null>;
   signUp: (user: any) => Promise<string | null>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -79,7 +95,37 @@ const GUEST_USER: User = {
 };
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<User>(GUEST_USER);
+  // Optimistic zero-delay user state initialization from localStorage
+  const [currentUser, setCurrentUser] = useState<User>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('docworm_cached_user');
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return GUEST_USER;
+  });
+
+  const [authLoading, setAuthLoading] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('docworm_cached_user');
+        if (cached) return false;
+      } catch {}
+    }
+    return true;
+  });
+
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('docworm_cached_user');
+        if (cached) return true;
+      } catch {}
+    }
+    return false;
+  });
+
   const [users, setUsers] = useState<User[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -90,30 +136,34 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [options, setOptions] = useState<AppOptions>(DEFAULT_OPTIONS);
   const [letterhead, setLetterhead] = useState(DEFAULT_LETTERHEAD);
 
-  const [authLoading, setAuthLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [backendError, setBackendError] = useState('');
   const [syncState, setSyncState] = useState<'live' | 'loading' | 'offline'>('loading');
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [liveTick, setLiveTick] = useState(0);
+  const isRefreshingRef = useRef(false);
+  const staticLoadedRef = useRef(false);
 
-  // Load Workspace from Database via API
-  const refresh = useCallback(async () => {
+  // Load Workspace from Database via API with smart static caching
+  const refresh = useCallback(async (forceAll = false) => {
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
     try {
-      setSyncState('loading');
-      const [userRes, propRes, optRes, lhRes, annRes, auditRes] = await Promise.allSettled([
+      const needStatic = forceAll || !staticLoadedRef.current;
+      const [userRes, propRes, annRes, auditRes, optRes, lhRes] = await Promise.allSettled([
         api.users.list(),
         api.requests.list(),
-        api.options.get(),
-        api.settings.getLetterhead(),
         api.announcements.list(),
         api.admin.getAuditLog(),
+        needStatic ? api.options.get() : Promise.resolve(null),
+        needStatic ? api.settings.getLetterhead() : Promise.resolve(null),
       ]);
 
-      if (userRes.status === 'fulfilled' && userRes.value.users) {
+      if (needStatic) staticLoadedRef.current = true;
+
+      if (userRes.status === 'fulfilled' && userRes.value?.users) {
         setUsers(userRes.value.users.map((u: any) => ({
           ...u,
-          department: u.role === 'Principal' ? null : (u.department_code || u.department || 'HAS'),
+          department: (u.role === 'Principal' || u.role === 'Dean') ? null : (u.department_code || u.department || 'HAS'),
         })));
       }
 
@@ -160,7 +210,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           })),
           budgetJustification: r.budget_justification || '',
           poMappings: [],
-          attachments: [],
+          attachments: (r.attachments || []).map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            size: a.size_text || a.size || '',
+            kind: a.kind || '',
+            storagePath: a.storage_path || a.storagePath || '',
+          })),
           submitterId: r.faculty_id || '',
           submitterName: r.submitter_name || '',
           submitterDept: r.submitter_dept || '',
@@ -183,15 +239,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (annRes.status === 'fulfilled' && annRes.value.announcements) {
-        setNotifications(annRes.value.announcements.map((a: any) => ({
-          id: a.id,
-          userId: currentUser.id,
-          title: `[${a.priority}] ${a.title}`,
-          body: a.body,
-          link: '/notifications',
-          read: Boolean(a.read_at),
-          createdAt: String(a.created_at || '').slice(0, 16).replace('T', ' '),
-        })));
+        setNotifications(
+          annRes.value.announcements
+            .filter((a: any) => !a.is_archived)
+            .map((a: any) => ({
+              id: a.id,
+              userId: currentUser.id,
+              title: `[${a.priority}] ${a.title}`,
+              body: a.body,
+              link: '/notifications',
+              read: Boolean(a.read_at),
+              createdAt: String(a.created_at || '').slice(0, 16).replace('T', ' '),
+            }))
+        );
       }
 
       if (auditRes.status === 'fulfilled' && auditRes.value.logs) {
@@ -211,6 +271,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       console.error('Refresh error:', err);
       setBackendError(err.message || 'Failed to sync with server');
       setSyncState('offline');
+    } finally {
+      isRefreshingRef.current = false;
     }
   }, [currentUser.id]);
 
@@ -219,32 +281,65 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
     async function checkAuth() {
       try {
-        setAuthLoading(true);
+        // Only show full auth loading if we don't have a cached session
+        const hasCache = typeof window !== 'undefined' && localStorage.getItem('docworm_cached_user');
+        if (!hasCache) setAuthLoading(true);
+
         const me = await api.auth.me();
         if (mounted && me.user) {
-          setCurrentUser({
+          const userObj: User = {
             ...me.user,
-            department: me.user.role === 'Principal' ? null : me.user.department,
-          });
+            department: (me.user.role === 'Principal' || me.user.role === 'Dean') ? null : me.user.department,
+          };
+          setCurrentUser(userObj);
           setIsAuthenticated(true);
+          try {
+            localStorage.setItem('docworm_cached_user', JSON.stringify(userObj));
+          } catch {}
+        } else if (mounted) {
+          setIsAuthenticated(false);
+          setCurrentUser(GUEST_USER);
+          try {
+            localStorage.removeItem('docworm_cached_user');
+          } catch {}
         }
       } catch (err) {
         if (mounted) {
           setIsAuthenticated(false);
           setCurrentUser(GUEST_USER);
+          try {
+            localStorage.removeItem('docworm_cached_user');
+          } catch {}
         }
       } finally {
         if (mounted) setAuthLoading(false);
       }
     }
     checkAuth();
-    return () => { mounted = false; };
+
+    const handleAuthExpired = () => {
+      setIsAuthenticated(false);
+      setCurrentUser(GUEST_USER);
+      try {
+        localStorage.removeItem('docworm_cached_user');
+      } catch {}
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('docworm_auth_expired', handleAuthExpired);
+    }
+
+    return () => {
+      mounted = false;
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('docworm_auth_expired', handleAuthExpired);
+      }
+    };
   }, []);
 
   // Track known notification IDs to alert only on newly arrived notifications
   const seenNotificationIds = useRef(new Set<string>());
 
-  // Sync workspace when authenticated + Instant Real-Time Auto-Sync (2.5s polling)
+  // Sync workspace when authenticated + Instant Real-Time Auto-Sync
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -258,33 +353,83 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // High-efficiency background poll timer: updates site instantly even if changes happen from other devices
+    // Real-Time event subscriptions for zero-latency multi-user sync
+    const unsubReq = realtime.on('requests_updated', (msg) => {
+      console.log('⚡ Real-time requests update received:', msg);
+      refresh();
+    });
+
+    const unsubAnn = realtime.on('announcements_updated', () => {
+      refresh();
+    });
+
+    const unsubSync = realtime.on('sync_all', () => {
+      refresh();
+    });
+
+    // Fallback heartbeat poll timer (20s since active SSE handles instant changes)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         refresh();
       }
-    }, 2500);
+    }, 20000);
 
-    // Instant refresh when user switches back to this browser tab
+    // Instant refresh when user switches back to this browser tab or window
     const handleFocus = () => {
       refresh();
     };
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refresh();
+      }
+    };
     window.addEventListener('focus', handleFocus);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
 
     return () => {
+      unsubReq();
+      unsubAnn();
+      unsubSync();
       clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
     };
   }, [isAuthenticated, refresh]);
 
-  // Sign In
-  const signIn = async (email: string, pass: string): Promise<string | null> => {
+  // Sign In with 2FA, CAPTCHA, and Lockout Handling
+  const signIn = async (
+    email: string,
+    pass: string,
+    captchaAnswer?: string,
+    captchaToken?: string
+  ) => {
     try {
-      const res = await api.auth.login({ email, password: pass });
+      const res = await api.auth.login({
+        email,
+        password: pass,
+        captchaAnswer,
+        captchaToken,
+      });
+
+      if (res.requires2fa || res.require2fa) {
+        return {
+          require2fa: true,
+          tempToken: res.tempToken,
+          hasTotp: (res.methods || []).includes('totp') || Boolean(res.hasTotp),
+          emailMasked: res.email || res.emailMasked,
+          methods: res.methods || ['email', 'totp', 'backup'],
+          message: res.message,
+        };
+      }
+
       if (res.user) {
         setCurrentUser({
           ...res.user,
-          department: res.user.role === 'Principal' ? null : res.user.department,
+          department: (res.user.role === 'Principal' || res.user.role === 'Dean') ? null : res.user.department,
         });
         setIsAuthenticated(true);
         // Refresh workspace data concurrently in background so navigation is instant
@@ -295,11 +440,41 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           Notification.requestPermission().catch(() => {});
         }
 
+        return { error: null };
+      }
+      return { error: 'Authentication failed.' };
+    } catch (err: any) {
+      const data = err.data || {};
+      return {
+        error: err.message || 'Login failed.',
+        requiresCaptcha: data.requiresCaptcha || false,
+        captchaQuestion: data.captchaQuestion,
+        captchaToken: data.captchaToken,
+        lockedUntil: data.lockedUntil,
+      };
+    }
+  };
+
+  // Verify 2FA / OTP
+  const verify2fa = async (
+    tempToken: string,
+    code: string,
+    method: 'email' | 'totp' | 'backup_code' = 'email'
+  ): Promise<string | null> => {
+    try {
+      const res = await api.auth.verify2fa({ tempToken, code, method });
+      if (res.user) {
+        setCurrentUser({
+          ...res.user,
+          department: (res.user.role === 'Principal' || res.user.role === 'Dean') ? null : res.user.department,
+        });
+        setIsAuthenticated(true);
+        refresh().catch(console.error);
         return null;
       }
-      return 'Authentication failed.';
+      return '2FA verification failed.';
     } catch (err: any) {
-      return err.message || 'Login failed.';
+      return err.message || 'Verification failed.';
     }
   };
 
@@ -353,6 +528,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         budgetJustification: latest.budgetJustification,
         resources: latest.resources,
         budgetItems: latest.budgetItems,
+        attachments: (latest.attachments || []).map((a) => ({
+          name: a.name,
+          sizeText: a.size,
+          kind: a.kind,
+          storagePath: a.storagePath || '',
+        })),
       }).then(() => {
         // Silent sync to reconcile server generated ID and reference numbers
         refresh();
@@ -455,25 +636,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const uploadFile = async (file: File) => {
-    // Highly efficient chunked processing: processes files in 512KB slices
-    // without blocking the main browser thread, keeping the UI instantly responsive
-    const CHUNK_SIZE = 512 * 1024;
-    const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
-    for (let i = 0; i < totalChunks; i++) {
-      // Yield to event loop between chunks
-      await new Promise((r) => setTimeout(r, 0));
-    }
+    return new Promise<{ name: string; size: string; kind: string; storagePath: string }>((resolve, reject) => {
+      const readableSize = file.size < 1024 * 1024
+        ? `${(file.size / 1024).toFixed(1)} KB`
+        : `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
 
-    const readableSize = file.size < 1024 * 1024
-      ? `${(file.size / 1024).toFixed(1)} KB`
-      : `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
-
-    return {
-      name: file.name,
-      size: readableSize,
-      kind: file.type || 'application/octet-stream',
-      storagePath: `/uploads/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`,
-    };
+      const reader = new FileReader();
+      reader.onload = () => {
+        resolve({
+          name: file.name,
+          size: readableSize,
+          kind: file.type || 'application/octet-stream',
+          storagePath: reader.result as string,
+        });
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
+    });
   };
 
   const value: DataState = {
@@ -496,6 +675,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     liveTick,
     isAuthenticated,
     signIn,
+    verify2fa,
     signUp,
     signOut,
     refresh,

@@ -1,11 +1,14 @@
+'use client';
+
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { useData } from '../store';
 import {
   Database, Play, Download, AlertTriangle, CheckCircle2, RefreshCw,
   Search, Shield, Plus, Trash2, Mail, Send, Eye, EyeOff, Save,
-  X, Check, Lock, Terminal, Wrench
+  X, Check, Lock, Terminal, Wrench, ShieldCheck, KeyRound, Copy
 } from 'lucide-react';
+import { PasswordStrengthMeter } from '../components/PasswordStrengthMeter';
 
 const btnPrimary = 'inline-flex items-center gap-1.5 px-4 py-2 rounded-card text-xs font-semibold bg-primary text-white hover:bg-primary-dark transition-colors shadow-xs disabled:opacity-50';
 const btnGhost = 'inline-flex items-center gap-1.5 px-3 py-2 rounded-card text-xs font-semibold border border-gray-300 hover:bg-slate-50 text-slate-700 transition-colors disabled:opacity-50';
@@ -1036,6 +1039,8 @@ export function UserProfilePanel({ currentUser, onUpdate }: { currentUser: any; 
   const [profileFeedback, setProfileFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [passwordFeedback, setPasswordFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
+
+
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileSaving(true);
@@ -1059,7 +1064,7 @@ export function UserProfilePanel({ currentUser, onUpdate }: { currentUser: any; 
     setPasswordFeedback(null);
 
     if (passwordForm.new_password.length < 8) {
-      setPasswordFeedback({ type: 'error', msg: 'New password must be at least 8 characters long.' });
+      setPasswordFeedback({ type: 'error', msg: 'New password must be at least 8 characters long and meet institutional complexity standards.' });
       setPasswordSaving(false);
       return;
     }
@@ -1215,6 +1220,9 @@ export function UserProfilePanel({ currentUser, onUpdate }: { currentUser: any; 
               onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })}
               className={inputCls}
             />
+            {passwordForm.new_password && (
+              <PasswordStrengthMeter password={passwordForm.new_password} />
+            )}
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-700 block mb-1">Confirm New Password</label>
@@ -1234,6 +1242,8 @@ export function UserProfilePanel({ currentUser, onUpdate }: { currentUser: any; 
           </div>
         </form>
       </div>
+
+
     </div>
   );
 }

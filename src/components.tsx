@@ -1,13 +1,16 @@
+'use client';
+
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from './lib/router-compat';
 import {
-  FileText, Bell, Settings, Calendar,
+  FileText, Bell, Settings, Calendar, Ticket,
   Menu, X, Search, LogOut, ChevronLeft, User, Database, Shield, Crown, GraduationCap, Building2, Users,
   HelpCircle,
 } from 'lucide-react';
 import { useData } from './store';
 import { ROLE_META, PERMISSIONS } from './lib/roleUtils';
 import { OnboardingGuideModal } from './components/OnboardingGuideModal';
+import { PrincipalDepartureAlert } from './components/PrincipalDepartureAlert';
 
 export const STATUS_STYLE: Record<string, string> = {
   Approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -56,15 +59,23 @@ export function Skeleton({ lines = 3 }: { lines?: number }) {
 }
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+  useEffect(() => {
+    const original = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = original;
+    };
+  }, []);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="absolute inset-0 bg-ink/50 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative bg-surface rounded-card border border-primary-border shadow-2xl w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[92vh] flex flex-col overflow-hidden animate-fade-in`}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-primary-border">
+    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-5" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="fixed inset-0 bg-ink/60 backdrop-blur-xs" onClick={onClose} />
+      <div className={`relative bg-surface rounded-card border border-primary-border shadow-2xl w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} my-auto max-h-[min(90vh,780px)] flex flex-col overflow-hidden animate-fade-in z-10`}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-primary-border shrink-0 bg-surface">
           <h2 className="font-semibold text-ink text-base">{title}</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-primary-pale text-ink-muted transition-colors" aria-label="Close dialog"><X size={18} /></button>
         </div>
-        <div className="p-5 overflow-y-auto">{children}</div>
+        <div className="p-5 overflow-y-auto flex-1">{children}</div>
       </div>
     </div>
   );
@@ -143,23 +154,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const role = currentUser.role;
   const roleMeta = ROLE_META[role] ?? ROLE_META.Faculty;
 
-  // Auto-show guide for first-time login
+  // Auto-show guide strictly once on first-time login
   useEffect(() => {
-    if (currentUser?.id) {
+    if (currentUser?.id && currentUser.id !== 'guest') {
       const key = `docworm_guide_seen_${currentUser.id}`;
       if (!localStorage.getItem(key)) {
         setGuideOpen(true);
+        localStorage.setItem(key, 'true');
       }
     }
   }, [currentUser?.id]);
 
   // Role-specific navigation
   const allLinks = [
-    { to: '/', label: 'Permission Requests', icon: <FileText size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
-    { to: '/leaves', label: 'Faculty Leaves', icon: <Calendar size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
-    { to: '/notifications', label: 'Notifications', icon: <Bell size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty'] },
+    { to: '/', label: 'Permission Requests', icon: <FileText size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty', 'Office Admin'] },
+    { to: '/gate-pass', label: 'Employee Gate Pass', icon: <Ticket size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty', 'Office Admin'] },
+    { to: '/notifications', label: 'Notifications', icon: <Bell size={18} />, roles: ['Principal', 'Dean', 'HOD', 'Faculty', 'Office Admin'] },
     { to: '/settings', label: 'Settings & Admin', icon: <Settings size={18} />, roles: ['Principal'] },
-    { to: '/settings', label: 'Settings', icon: <Settings size={18} />, roles: ['Dean', 'HOD', 'Faculty'] },
+    { to: '/settings', label: 'Settings', icon: <Settings size={18} />, roles: ['Dean', 'HOD', 'Faculty', 'Office Admin'] },
   ];
 
   // De-dupe by role visibility
@@ -261,7 +273,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold text-ink truncate">{currentUser.name}</p>
                 <p className={`text-[11px] truncate ${roleMeta.accent}`}>
-                  {currentUser.role}{currentUser.department ? ` • ${currentUser.department}` : ''}
+                  {currentUser.role}{currentUser.department ? ` • ${currentUser.department}` : (currentUser.role === 'Principal' || currentUser.role === 'Dean' ? ' • All Depts' : '')}
                 </p>
               </div>
             </div>
@@ -272,8 +284,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen flex bg-page">
-      <aside className={`hidden lg:block border-r border-primary-border bg-surface transition-all ${collapsed ? 'w-16' : 'w-60'} shrink-0 sticky top-0 h-screen z-20`}>
+    <div className="h-screen w-screen overflow-hidden flex bg-page font-sans">
+      <aside className={`hidden lg:flex border-r border-primary-border bg-surface transition-all ${collapsed ? 'w-16' : 'w-60'} shrink-0 h-full flex-col z-20`}>
         {side}
       </aside>
 
@@ -284,10 +296,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <div className="flex-1 min-w-0 flex flex-col">
-        {/* Rearranged, beautifully spaced header */}
-        <header className="sticky top-0 z-30 bg-surface/95 backdrop-blur-md border-b border-primary-border/80 print-hidden shadow-xs">
-          <div className="flex items-center justify-between gap-4 px-4 sm:px-6 py-2.5">
+      <div className="flex-1 h-full min-w-0 flex flex-col overflow-hidden">
+        {/* Fixed header pinned strictly to top with clean height */}
+        <header className="h-16 shrink-0 z-30 bg-surface/95 backdrop-blur-md border-b border-primary-border/80 print-hidden shadow-xs flex items-center">
+          <div className="flex items-center justify-between gap-4 px-4 sm:px-6 py-2.5 w-full">
             {/* Left Zone: Sidebar toggles & Institutional Identity */}
             <div className="flex items-center gap-2.5 shrink-0">
               <button
@@ -329,14 +341,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
             {/* Right Zone: Actions, Live Indicator, Notifications, and Profile */}
             <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0 ml-auto">
-              {/* Live Auto-Sync Indicator */}
-              <div
-                className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-[11px] font-semibold text-emerald-700 select-none shadow-2xs"
-                title="Real-time live synchronization active. Updates from other users reflect automatically."
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                <span>Live Sync</span>
-              </div>
 
               {/* How-to Guide */}
               <button
@@ -400,14 +404,25 @@ export function Layout({ children }: { children: React.ReactNode }) {
             Sync note: {backendError}
           </div>
         )}
-        <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 w-full">
+          <div className="max-w-7xl mx-auto w-full">
+            {children}
+          </div>
+        </main>
       </div>
 
       <OnboardingGuideModal
         isOpen={guideOpen}
-        onClose={() => setGuideOpen(false)}
+        onClose={() => {
+          if (currentUser?.id) {
+            localStorage.setItem(`docworm_guide_seen_${currentUser.id}`, 'true');
+          }
+          setGuideOpen(false);
+        }}
         currentUser={currentUser}
       />
+
+      <PrincipalDepartureAlert />
     </div>
   );
 }

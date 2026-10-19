@@ -1,11 +1,13 @@
+'use client';
+
 import React, { useMemo, useState, useEffect } from 'react';
-import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useNavigate, useSearchParams } from '../lib/router-compat';
 import {
   ArrowLeft, Plus, Database, Server, ExternalLink, RefreshCw, Trash2,
   Shield, CheckCircle2, Copy, Check, Info, User as UserIcon, Lock,
   Crown, CheckCircle, XCircle, UserCheck, AlertTriangle, FileSpreadsheet,
   Play, Send, Bell, Key, Edit2, Sliders, Wrench, Mail, Terminal, SlidersHorizontal,
-  Download, Eye, AlertCircle
+  Download, Eye, AlertCircle, Archive, ArchiveRestore
 } from 'lucide-react';
 import { useData, nowStr } from '../store';
 import { Badge, Drawer, EmptyState, ExportMenu, Field, Modal, btnGhost, btnPrimary, inputCls } from '../components';
@@ -545,9 +547,11 @@ export function Reports() {
 }
 
 export function NotificationsCenter() {
-  const { notifications, saveNotifications, currentUser, options } = useData();
+  const { notifications, saveNotifications, currentUser, options, refresh } = useData();
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [loadingAnnouncements, setLoadingAnnouncements] = useState(false);
+  const [noticeTab, setNoticeTab] = useState<'active' | 'archived'>('active');
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<'idle' | 'subscribed' | 'unsupported' | 'denied'>('idle');
   const [pushFeedback, setPushFeedback] = useState('');
 
@@ -572,6 +576,23 @@ export function NotificationsCenter() {
       setLoadingAnnouncements(false);
     }
   };
+
+  const handleToggleArchive = async (id: string, currentlyArchived: boolean) => {
+    try {
+      setArchivingId(id);
+      await api.announcements.archive(id, !currentlyArchived);
+      await loadAnnouncements();
+      await refresh();
+    } catch (err: any) {
+      alert(err.message || 'Failed to update announcement archive status.');
+    } finally {
+      setArchivingId(null);
+    }
+  };
+
+  const activeAnnouncements = useMemo(() => announcements.filter((a) => !a.is_archived), [announcements]);
+  const archivedAnnouncements = useMemo(() => announcements.filter((a) => a.is_archived), [announcements]);
+  const displayedAnnouncements = noticeTab === 'active' ? activeAnnouncements : archivedAnnouncements;
 
   useEffect(() => {
     loadAnnouncements();
@@ -754,6 +775,7 @@ export function NotificationsCenter() {
                 className={inputCls}
               >
                 <option value="all">All Faculty & Staff (Institution-wide)</option>
+                <option value="HODs">All HODs (Heads of Department Only)</option>
                 {options.departments.map((d) => (
                   <option key={d} value={d}>Department of {d} Only</option>
                 ))}
@@ -795,21 +817,41 @@ export function NotificationsCenter() {
 
       {/* 2. RECENT BROADCASTS & DELIVERY REPORTS */}
       <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-3 border-b border-gray-100 gap-3">
           <div>
-            <h2 className="font-bold text-slate-900 text-base">Broadcast Announcements History</h2>
+            <h2 className="font-bold text-slate-900 text-base">Broadcast Announcements & Notices</h2>
             <p className="text-xs text-slate-500">Official directives and circulars published to faculty.</p>
           </div>
-          <button onClick={loadAnnouncements} className="text-xs font-semibold text-primary hover:underline flex items-center gap-1">
-            <RefreshCw size={12} className={loadingAnnouncements ? 'animate-spin' : ''} /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+              <button
+                onClick={() => setNoticeTab('active')}
+                className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                  noticeTab === 'active' ? 'bg-white text-primary shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Active ({activeAnnouncements.length})
+              </button>
+              <button
+                onClick={() => setNoticeTab('archived')}
+                className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                  noticeTab === 'archived' ? 'bg-white text-primary shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Archived ({archivedAnnouncements.length})
+              </button>
+            </div>
+            <button onClick={loadAnnouncements} className="text-xs font-semibold text-primary hover:underline flex items-center gap-1">
+              <RefreshCw size={12} className={loadingAnnouncements ? 'animate-spin' : ''} /> Refresh
+            </button>
+          </div>
         </div>
 
         <div className="divide-y divide-gray-100">
-          {announcements.map((a) => (
+          {displayedAnnouncements.map((a) => (
             <div key={a.id} className="py-4 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
                     a.priority === 'urgent' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
                     a.priority === 'high' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
@@ -817,18 +859,45 @@ export function NotificationsCenter() {
                   }`}>
                     {a.priority}
                   </span>
+                  {a.is_archived && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 border border-slate-300">
+                      Archived from everyone
+                    </span>
+                  )}
                   <h3 className="font-bold text-slate-900 text-sm">{a.title}</h3>
                 </div>
-                <span className="text-[11px] text-slate-400 font-mono">
-                  {String(a.created_at || '').slice(0, 16).replace('T', ' ')}
-                </span>
+                <div className="flex items-center gap-2">
+                  {(isPrincipal || currentUser.role === 'Dean') && (
+                    <button
+                      onClick={() => handleToggleArchive(a.id, Boolean(a.is_archived))}
+                      disabled={archivingId === a.id}
+                      className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-100 transition-colors"
+                      title={a.is_archived ? 'Restore notice for everyone' : 'Archive notice from everyone'}
+                    >
+                      {a.is_archived ? (
+                        <>
+                          <ArchiveRestore size={13} className="text-emerald-600" />
+                          <span>Restore</span>
+                        </>
+                      ) : (
+                        <>
+                          <Archive size={13} className="text-slate-500" />
+                          <span>Archive from everyone</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    {String(a.created_at || '').slice(0, 16).replace('T', ' ')}
+                  </span>
+                </div>
               </div>
 
               <p className="text-xs sm:text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">{a.body}</p>
 
               <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 pt-1">
-                <span>By: <b className="text-slate-700">{a.creator_name || 'Principal Office'}</b></span>
-                <span>Audience: <b className="text-slate-700">{a.target_department ? `Dept of ${a.target_department}` : 'All Faculty'}</b></span>
+                <span>By: <b className="text-slate-700">{a.created_by_name || a.creator_name || 'Principal Office'}</b></span>
+                <span>Audience: <b className="text-slate-700">{a.audience_dept ? `Dept of ${a.audience_dept}` : a.target_department ? `Dept of ${a.target_department}` : 'All Faculty'}</b></span>
 
                 {isPrincipal && (
                   <span className="ml-auto inline-flex items-center gap-2 text-[11px] bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md">
@@ -840,8 +909,11 @@ export function NotificationsCenter() {
             </div>
           ))}
 
-          {announcements.length === 0 && !loadingAnnouncements && (
-            <EmptyState title="No broadcasts published" hint="Institutional broadcasts sent by the Principal will appear here." />
+          {displayedAnnouncements.length === 0 && !loadingAnnouncements && (
+            <EmptyState
+              title={noticeTab === 'active' ? "No active broadcasts published" : "No archived notices"}
+              hint={noticeTab === 'active' ? "Institutional broadcasts sent by the Principal will appear here." : "Archived notices will appear here once archived."}
+            />
           )}
         </div>
       </div>
@@ -915,18 +987,21 @@ export function SettingsPage() {
   const isPrincipal = currentUser.role === 'Principal';
   const isDean = currentUser.role === 'Dean';
   const isHod = currentUser.role === 'HOD';
-  const isAdmin = isPrincipal;
   const canManageStaff = isPrincipal || isDean || isHod;
 
   const availableRolesToAdd = useMemo(() => {
-    if (isPrincipal) return ['Dean', 'HOD', 'Faculty', 'Office Admin'] as const;
+    if (isPrincipal) return ['Principal', 'Dean', 'HOD', 'Faculty', 'Office Admin'] as const;
     if (isDean) return ['HOD', 'Faculty', 'Office Admin'] as const;
     if (isHod) return ['Faculty'] as const;
     return [] as const;
   }, [isPrincipal, isDean, isHod]);
 
   const rawTab = params.get('tab');
-  const currentTab = (!rawTab || rawTab === 'database') ? (canManageStaff ? 'leadership' : 'profile') : rawTab;
+  const normalizedTab = rawTab === 'approval' ? 'approval_policy' : rawTab;
+  const validTabs = ['leadership', 'profile', 'approval_policy', 'options', 'letterhead', 'auth', 'smtp', 'audit'];
+  const currentTab = (!normalizedTab || !validTabs.includes(normalizedTab))
+    ? (canManageStaff ? 'leadership' : 'profile')
+    : normalizedTab;
   const setTab = (t: string) => setParams({ tab: t });
 
   const pendingFaculty = useMemo(() => users.filter((u) => u.status === 'pending_approval'), [users]);
@@ -959,6 +1034,35 @@ export function SettingsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const nav = useNavigate();
 
+  const [selectedPolicy, setSelectedPolicy] = useState<'both' | 'principal_only'>(
+    (options.approvalPolicy as any) || 'principal_only'
+  );
+  const [savingPolicy, setSavingPolicy] = useState(false);
+  const [policyFeedback, setPolicyFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  useEffect(() => {
+    if (options.approvalPolicy) {
+      setSelectedPolicy(options.approvalPolicy);
+    }
+  }, [options.approvalPolicy]);
+
+  const handleSavePolicy = async () => {
+    setSavingPolicy(true);
+    setPolicyFeedback(null);
+    try {
+      await api.settings.updateApprovalPolicy(selectedPolicy);
+      await saveOptions({ ...options, approvalPolicy: selectedPolicy });
+      setPolicyFeedback({
+        type: 'success',
+        msg: `Approval policy set to: ${selectedPolicy === 'both' ? 'Both Dean & Principal required' : 'Principal Only required'}.`,
+      });
+    } catch (err: any) {
+      setPolicyFeedback({ type: 'error', msg: err.message || 'Failed to update approval policy.' });
+    } finally {
+      setSavingPolicy(false);
+    }
+  };
+
   // Redirect faculty if they attempt to view leadership tab directly
   useEffect(() => {
     if (!canManageStaff && currentTab === 'leadership') {
@@ -976,7 +1080,7 @@ export function SettingsPage() {
       return users;
     }
     if (isDean) {
-      return users.filter((u) => u.role === 'HOD' || u.role === 'Faculty');
+      return users.filter((u) => u.role === 'HOD' || u.role === 'Faculty' || u.role === 'Dean');
     }
     if (isHod) {
       return users.filter((u) => u.role === 'Faculty' && (u.department === currentUser.department || !u.department));
@@ -986,7 +1090,7 @@ export function SettingsPage() {
 
   const availableStaffFilters = useMemo(() => {
     if (isPrincipal) return ['All', 'Principal', 'Dean', 'HOD', 'Faculty'] as const;
-    if (isDean) return ['All', 'HOD', 'Faculty'] as const;
+    if (isDean) return ['All', 'Dean', 'HOD', 'Faculty'] as const;
     if (isHod) return ['All', 'Faculty'] as const;
     return ['All'] as const;
   }, [isPrincipal, isDean, isHod]);
@@ -1019,9 +1123,10 @@ export function SettingsPage() {
       setLeadershipFeedback({ type: 'error', msg: 'Full name and institutional email are required.' });
       return;
     }
-    const targetDept = isHod ? (currentUser.department || 'IT') : (leadershipForm.role === 'Principal' ? '' : (leadershipForm.department || 'IT'));
+    const targetDept = isHod ? (currentUser.department || 'IT') : (leadershipForm.role === 'Principal' || leadershipForm.role === 'Dean' ? '' : (leadershipForm.department || 'IT'));
     const targetDesignation = leadershipForm.designation.trim() || (
-      leadershipForm.role === 'Dean' ? 'Dean, Student Welfare' :
+      leadershipForm.role === 'Principal' ? 'Principal & Head of Institution' :
+      leadershipForm.role === 'Dean' ? 'Dean, Student Welfare & Academic Affairs' :
       leadershipForm.role === 'HOD' ? `Head of Department, ${targetDept}` :
       leadershipForm.role === 'Office Admin' ? 'Administrative Officer' :
       'Assistant Professor'
@@ -1157,6 +1262,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
               ]
             : []),
           { id: 'profile', label: 'My Profile', icon: <UserIcon size={15} /> },
+          ...(isPrincipal ? [{ id: 'approval_policy', label: 'Approval Policy', icon: <SlidersHorizontal size={15} /> }] : []),
           ...(isPrincipal || isDean ? [{ id: 'options', label: 'Academic Options', icon: null }] : []),
           ...(isPrincipal ? [{ id: 'letterhead', label: 'College Letterhead', icon: null }] : []),
           { id: 'auth', label: 'Role Permissions', icon: <Shield size={15} /> },
@@ -1229,7 +1335,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                   )}
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Direct faculty registrations require official Principal approval before portal login and event request submissions are unlocked.
+                  Direct faculty registrations require verification & official approval by HOD, Dean, or Principal before portal access is unlocked.
                 </p>
               </div>
             </div>
@@ -1239,53 +1345,56 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                 <CheckCircle size={32} className="text-emerald-500 mx-auto" />
                 <p className="text-sm font-semibold text-slate-700">No Pending Faculty Registrations</p>
                 <p className="text-xs text-slate-500 max-w-md mx-auto">
-                  All faculty accounts are reviewed and active. New registrations from the registration page will appear here for Principal verification.
+                  All faculty accounts are reviewed and active. New registrations from the sign-up page will appear here for verification and approval.
                 </p>
               </div>
             ) : (
               <div className="grid md:grid-cols-2 gap-3.5">
-                {pendingFaculty.map((u) => (
-                  <div key={u.id} className="p-4 rounded-xl border border-amber-200 bg-amber-50/40 hover:bg-amber-50/70 transition-all flex flex-col justify-between space-y-3">
-                    <div className="flex items-start gap-3">
-                      <span className="w-10 h-10 rounded-full bg-amber-100 border border-amber-300 text-amber-800 font-bold flex items-center justify-center shrink-0">
-                        {u.name.charAt(0).toUpperCase()}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-sm text-slate-900">{u.name}</span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-                            Dept of {u.department}
-                          </span>
+                {pendingFaculty.map((u) => {
+                  const canApprove = isPrincipal || isDean || isHod;
+                  return (
+                    <div key={u.id} className="p-4 rounded-xl border border-amber-200 bg-amber-50/40 hover:bg-amber-50/70 transition-all flex flex-col justify-between space-y-3">
+                      <div className="flex items-start gap-3">
+                        <span className="w-10 h-10 rounded-full bg-amber-100 border border-amber-300 text-amber-800 font-bold flex items-center justify-center shrink-0">
+                          {u.name.charAt(0).toUpperCase()}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-slate-900">{u.name}</span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                              {u.department ? `Dept of ${u.department}` : 'All Departments'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 mt-0.5">{u.designation || 'Faculty Coordinator'} • <span className="font-mono text-slate-700">{u.email}</span></p>
+                          {u.phone && <p className="text-[11px] text-slate-500 mt-0.5">Phone: {u.phone}</p>}
+                          {u.registeredAt && <p className="text-[10px] text-slate-400 mt-1">Submitted: {u.registeredAt}</p>}
                         </div>
-                        <p className="text-xs text-slate-600 mt-0.5">{u.designation || 'Faculty Coordinator'} • <span className="font-mono text-slate-700">{u.email}</span></p>
-                        {u.phone && <p className="text-[11px] text-slate-500 mt-0.5">Phone: {u.phone}</p>}
-                        {u.registeredAt && <p className="text-[10px] text-slate-400 mt-1">Submitted: {u.registeredAt}</p>}
+                      </div>
+
+                      <div className="pt-3 border-t border-amber-200/60 flex items-center justify-end gap-2">
+                        {canApprove ? (
+                          <>
+                            <button
+                              onClick={() => approveFaculty(u.id)}
+                              className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors flex items-center gap-1.5"
+                            >
+                              <CheckCircle2 size={13} />
+                              Approve Registration
+                            </button>
+                            <button
+                              onClick={() => rejectFaculty(u.id)}
+                              className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 transition-colors"
+                            >
+                              Reject
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-xs text-amber-700 font-medium">Pending Verification</span>
+                        )}
                       </div>
                     </div>
-
-                    <div className="pt-3 border-t border-amber-200/60 flex items-center justify-end gap-2">
-                      {isPrincipal ? (
-                        <>
-                          <button
-                            onClick={() => approveFaculty(u.id)}
-                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors flex items-center gap-1.5"
-                          >
-                            <CheckCircle2 size={13} />
-                            Approve Registration
-                          </button>
-                          <button
-                            onClick={() => rejectFaculty(u.id)}
-                            className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 transition-colors"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      ) : (
-                        <span className="text-xs text-amber-700 font-medium">Pending Principal Approval</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1360,9 +1469,9 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                         disabled
                         className={`${inputCls} bg-slate-50 text-slate-600 font-semibold cursor-not-allowed`}
                       />
-                    ) : leadershipForm.role === 'Principal' ? (
+                    ) : (leadershipForm.role === 'Principal' || leadershipForm.role === 'Dean') ? (
                       <input
-                        value="Institutional Master (All Departments)"
+                        value="Institutional Oversight (All Departments)"
                         disabled
                         className={`${inputCls} bg-slate-50 text-slate-500 cursor-not-allowed`}
                       />
@@ -1376,7 +1485,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                         })}
                         className={inputCls}
                       >
-                        {(options.departments || ['IT', 'CMPN', 'EXTC', 'MECH', 'CIVIL', 'AIDS', 'HAS']).map((d) => (
+                        {(options.departments || ['IT', 'CMPN', 'CS', 'EXTC', 'ECS', 'ETRX', 'MECH', 'CIVIL', 'HAS', 'AIML', 'AIDS', 'CYBER', 'MCA', 'B.VOC', 'TPO', 'EXAM', 'IQAC']).map((d) => (
                           <option key={d} value={d}>{d}</option>
                         ))}
                       </select>
@@ -1515,7 +1624,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                           )}
                         </div>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          {u.designation} • Dept of {u.department} • <span className="font-mono text-slate-700">{u.email}</span>
+                          {u.designation} • {u.role === 'Principal' || u.role === 'Dean' || !u.department ? 'All Departments' : `Dept of ${u.department}`} • <span className="font-mono text-slate-700">{u.email}</span>
                           {u.phone && ` • ${u.phone}`}
                         </p>
                       </div>
@@ -1675,6 +1784,103 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
         </ErrorBoundary>
       )}
 
+      {/* 4b. APPROVAL POLICY TAB (Principal Only) */}
+      {currentTab === 'approval_policy' && isPrincipal && (
+        <ErrorBoundary fallbackTitle="Approval Policy">
+          <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-6 animate-fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div>
+                <h2 className="font-bold text-slate-900 text-base">Institutional Permission Approval Policy</h2>
+                <p className="text-xs text-slate-500">Configure whether permissions require sign-off by both Dean & Principal, or Principal only.</p>
+              </div>
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-violet-100 text-violet-800 border border-violet-300">
+                👑 Principal Authority
+              </span>
+            </div>
+
+            {policyFeedback && (
+              <div className={`p-3.5 rounded-card text-xs font-medium flex items-center gap-2 ${
+                policyFeedback.type === 'success'
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                  : 'bg-rose-50 border border-rose-200 text-rose-800'
+              }`}>
+                {policyFeedback.type === 'success' ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <AlertCircle size={16} className="text-rose-600 shrink-0" />}
+                <span>{policyFeedback.msg}</span>
+              </div>
+            )}
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <label
+                onClick={() => setSelectedPolicy('principal_only')}
+                className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                  selectedPolicy === 'principal_only'
+                    ? 'border-primary bg-primary-pale/40 ring-1 ring-primary/20'
+                    : 'border-gray-200 hover:border-gray-300 bg-white'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-slate-900">Principal Only</span>
+                    <input
+                      type="radio"
+                      name="approvalPolicy"
+                      checked={selectedPolicy === 'principal_only'}
+                      onChange={() => setSelectedPolicy('principal_only')}
+                      className="text-primary focus:ring-primary"
+                    />
+                  </div>
+                  <p className="text-xs text-slate-600 mt-2">
+                    Only the Principal's approval is required. Once the Principal sanctions the permission, it immediately shows as <span className="font-semibold text-emerald-700">Approved</span>. The Dean step acts as an optional advisory review.
+                  </p>
+                </div>
+                <div className="mt-4 pt-3 border-t border-gray-100 text-[11px] font-semibold text-primary">
+                  ⚡ Fast & Streamlined Executive Decision
+                </div>
+              </label>
+
+              <label
+                onClick={() => setSelectedPolicy('both')}
+                className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                  selectedPolicy === 'both'
+                    ? 'border-primary bg-primary-pale/40 ring-1 ring-primary/20'
+                    : 'border-gray-200 hover:border-gray-300 bg-white'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-slate-900">Both Dean & Principal Required</span>
+                    <input
+                      type="radio"
+                      name="approvalPolicy"
+                      checked={selectedPolicy === 'both'}
+                      onChange={() => setSelectedPolicy('both')}
+                      className="text-primary focus:ring-primary"
+                    />
+                  </div>
+                  <p className="text-xs text-slate-600 mt-2">
+                    Dual institutional endorsement. The request only transitions to <span className="font-semibold text-emerald-700">Approved</span> when <span className="font-semibold">BOTH</span> the Dean of Student Welfare has recommended/approved AND the Principal has sanctioned it.
+                  </p>
+                </div>
+                <div className="mt-4 pt-3 border-t border-gray-100 text-[11px] font-semibold text-violet-700">
+                  🏛️ Full Academic & Administrative Consensus
+                </div>
+              </label>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={handleSavePolicy}
+                disabled={savingPolicy}
+                className={`${btnPrimary} !px-6`}
+              >
+                {savingPolicy ? 'Saving Setting...' : 'Save Approval Policy'}
+              </button>
+            </div>
+          </div>
+        </ErrorBoundary>
+      )}
+
       {/* 5. LETTERHEAD TAB */}
       {currentTab === 'letterhead' && (
         <ErrorBoundary fallbackTitle="College Letterhead">
@@ -1684,7 +1890,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                 <h2 className="font-bold text-slate-900 text-base">College Letterhead Header</h2>
                 <p className="text-xs text-slate-500">Appears on every exported PDF and DOCX permission letter.</p>
               </div>
-              {!isAdmin && (
+              {currentUser.role !== 'Principal' && (
                 <span className="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full font-medium">
                   <Lock size={12} /> Admin Managed
                 </span>
@@ -1694,17 +1900,17 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
             <Field label="College Name">
               <input
                 value={letterhead.collegeName}
-                onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, collegeName: e.target.value })}
-                disabled={!isAdmin}
-                className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+                onChange={(e) => saveLetterhead({ ...letterhead, collegeName: e.target.value })}
+                disabled={currentUser.role !== 'Principal'}
+                className={`${inputCls} ${currentUser.role !== 'Principal' ? 'bg-slate-50 cursor-not-allowed' : ''}`}
               />
             </Field>
             <Field label="Official Address">
               <textarea
                 value={letterhead.address}
-                onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, address: e.target.value })}
-                disabled={!isAdmin}
-                className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+                onChange={(e) => saveLetterhead({ ...letterhead, address: e.target.value })}
+                disabled={currentUser.role !== 'Principal'}
+                className={`${inputCls} ${currentUser.role !== 'Principal' ? 'bg-slate-50 cursor-not-allowed' : ''}`}
                 rows={2}
               />
             </Field>
@@ -1712,17 +1918,17 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
               <Field label="Phone">
                 <input
                   value={letterhead.phone}
-                  onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, phone: e.target.value })}
-                  disabled={!isAdmin}
-                  className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+                  onChange={(e) => saveLetterhead({ ...letterhead, phone: e.target.value })}
+                  disabled={currentUser.role !== 'Principal'}
+                  className={`${inputCls} ${currentUser.role !== 'Principal' ? 'bg-slate-50 cursor-not-allowed' : ''}`}
                 />
               </Field>
               <Field label="Official Email">
                 <input
                   value={letterhead.email}
-                  onChange={(e) => isAdmin && saveLetterhead({ ...letterhead, email: e.target.value })}
-                  disabled={!isAdmin}
-                  className={`${inputCls} ${!isAdmin ? 'bg-slate-50 cursor-not-allowed' : ''}`}
+                  onChange={(e) => saveLetterhead({ ...letterhead, email: e.target.value })}
+                  disabled={currentUser.role !== 'Principal'}
+                  className={`${inputCls} ${currentUser.role !== 'Principal' ? 'bg-slate-50 cursor-not-allowed' : ''}`}
                 />
               </Field>
             </div>

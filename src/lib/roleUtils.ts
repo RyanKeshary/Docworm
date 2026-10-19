@@ -57,42 +57,54 @@ export const ROLE_META: Record<Role, {
     border: 'border-amber-300',
     icon: '👤',
   },
+  'Office Admin': {
+    label: 'Office Admin',
+    badge: 'bg-slate-100 text-slate-800 border-slate-300',
+    accent: 'text-slate-700',
+    bg: 'bg-slate-50',
+    border: 'border-slate-300',
+    icon: '📋',
+  },
 };
 
 /**
  * Returns the ordered approval chain for a proposal.
- * Faculty submits → HOD reviews → Dean reviews → Principal sanctions.
+ * - Faculty submits → HOD reviews → Dean reviews → Principal sanctions.
+ * - HOD submits → skips HOD review → directly goes to Dean → Principal sanctions.
  */
 export function buildApprovalChain(
   hodUser: { id: string; name: string } | undefined,
   deanUser: { id: string; name: string } | undefined,
   principalUser: { id: string; name: string } | undefined,
   proposalId?: string,
+  submitterRole?: Role,
 ) {
   const prefix = proposalId ? `${proposalId}-` : `step-${Date.now().toString(36)}-`;
-  return [
-    {
+  const chain = [];
+  if (submitterRole !== 'HOD') {
+    chain.push({
       id: `${prefix}hod`,
       role: 'HOD',
       userId: hodUser?.id ?? '',
       userName: hodUser?.name ?? 'Head of Department',
       action: 'Pending' as const,
-    },
-    {
-      id: `${prefix}dean`,
-      role: 'Dean',
-      userId: deanUser?.id ?? '',
-      userName: deanUser?.name ?? 'Dean (Student Welfare)',
-      action: 'Pending' as const,
-    },
-    {
-      id: `${prefix}prin`,
-      role: 'Principal',
-      userId: principalUser?.id ?? '',
-      userName: principalUser?.name ?? 'Principal Office',
-      action: 'Pending' as const,
-    },
-  ];
+    });
+  }
+  chain.push({
+    id: `${prefix}dean`,
+    role: 'Dean',
+    userId: deanUser?.id ?? '',
+    userName: deanUser?.name ?? 'Dean (Student Welfare)',
+    action: 'Pending' as const,
+  });
+  chain.push({
+    id: `${prefix}prin`,
+    role: 'Principal',
+    userId: principalUser?.id ?? '',
+    userName: principalUser?.name ?? 'Principal Office',
+    action: 'Pending' as const,
+  });
+  return chain;
 }
 
 /**
@@ -105,13 +117,24 @@ export function activeChainStep<T extends { id: string; role: string; action: st
 
 /**
  * Returns true if the given role can act on the given proposal right now.
+ * - Principal holds executive sanction authority on any pending proposal at all times.
+ * - HOD CANNOT endorse or approve their own submissions.
  */
 export function canActOnProposal(
   userRole: Role,
   chain: { id: string; role: string; action: string }[],
+  proposal?: { submitterId?: string; faculty_id?: string; status?: string },
+  currentUserId?: string,
 ): boolean {
+  // Principal has executive sanction authority over ANY pending proposal at any time
+  if (userRole === 'Principal') {
+    const isPending = chain.some((s) => s.action === 'Pending') || (proposal && ['Submitted', 'Under Review'].includes(proposal.status || ''));
+    return Boolean(isPending);
+  }
+
   const active = activeChainStep(chain);
   if (!active) return false;
+
   const roleMap: Record<string, Role> = {
     HOD: 'HOD',
     Dean: 'Dean',

@@ -43,6 +43,16 @@ const facultyIt: AuthUser = {
   status: 'active',
 };
 
+const facultyExtc: AuthUser = {
+  id: 'u-fac-extc',
+  name: 'Prof. Rahul Verma',
+  email: 'prof.verma@slrtce.in',
+  role: 'Faculty',
+  department_id: 'dept-extc',
+  department_code: 'EXTC',
+  status: 'active',
+};
+
 let passed = 0;
 let failed = 0;
 
@@ -159,6 +169,27 @@ assert(can(principal, 'leave:decide_principal') === true, 'Principal CAN grant f
 assert(can(dean, 'leave:view_all') === true, 'Dean CAN view all leaves (read-only oversight)');
 assert(can(dean, 'leave:decide_principal') === false, 'Dean CANNOT grant final sanction for leaves (403)');
 
+// 10b. Employee Gate Passes RBAC
+console.log('\n--- 10b. Employee Gate Passes RBAC ---');
+const itPass = { id: 'pass-1', employee_id: facultyIt.id, department: 'IT', department_code: 'IT', status: 'Pending' };
+const extcPass = { id: 'pass-2', employee_id: 'other', department: 'EXTC', department_code: 'EXTC', status: 'Pending' };
+
+assert(can(facultyIt, 'gatepass:create') === true, 'Faculty CAN request gate pass');
+assert(can(facultyIt, 'gatepass:view_own', itPass) === true, 'Faculty CAN view own gate pass');
+assert(can(facultyIt, 'gatepass:cancel_own', itPass) === true, 'Faculty CAN cancel pending gate pass');
+assert(can(facultyIt, 'gatepass:view_all') === false, 'Faculty CANNOT view all gate passes');
+
+assert(can(hodIt, 'gatepass:view_dept', itPass) === true, 'HOD CAN view department gate pass');
+assert(can(hodIt, 'gatepass:view_dept', extcPass) === false, 'HOD CANNOT view other department gate pass');
+assert(can(hodIt, 'gatepass:endorse_hod', itPass) === true, 'HOD CAN recommend department gate pass');
+assert(can(hodIt, 'gatepass:endorse_hod', extcPass) === false, 'HOD CANNOT recommend other department gate pass');
+assert(can(hodIt, 'gatepass:decide_principal') === false, 'HOD CANNOT grant final principal sanction for gate pass (403)');
+
+assert(can(principal, 'gatepass:view_all') === true, 'Principal CAN view all gate passes');
+assert(can(principal, 'gatepass:decide_principal') === true, 'Principal CAN grant final sanction for gate pass');
+assert(can(dean, 'gatepass:view_all') === true, 'Dean CAN view all gate passes (read-only oversight)');
+assert(can(dean, 'gatepass:decide_principal') === false, 'Dean CANNOT grant final sanction for gate pass (403)');
+
 // 11. Hierarchical User Creation RBAC
 console.log('\n--- 11. Hierarchical User Creation ---');
 assert(can(principal, 'user:create', { role: 'Dean' }) === true, 'Principal CAN add Dean');
@@ -179,6 +210,14 @@ assert(can(hodIt, 'user:create', { role: 'Principal' }) === false, 'HOD CANNOT a
 
 assert(can(facultyIt, 'user:create', { role: 'Faculty' }) === false, 'Faculty CANNOT add Faculty');
 assert(can(facultyIt, 'user:create', { role: 'HOD' }) === false, 'Faculty CANNOT add HOD');
+
+// 12. Faculty Registration Approvals (HOD, Dean, Principal)
+console.log('\n--- 12. Faculty Registration Approvals ---');
+assert(can(principal, 'user:approve_registration', facultyIt) === true, 'Principal CAN approve any faculty registration');
+assert(can(dean, 'user:approve_registration', facultyIt) === true, 'Dean CAN approve faculty registrations');
+assert(can(hodIt, 'user:approve_registration', facultyIt) === true, 'HOD CAN approve IT department faculty registration');
+assert(can(hodIt, 'user:approve_registration', facultyExtc) === false, 'HOD CANNOT approve other department faculty registration');
+assert(can(facultyIt, 'user:approve_registration', facultyIt) === false, 'Faculty CANNOT approve registrations (403)');
 
 console.log(`\n=================================================`);
 console.log(`Test Results: ${passed} Passed, ${failed} Failed`);

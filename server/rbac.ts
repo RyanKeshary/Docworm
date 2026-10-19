@@ -2,7 +2,7 @@
 // Implements the institutional permission matrix for Docworm.
 // Enforced on the server and mirrored in the UI.
 
-export type Role = 'Principal' | 'Dean' | 'HOD' | 'Faculty';
+export type Role = 'Principal' | 'Dean' | 'HOD' | 'Faculty' | 'Office Admin';
 
 export interface AuthUser {
   id: string;
@@ -48,7 +48,7 @@ export type Action =
   | 'admin:settings_write'
   | 'admin:view_read_only'
 
-  // Faculty Leaves
+  // Faculty Leaves & Employee Gate Passes
   | 'leave:view_all'
   | 'leave:view_dept'
   | 'leave:view_own'
@@ -56,10 +56,28 @@ export type Action =
   | 'leave:endorse_hod'
   | 'leave:decide_principal'
   | 'leave:cancel_own'
+  | 'gatepass:view_all'
+  | 'gatepass:view_dept'
+  | 'gatepass:view_own'
+  | 'gatepass:create'
+  | 'gatepass:endorse_hod'
+  | 'gatepass:decide_principal'
+  | 'gatepass:cancel_own'
+
 
   // Reports & Exports
   | 'report:export_excel'
   | 'report:export_csv';
+
+export function normalizeDept(dept?: string | null): string {
+  if (!dept) return '';
+  return dept
+    .replace(/^Department of\s+/i, '')
+    .replace(/^Dept of\s+/i, '')
+    .replace(/^dept-/i, '')
+    .trim()
+    .toUpperCase();
+}
 
 /**
  * Central permission check function.
@@ -126,8 +144,15 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
       return false;
 
     case 'user:approve_registration':
-      // ONLY Principal can approve or verify registration queue
-      return role === 'Principal';
+      // Principal, Dean, or HOD (for their own department faculty) can approve registrations
+      if (role === 'Principal' || role === 'Dean') return true;
+      if (role === 'HOD') {
+        if (!resource) return true;
+        const resDept = resource.department_code || resource.department_id || resource.department;
+        if (!resDept) return true;
+        return normalizeDept(resDept) === normalizeDept(user.department_code || user.department_id);
+      }
+      return false;
 
     case 'user:edit_own':
       // All active users can edit their own basic profile
@@ -174,11 +199,12 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
       return role === 'Principal';
 
     case 'request:endorse_hod':
-      // HOD can endorse requests originating from their own department
+      // HOD can endorse requests originating from their own department to forward to Dean
       if (role !== 'HOD') return false;
       if (!resource) return true;
-      const dept = resource.submitter_dept || resource.department_code || resource.department_id;
-      return dept === user.department_code || dept === user.department_id;
+      const dept = resource.submitter_dept || resource.department_code || resource.department_id || resource.department;
+      if (!dept) return true;
+      return normalizeDept(dept) === normalizeDept(user.department_code || user.department_id);
 
     // ----------------------------------------------------
     // 3. Announcements & Broadcasts
@@ -211,11 +237,13 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
       return role === 'Principal' || role === 'Dean';
 
     // ----------------------------------------------------
-    // 5. Faculty Leaves
+    // 5. Faculty Leaves & Employee Gate Passes
     // ----------------------------------------------------
+    case 'gatepass:view_all':
     case 'leave:view_all':
       return role === 'Principal' || role === 'Dean';
 
+    case 'gatepass:view_dept':
     case 'leave:view_dept':
       if (role === 'Principal' || role === 'Dean') return true;
       if (role === 'HOD') {
@@ -225,14 +253,17 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
       }
       return false;
 
+    case 'gatepass:view_own':
     case 'leave:view_own':
       if (role === 'Principal' || role === 'Dean') return true;
       if (!resource) return true;
-      return resource.faculty_id === user.id;
+      return (resource.employee_id || resource.faculty_id) === user.id;
 
+    case 'gatepass:create':
     case 'leave:create':
       return role === 'Faculty' || role === 'HOD';
 
+    case 'gatepass:endorse_hod':
     case 'leave:endorse_hod': {
       if (role !== 'HOD') return false;
       if (!resource) return true;
@@ -240,12 +271,15 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
       return leaveDept === user.department_code || leaveDept === user.department_id;
     }
 
+    case 'gatepass:decide_principal':
     case 'leave:decide_principal':
       return role === 'Principal';
 
+    case 'gatepass:cancel_own':
     case 'leave:cancel_own':
       if (!resource) return role === 'Faculty' || role === 'HOD';
-      return resource.faculty_id === user.id && (resource.status === 'Pending' || resource.status === 'Draft');
+      return (resource.employee_id || resource.faculty_id) === user.id && (resource.status === 'Pending' || resource.status === 'Draft');
+
 
     // ----------------------------------------------------
     // 6. Reports & Exports
