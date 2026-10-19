@@ -1039,71 +1039,7 @@ export function UserProfilePanel({ currentUser, onUpdate }: { currentUser: any; 
   const [profileFeedback, setProfileFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [passwordFeedback, setPasswordFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
-  // 2FA Setup state
-  const is2faMandatory = currentUser.role === 'Principal' || currentUser.role === 'Dean' || currentUser.role === 'Office Admin';
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(Boolean(currentUser.two_factor_enabled));
-  const [show2faSetup, setShow2faSetup] = useState(false);
-  const [setupData, setSetupData] = useState<{ secret: string; uri: string; backupCodes: string[] } | null>(null);
-  const [verificationCode, setVerificationCode] = useState('');
-  const [setupFeedback, setSetupFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
-  const [setupBusy, setSetupBusy] = useState(false);
-  const [copiedCodes, setCopiedCodes] = useState(false);
 
-  const handleStart2faSetup = async () => {
-    setSetupBusy(true);
-    setSetupFeedback(null);
-    try {
-      const res = await api.auth.setup2fa();
-      setSetupData(res);
-      setShow2faSetup(true);
-    } catch (err: any) {
-      setSetupFeedback({ type: 'error', msg: err.message || 'Failed to initiate 2FA setup' });
-    } finally {
-      setSetupBusy(false);
-    }
-  };
-
-  const handleConfirm2fa = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!setupData || !verificationCode.trim()) return;
-    setSetupBusy(true);
-    setSetupFeedback(null);
-    try {
-      await api.auth.enable2fa({
-        code: verificationCode.trim(),
-        secret: setupData.secret,
-        backupCodes: setupData.backupCodes,
-      });
-      setTwoFactorEnabled(true);
-      setSetupFeedback({ type: 'success', msg: 'Two-factor authentication successfully enabled!' });
-      setShow2faSetup(false);
-      setVerificationCode('');
-      if (onUpdate) onUpdate();
-    } catch (err: any) {
-      setSetupFeedback({ type: 'error', msg: err.message || 'Failed to verify code' });
-    } finally {
-      setSetupBusy(false);
-    }
-  };
-
-  const handleDisable2fa = async () => {
-    if (is2faMandatory) {
-      alert('2FA is mandatory for administrative accounts and cannot be disabled.');
-      return;
-    }
-    if (!confirm('Are you sure you want to disable two-factor authentication?')) return;
-    setSetupBusy(true);
-    try {
-      await api.auth.disable2fa();
-      setTwoFactorEnabled(false);
-      setSetupFeedback({ type: 'success', msg: '2FA has been disabled.' });
-      if (onUpdate) onUpdate();
-    } catch (err: any) {
-      setSetupFeedback({ type: 'error', msg: err.message || 'Failed to disable 2FA' });
-    } finally {
-      setSetupBusy(false);
-    }
-  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1127,8 +1063,8 @@ export function UserProfilePanel({ currentUser, onUpdate }: { currentUser: any; 
     setPasswordSaving(true);
     setPasswordFeedback(null);
 
-    if (passwordForm.new_password.length < 12) {
-      setPasswordFeedback({ type: 'error', msg: 'New password must be at least 12 characters long and meet institutional complexity standards.' });
+    if (passwordForm.new_password.length < 8) {
+      setPasswordFeedback({ type: 'error', msg: 'New password must be at least 8 characters long and meet institutional complexity standards.' });
       setPasswordSaving(false);
       return;
     }
@@ -1276,7 +1212,7 @@ export function UserProfilePanel({ currentUser, onUpdate }: { currentUser: any; 
             />
           </div>
           <div>
-            <label className="text-xs font-semibold text-slate-700 block mb-1">New Password (min 12 chars)</label>
+            <label className="text-xs font-semibold text-slate-700 block mb-1">New Password (min 8 chars)</label>
             <input
               required
               type="password"
@@ -1307,169 +1243,7 @@ export function UserProfilePanel({ currentUser, onUpdate }: { currentUser: any; 
         </form>
       </div>
 
-      {/* 2FA & Account Security Panel */}
-      <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
-        <div className="pb-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <ShieldCheck size={18} className="text-primary" />
-            <div>
-              <h2 className="font-bold text-slate-900 text-base">Two-Factor Authentication (2FA)</h2>
-              <p className="text-xs text-slate-500">
-                Enhance your account security with multi-factor authentication (Email OTP, TOTP, and Backup Codes).
-              </p>
-            </div>
-          </div>
-          <div>
-            {is2faMandatory ? (
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200 flex items-center gap-1.5">
-                <Lock size={12} /> Mandatory for {currentUser.role}
-              </span>
-            ) : twoFactorEnabled ? (
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1.5">
-                <CheckCircle2 size={12} /> Active & Protected
-              </span>
-            ) : (
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                Not Configured
-              </span>
-            )}
-          </div>
-        </div>
 
-        {setupFeedback && (
-          <div className={`p-3 rounded-card text-xs flex items-center gap-2 ${
-            setupFeedback.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
-          }`}>
-            {setupFeedback.type === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
-            <span>{setupFeedback.msg}</span>
-          </div>
-        )}
-
-        <div className="space-y-3">
-          <p className="text-xs text-slate-600 leading-relaxed">
-            {is2faMandatory ? (
-              <span>
-                As an institutional administrator, 2FA is <b>strictly enforced</b> on your account. When signing in, a single-use 6-digit OTP is automatically sent to your verified email (<code className="font-mono text-primary">{currentUser.email}</code>). You can also configure an Authenticator App (Google Authenticator, Authy, Microsoft Authenticator) for offline instant codes.
-              </span>
-            ) : (
-              <span>
-                Protect your account against compromised passwords. When enabled, signing in requires both your password and an authenticator code.
-              </span>
-            )}
-          </p>
-
-          <div className="flex flex-wrap items-center gap-3 pt-1">
-            <button
-              type="button"
-              onClick={handleStart2faSetup}
-              disabled={setupBusy}
-              className={btnPrimary}
-            >
-              <KeyRound size={14} /> {setupBusy ? 'Loading...' : 'Setup Authenticator App (TOTP)'}
-            </button>
-            {twoFactorEnabled && !is2faMandatory && (
-              <button
-                type="button"
-                onClick={handleDisable2fa}
-                disabled={setupBusy}
-                className={btnGhost}
-              >
-                Disable 2FA
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* 2FA Setup Drawer / Modal */}
-        {show2faSetup && setupData && (
-          <div className="mt-4 p-4 sm:p-5 rounded-xl border border-blue-200 bg-blue-50/40 space-y-4 animate-fade-in">
-            <div className="flex items-center justify-between pb-2 border-b border-blue-200/60">
-              <span className="text-xs font-bold text-blue-950 uppercase tracking-wide">
-                Configure Authenticator App
-              </span>
-              <button
-                type="button"
-                onClick={() => setShow2faSetup(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <p className="text-slate-700">
-                1. Open Google Authenticator, Authy, or 1Password and add an account using this Secret Key:
-              </p>
-              <div className="flex items-center gap-2">
-                <code className="p-2 bg-white rounded-lg border border-slate-200 font-mono text-xs font-bold text-primary tracking-wider flex-1 select-all break-all">
-                  {setupData.secret}
-                </code>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(setupData.secret);
-                    alert('Secret key copied to clipboard!');
-                  }}
-                  className={btnGhost}
-                >
-                  <Copy size={13} /> Copy
-                </button>
-              </div>
-
-              <div>
-                <p className="text-slate-700 font-semibold mb-1">
-                  2. Single-Use Emergency Backup Codes:
-                </p>
-                <p className="text-slate-500 text-[11px] mb-2">
-                  Store these recovery codes safely. Each code can only be used once if you lose access to your device.
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-white p-3 rounded-lg border border-slate-200 font-mono text-xs text-slate-800 text-center font-bold">
-                  {setupData.backupCodes.map((code, idx) => (
-                    <div key={idx} className="p-1 bg-slate-50 rounded border border-slate-100">
-                      {code}
-                    </div>
-                  ))}
-                </div>
-                <div className="flex items-center gap-2 mt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(setupData.backupCodes.join('\n'));
-                      setCopiedCodes(true);
-                      setTimeout(() => setCopiedCodes(false), 2000);
-                    }}
-                    className="text-[11px] font-semibold text-primary hover:underline flex items-center gap-1"
-                  >
-                    <Copy size={11} /> {copiedCodes ? 'Copied to clipboard!' : 'Copy all backup codes'}
-                  </button>
-                </div>
-              </div>
-
-              <form onSubmit={handleConfirm2fa} className="space-y-2 pt-2 border-t border-blue-200/60">
-                <label className="block">
-                  <span className="text-xs font-semibold text-slate-700 block mb-1">
-                    3. Enter 6-digit code from your app to verify setup:
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      maxLength={6}
-                      value={verificationCode}
-                      onChange={(e) => setVerificationCode(e.target.value.trim())}
-                      placeholder="123456"
-                      className={`${inputCls} max-w-[180px] font-mono text-center tracking-widest text-sm`}
-                      required
-                    />
-                    <button type="submit" disabled={setupBusy} className={btnPrimary}>
-                      <Check size={14} /> {setupBusy ? 'Verifying...' : 'Activate 2FA'}
-                    </button>
-                  </div>
-                </label>
-              </form>
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 }

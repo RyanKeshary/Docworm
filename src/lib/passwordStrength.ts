@@ -19,7 +19,7 @@ export interface PasswordFeedback {
 }
 
 const COMMON_PATTERNS = [
-  'password', 'password123', 'password@67', '123456', '12345678', 'qwerty',
+  'password', 'password123', '123456', '12345678', 'qwerty',
   'admin', 'welcome', 'docworm', 'slrtce', 'college', 'faculty', 'changeme'
 ];
 
@@ -39,11 +39,11 @@ export function evaluatePasswordStrength(password: string): PasswordFeedback {
         symbol: false,
         notCommon: true,
       },
-      suggestions: ['Enter at least 12 characters with upper, lower, numbers, and symbols.'],
+      suggestions: ['Enter at least 8 characters with upper, lower, numbers, and symbols.'],
     };
   }
 
-  const length = password.length >= 12;
+  const length = password.length >= 8;
   const uppercase = /[A-Z]/.test(password);
   const lowercase = /[a-z]/.test(password);
   const number = /[0-9]/.test(password);
@@ -53,7 +53,7 @@ export function evaluatePasswordStrength(password: string): PasswordFeedback {
   const notCommon = !COMMON_PATTERNS.some((p) => lowerPass.includes(p));
 
   const suggestions: string[] = [];
-  if (!length) suggestions.push('At least 12 characters required (current: ' + password.length + ')');
+  if (!length) suggestions.push('At least 8 characters required (current: ' + password.length + ')');
   if (!uppercase) suggestions.push('Include uppercase letter (A-Z)');
   if (!lowercase) suggestions.push('Include lowercase letter (a-z)');
   if (!number) suggestions.push('Include number (0-9)');

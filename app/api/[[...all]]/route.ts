@@ -798,47 +798,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       `;
       resetFailedIpAttempts(ip, 'login');
 
-      // 5. Check Two-Factor Authentication Requirement
-      // Enforce 2FA strictly for Admin roles (Principal, Dean, Office Admin) or users who enabled 2FA
-      const isAdmin = user.role === 'Principal' || user.role === 'Dean' || user.role === 'Office Admin';
-      const requires2FA = isAdmin || Boolean(user.two_factor_enabled);
-
-      if (requires2FA) {
-        // Issue temporary 2FA token valid for 5 minutes
-        const tempToken = jwt.sign(
-          { id: user.id, email: user.email, role: user.role, purpose: '2fa_verify' },
-          JWT_SECRET,
-          { expiresIn: '5m' }
-        );
-
-        // Generate cryptographically secure 6-digit Email OTP
-        const { otp, hash } = generateEmailOtp();
-        const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-
-        await sql`DELETE FROM public.auth_otp_codes WHERE user_id = ${user.id}`;
-        await sql`
-          INSERT INTO public.auth_otp_codes (user_id, code_hash, method, expires_at)
-          VALUES (${user.id}, ${hash}, 'email', ${expiresAt})
-        `;
-
-        // Send Email OTP
-        await sendEmail({
-          to: user.email,
-          subject: 'Docworm Institutional Portal: 2FA Verification Code',
-          text: `Hello ${user.name},\n\nYour two-factor authentication verification code is:\n\n${otp}\n\nThis code expires in 5 minutes.\nIf you did not initiate this login, notify the administration immediately.`,
-        });
-
-        await logAudit(user.id, user.name, '2FA_CHALLENGE_ISSUED', `users:${user.id}`, { ip });
-
-        const masked = user.email.replace(/^(.{2})(.*)(@.*)$/, '$1***$3');
-        return NextResponse.json({
-          require2fa: true,
-          tempToken,
-          hasTotp: Boolean(user.two_factor_secret),
-          emailMasked: masked,
-          message: `Two-factor authentication required. A 6-digit verification code has been dispatched to ${masked}.`,
-        });
-      }
+      // 5. Two-Factor Authentication removed globally - proceed directly to session issuance
+      const requires2FA = false;
 
       // 6. Direct session issue (for standard non-admin faculty without 2FA)
       const token = jwt.sign(
@@ -1319,7 +1280,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
   if (path === '/auth/change-password') {
     const schema = z.object({
       current_password: z.string().min(1),
-      new_password: z.string().min(12, 'New password must be at least 12 characters long.'),
+      new_password: z.string().min(8, 'New password must be at least 8 characters long.'),
     });
     const parsed = schema.safeParse(body);
     if (!parsed.success) return jsonError(parsed.error.issues[0]?.message || 'Invalid password format.');

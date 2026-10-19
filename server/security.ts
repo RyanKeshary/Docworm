@@ -15,7 +15,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'docworm_jwt_secret_institution_slr
 
 // Top common / compromised password roots and dictionary phrases
 const COMMON_PASSWORD_PATTERNS = new Set([
-  'password', 'password123', 'password@123', 'password@67', 'password1234',
+  'password', 'password123', 'password@123', 'password1234',
   '123456', '12345678', '123456789', '1234567890', '123456789012',
   'qwerty', 'qwertyuiop', 'qwerty123456', 'asdfghjkl', 'zxcvbnm123',
   'admin', 'admin123', 'admin1234', 'administrator', 'admin@123',
@@ -32,9 +32,9 @@ export function validatePasswordStrength(password: string): { valid: boolean; er
     return { valid: false, error: 'Password is required.' };
   }
 
-  // 1. Length check: Minimum 12 characters
-  if (password.length < 12) {
-    return { valid: false, error: 'Password must be at least 12 characters in length.' };
+  // 1. Length check: Minimum 8 characters
+  if (password.length < 8) {
+    return { valid: false, error: 'Password must be at least 8 characters in length.' };
   }
 
   // 2. Maximum length to prevent DoS attacks on bcrypt hashing
