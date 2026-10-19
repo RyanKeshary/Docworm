@@ -5,9 +5,10 @@ import { Link, NavLink, useNavigate } from './lib/router-compat';
 import {
   FileText, Bell, Settings, Calendar, Ticket,
   Menu, X, Search, LogOut, ChevronLeft, User, Database, Shield, Crown, GraduationCap, Building2, Users,
-  HelpCircle,
+  HelpCircle, CheckCheck,
 } from 'lucide-react';
 import { useData } from './store';
+import { api } from './lib/api';
 import { ROLE_META, PERMISSIONS } from './lib/roleUtils';
 import { OnboardingGuideModal } from './components/OnboardingGuideModal';
 import { PrincipalDepartureAlert } from './components/PrincipalDepartureAlert';
@@ -144,15 +145,37 @@ export function ExportMenu({ onExport }: { onExport: (fmt: 'CSV' | 'XLSX' | 'PDF
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const { currentUser, users, setCurrentUserId, notifications, backend, signOut, refresh, backendError, syncState, lastSyncedAt } = useData();
+  const { currentUser, users, setCurrentUserId, notifications, saveNotifications, backend, signOut, refresh, backendError, syncState, lastSyncedAt } = useData();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [q, setQ] = useState('');
   const [guideOpen, setGuideOpen] = useState(false);
+  const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
   const nav = useNavigate();
   const unread = notifications.filter((n) => n.userId === currentUser.id && !n.read).length;
   const role = currentUser.role;
   const roleMeta = ROLE_META[role] ?? ROLE_META.Faculty;
+
+  // Click outside and escape key handling for notification dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+        setNotifDropdownOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setNotifDropdownOpen(false);
+    }
+    if (notifDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [notifDropdownOpen]);
 
   // Auto-show guide strictly once on first-time login
   useEffect(() => {
@@ -352,20 +375,129 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <span className="hidden sm:inline font-medium">Guide</span>
               </button>
 
-              {/* Notification Bell */}
-              <button
-                onClick={() => nav('/notifications')}
-                className="relative p-2 rounded-xl hover:bg-primary-pale text-ink-muted hover:text-ink transition-colors border border-transparent hover:border-primary-border/60"
-                aria-label={`Notifications, ${unread} unread`}
-                title="Notifications"
-              >
-                <Bell size={18} />
-                {unread > 0 && (
-                  <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center animate-pulse shadow-xs">
-                    {unread}
-                  </span>
+              {/* Notification Bell with Interactive Dropdown Flyout */}
+              <div className="relative" ref={notifRef}>
+                <button
+                  onClick={() => setNotifDropdownOpen((prev) => !prev)}
+                  className={`relative p-2 rounded-xl transition-all border ${
+                    notifDropdownOpen
+                      ? 'bg-primary-pale text-primary border-primary-border shadow-xs'
+                      : 'hover:bg-primary-pale text-ink-muted hover:text-ink border-transparent hover:border-primary-border/60'
+                  }`}
+                  aria-label={`Notifications, ${unread} unread`}
+                  aria-expanded={notifDropdownOpen}
+                  title="Notifications"
+                >
+                  <Bell size={18} />
+                  {unread > 0 && (
+                    <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center animate-pulse shadow-xs">
+                      {unread > 99 ? '99+' : unread}
+                    </span>
+                  )}
+                </button>
+
+                {notifDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-surface border border-primary-border/80 rounded-2xl shadow-xl z-50 overflow-hidden animate-fade-in">
+                    {/* Header */}
+                    <div className="p-3.5 border-b border-primary-border/60 flex items-center justify-between bg-page/50">
+                      <div className="flex items-center gap-2">
+                        <span className="p-1 rounded-lg bg-primary-pale text-primary">
+                          <Bell size={14} />
+                        </span>
+                        <span className="font-bold text-xs text-ink">Notifications</span>
+                        {unread > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary text-white">
+                            {unread} new
+                          </span>
+                        )}
+                      </div>
+                      {unread > 0 && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api.announcements.markAllRead();
+                            } catch {}
+                            saveNotifications(notifications.map((n) => n.userId === currentUser.id ? { ...n, read: true } : n));
+                            await refresh();
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:text-primary-dark transition-colors hover:underline"
+                        >
+                          <CheckCheck size={13} />
+                          <span>Mark all read</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Notification Items List */}
+                    <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                      {notifications.filter((n) => n.userId === currentUser.id || !n.userId).length === 0 ? (
+                        <div className="py-8 px-4 text-center">
+                          <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2">
+                            <Bell size={18} />
+                          </div>
+                          <p className="text-xs font-semibold text-slate-700">No notifications</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">You are completely caught up!</p>
+                        </div>
+                      ) : (
+                        notifications
+                          .filter((n) => n.userId === currentUser.id || !n.userId)
+                          .slice(0, 8)
+                          .map((n) => (
+                            <div
+                              key={n.id}
+                              onClick={async () => {
+                                if (!n.read && n.id) {
+                                  try {
+                                    await api.announcements.markRead(n.id);
+                                  } catch {}
+                                  saveNotifications(notifications.map((x) => x.id === n.id ? { ...x, read: true } : x));
+                                }
+                                setNotifDropdownOpen(false);
+                                nav(n.link || '/notifications');
+                              }}
+                              className={`p-3 text-left hover:bg-primary-pale/30 transition-colors cursor-pointer flex items-start gap-2.5 ${
+                                !n.read ? 'bg-primary-pale/20' : 'bg-surface'
+                              }`}
+                            >
+                              <span
+                                className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                                  !n.read ? 'bg-primary shadow-xs' : 'bg-transparent'
+                                }`}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <p className={`text-xs truncate ${!n.read ? 'font-bold text-ink' : 'font-medium text-ink-muted'}`}>
+                                    {n.title}
+                                  </p>
+                                  <span className="text-[10px] text-ink-muted/80 shrink-0 font-mono">
+                                    {n.createdAt ? (n.createdAt.slice(11, 16) || n.createdAt.slice(0, 10)) : ''}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-ink-muted line-clamp-2 mt-0.5 leading-snug">
+                                  {n.body}
+                                </p>
+                              </div>
+                            </div>
+                          ))
+                      )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="p-2.5 bg-page/80 border-t border-primary-border/60 flex items-center justify-between">
+                      <button
+                        onClick={() => {
+                          setNotifDropdownOpen(false);
+                          nav('/notifications');
+                        }}
+                        className="w-full text-center text-xs font-semibold text-primary hover:text-primary-dark transition-colors py-1 hover:underline flex items-center justify-center gap-1.5"
+                      >
+                        <span>Open Notifications Center</span>
+                        <span aria-hidden="true">→</span>
+                      </button>
+                    </div>
+                  </div>
                 )}
-              </button>
+              </div>
 
               <div className="h-6 w-px bg-slate-200 hidden sm:block" />
 

@@ -177,6 +177,8 @@ export const api = {
       apiFetch('/api/announcements', { method: 'POST', body: JSON.stringify(data) }),
     markRead: (id: string) =>
       apiFetch(`/api/announcements/${id}/read`, { method: 'POST' }),
+    markAllRead: () =>
+      apiFetch('/api/announcements/read-all', { method: 'POST' }),
     archive: (id: string, is_archived: boolean = true) =>
       apiFetch(`/api/announcements/${id}/archive`, { method: 'POST', body: JSON.stringify({ is_archived }) }),
     delete: (id: string) =>

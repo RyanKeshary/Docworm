@@ -445,6 +445,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ all?
         LEFT JOIN public.users u ON a.created_by = u.id
         LEFT JOIN public.announcement_receipts ar ON ar.announcement_id = a.id AND ar.user_id = ${user.id}
         WHERE a.audience_dept IS NULL
+           OR a.audience_dept = 'all'
            OR a.audience_dept = ${user.department_code || ''}
            OR (${user.role} = 'HOD' AND a.audience_dept = 'HODs')
            OR ${user.role} = 'Principal'
@@ -1887,24 +1888,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
           SELECT u.id, u.email, u.name FROM public.users u
           WHERE u.role = 'HOD' AND u.status = 'active'
         `;
-      } else if (audience_dept) {
+      } else if (audience_dept && audience_dept !== 'all') {
         recipients = await sql`
           SELECT u.id, u.email, u.name FROM public.users u
           JOIN public.departments d ON u.department_id = d.id
           WHERE d.code = ${audience_dept} AND u.status = 'active'
         `;
       } else {
-        recipients = await sql`SELECT id, email, name FROM public.users WHERE status = 'active' AND role != 'Principal'`;
+        recipients = await sql`SELECT id, email, name FROM public.users WHERE status = 'active'`;
       }
 
-      const recipientIds = recipients.map((r) => r.id);
+      // Ensure all recipients and the sender/Principal have receipts so everyone sees it
+      const recipientIds = Array.from(new Set([...recipients.map((r) => r.id), user.id]));
       for (const rId of recipientIds) {
         await sql`
           INSERT INTO public.announcement_receipts (announcement_id, user_id, delivered_via)
           VALUES (${ann.id}, ${rId}, 'in_app')
-          ON CONFLICT DO NOTHING
+          ON CONFLICT (announcement_id, user_id) DO NOTHING
         `;
       }
+
+      // Realtime multi-user SSE broadcast
+      broadcastRealtime({
+        type: 'announcements_updated',
+        action: 'broadcast',
+        id: ann.id,
+        meta: { title, priority, audience_dept: audience_dept || 'all' },
+      });
 
       sendPushToUsers(recipientIds, {
         title: `Docworm Broadcast [${priority}]: ${title}`,
@@ -1924,8 +1934,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       await logAudit(user.id, user.name, 'ANNOUNCEMENT_BROADCASTED', `announcements:${ann.id}`, { title, recipientCount: recipientIds.length });
       return NextResponse.json(
         {
+          ok: true,
           message: `Announcement broadcast dispatched to ${recipientIds.length} staff members!`,
           delivery: { announcementId: ann.id, targetRecipients: recipientIds.length },
+          recipientsCount: recipientIds.length,
         },
         { status: 201 }
       );
@@ -1940,12 +1952,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
     const annId = readMatch[1];
     try {
       await sql`
-        UPDATE public.announcement_receipts SET read_at = NOW()
-        WHERE announcement_id = ${annId} AND user_id = ${user.id}
+        INSERT INTO public.announcement_receipts (announcement_id, user_id, delivered_via, read_at)
+        VALUES (${annId}, ${user.id}, 'in_app', NOW())
+        ON CONFLICT (announcement_id, user_id) DO UPDATE SET read_at = NOW()
       `;
       return NextResponse.json({ success: true });
     } catch {
       return jsonError('Failed to mark announcement as read.', 500);
+    }
+  }
+
+  // 12a. Mark ALL Announcements Read
+  if (path === '/announcements/read-all') {
+    try {
+      await sql`
+        INSERT INTO public.announcement_receipts (announcement_id, user_id, delivered_via, read_at)
+        SELECT a.id, ${user.id}, 'in_app', NOW()
+        FROM public.announcements a
+        WHERE a.audience_dept IS NULL
+           OR a.audience_dept = 'all'
+           OR a.audience_dept = ${user.department_code || ''}
+           OR (${user.role} = 'HOD' AND a.audience_dept = 'HODs')
+           OR ${user.role} = 'Principal'
+           OR ${user.role} = 'Dean'
+        ON CONFLICT (announcement_id, user_id) DO UPDATE SET read_at = NOW()
+      `;
+      return NextResponse.json({ success: true });
+    } catch {
+      return jsonError('Failed to mark all announcements as read.', 500);
     }
   }
 

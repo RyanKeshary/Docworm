@@ -240,19 +240,38 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (annRes.status === 'fulfilled' && annRes.value?.announcements) {
-        setNotifications(
-          annRes.value.announcements
-            .filter((a: any) => !a.is_archived)
-            .map((a: any) => ({
-              id: a.id,
-              userId: currentUser.id,
-              title: `[${a.priority}] ${a.title}`,
-              body: a.body,
-              link: '/notifications',
-              read: Boolean(a.read_at),
-              createdAt: String(a.created_at || '').slice(0, 16).replace('T', ' '),
-            }))
+        const serverNotifs: Notification[] = annRes.value.announcements
+          .filter((a: any) => !a.is_archived)
+          .map((a: any) => ({
+            id: a.id,
+            userId: currentUser.id,
+            title: `[${a.priority}] ${a.title}`,
+            body: a.body,
+            link: '/notifications',
+            read: Boolean(a.read_at),
+            createdAt: String(a.created_at || '').slice(0, 16).replace('T', ' '),
+          }));
+
+        let localNotifs: Notification[] = [];
+        if (typeof window !== 'undefined') {
+          try {
+            const cached = localStorage.getItem('docworm_custom_notifications');
+            if (cached) localNotifs = JSON.parse(cached);
+          } catch {}
+        }
+
+        const map = new Map<string, Notification>();
+        for (const n of localNotifs) {
+          if (n.userId === currentUser.id || !n.userId) map.set(n.id, n);
+        }
+        for (const n of serverNotifs) {
+          map.set(n.id, n);
+        }
+
+        const merged = Array.from(map.values()).sort(
+          (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
         );
+        setNotifications(merged);
       }
 
       if (auditRes.status === 'fulfilled' && auditRes.value?.logs) {
@@ -703,6 +722,82 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const pushNotification = useCallback(
+    (n: Omit<Notification, 'id' | 'createdAt' | 'read'> & { read?: boolean; id?: string }) => {
+      const newNotif: Notification = {
+        id: n.id || uid(),
+        userId: n.userId || currentUser.id,
+        title: n.title,
+        body: n.body,
+        link: n.link || '/notifications',
+        read: n.read ?? false,
+        createdAt: nowStr(),
+      };
+
+      setNotifications((prev) => {
+        const filtered = prev.filter((item) => item.id !== newNotif.id);
+        const next = [newNotif, ...filtered];
+        if (typeof window !== 'undefined') {
+          try {
+            const localOnly = next.filter((item) => !item.id.startsWith('ann-'));
+            localStorage.setItem('docworm_custom_notifications', JSON.stringify(localOnly.slice(0, 100)));
+          } catch {}
+        }
+        return next;
+      });
+
+      // Broadcast locally so other open tabs/windows update in real-time
+      try {
+        realtime.broadcastLocal({
+          type: 'announcements_updated',
+          action: 'notification',
+          timestamp: new Date().toISOString(),
+          meta: newNotif as any,
+        });
+      } catch {}
+
+      // Trigger desktop browser notification if permission is granted
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification(newNotif.title, {
+            body: newNotif.body,
+            icon: '/favicon.ico',
+          });
+        } catch {}
+      }
+    },
+    [currentUser.id]
+  );
+
+  const saveNotifications = useCallback((updater: Notification[] | ((prev: Notification[]) => Notification[])) => {
+    setNotifications((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      if (typeof window !== 'undefined') {
+        try {
+          const localOnly = next.filter((item) => !item.id.startsWith('ann-'));
+          localStorage.setItem('docworm_custom_notifications', JSON.stringify(localOnly.slice(0, 100)));
+        } catch {}
+      }
+      return next;
+    });
+  }, []);
+
+  const pushAudit = useCallback(
+    (a: Omit<AuditLog, 'id' | 'createdAt'>) => {
+      const newLog: AuditLog = {
+        id: uid(),
+        actorId: a.actorId || currentUser.id,
+        actorName: a.actorName || currentUser.name || 'Staff',
+        action: a.action,
+        entity: a.entity || 'General',
+        entityId: a.entityId || '',
+        createdAt: nowStr(),
+      };
+      setAudit((prev) => [newLog, ...prev.slice(0, 499)]);
+    },
+    [currentUser.id, currentUser.name]
+  );
+
   const value: DataState = {
     users,
     proposals,
@@ -733,13 +828,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     saveProposals,
     saveTasks: setTasks,
     saveComments: setComments,
-    saveNotifications: setNotifications,
+    saveNotifications,
     saveCompletions: setCompletions,
     saveOptions,
     saveUsers: setUsers,
     saveLetterhead,
-    pushNotification: () => {},
-    pushAudit: () => {},
+    pushNotification,
+    pushAudit,
     approveFaculty,
     rejectFaculty,
     addLeadership,

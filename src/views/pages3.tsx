@@ -14,6 +14,7 @@ import { Badge, Drawer, EmptyState, ExportMenu, Field, Modal, btnGhost, btnPrima
 import { REPORT_COLS, computedTaskStatus, detectClashes, exportCSV, exportPDF, exportXLSX, flattenProposal, flattenReport, flattenTask, budgetTotals, exportLetterPDF } from '../utils';
 import type { Task, User } from '../types';
 import { api } from '../lib/api';
+import { realtime } from '../lib/realtime';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import {
   CloudTableEditorPanel,
@@ -663,15 +664,27 @@ export function NotificationsCenter() {
         audience_dept: audience === 'all' ? null : audience,
       });
 
+      const count = res.recipientsCount ?? res.delivery?.targetRecipients ?? 0;
       setBroadcastFeedback({
         type: 'success',
-        msg: `Broadcast sent! Dispatched to ${res.recipientsCount} faculty accounts via Email, Push, and In-App Bell.`,
+        msg: `Broadcast sent! Dispatched to ${count} faculty accounts via Email, Push, and In-App Bell.`,
       });
       setTitle('');
       setBody('');
       setPriority('normal');
       setAudience('all');
+
+      // Dispatch local realtime broadcast so all tabs update immediately
+      try {
+        realtime.broadcastLocal({
+          type: 'announcements_updated',
+          action: 'broadcast',
+          timestamp: new Date().toISOString(),
+        });
+      } catch {}
+
       await loadAnnouncements();
+      await refresh();
     } catch (err: any) {
       setBroadcastFeedback({ type: 'error', msg: err.message || 'Failed to dispatch broadcast.' });
     } finally {
@@ -928,7 +941,14 @@ export function NotificationsCenter() {
             <p className="text-xs text-slate-500">Status updates, assigned tasks, and review queries.</p>
           </div>
           <button
-            onClick={() => saveNotifications(notifications.map((n) => n.userId === currentUser.id ? { ...n, read: true } : n))}
+            onClick={async () => {
+              try {
+                await api.announcements.markAllRead();
+              } catch {}
+              saveNotifications(notifications.map((n) => n.userId === currentUser.id ? { ...n, read: true } : n));
+              await loadAnnouncements();
+              await refresh();
+            }}
             className={btnGhost}
           >
             Mark all read
@@ -960,7 +980,14 @@ export function NotificationsCenter() {
                 )}
                 {!n.read && (
                   <button
-                    onClick={() => saveNotifications(notifications.map((x) => x.id === n.id ? { ...x, read: true } : x))}
+                    onClick={async () => {
+                      if (n.id) {
+                        try {
+                          await api.announcements.markRead(n.id);
+                        } catch {}
+                      }
+                      saveNotifications(notifications.map((x) => x.id === n.id ? { ...x, read: true } : x));
+                    }}
                     className="text-xs text-slate-500 hover:text-slate-800 underline"
                   >
                     Mark as read
