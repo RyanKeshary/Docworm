@@ -131,10 +131,10 @@ export function EmployeeGatePassPortal() {
       fetchPasses(true);
     });
 
-    // 6-second heartbeat polling for ultra-reliable fallback
+    // 20-second heartbeat polling for ultra-reliable fallback
     const interval = setInterval(() => {
       fetchPasses(true);
-    }, 6000);
+    }, 20000);
 
     return () => {
       unsub();

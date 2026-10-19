@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useData, nowStr } from '../store';
 import { Badge, btnGhost, btnPrimary, inputCls } from '../components';
+import { PermissionPortalSkeleton } from '../components/Boneyard';
 import type { Proposal, Attachment, Role } from '../types';
 import { api } from '../lib/api';
 import {
@@ -92,7 +93,7 @@ export function PermissionPortal() {
   const {
     proposals, saveProposals, currentUser, setCurrentUserId, users,
     letterhead, pushNotification, pushAudit, getNextRefNumber,
-    options, uploadFile, refresh,
+    options, uploadFile, refresh, syncState,
   } = useData();
 
   const role = currentUser.role;
@@ -514,6 +515,10 @@ export function PermissionPortal() {
     { key: 'Rejected', label: 'Rejected' },
     ...(!canViewAll ? [{ key: 'Mine' as typeof statusFilter, label: 'My Submissions' }] : []),
   ];
+
+  if (syncState === 'loading' && proposals.length === 0) {
+    return <PermissionPortalSkeleton />;
+  }
 
   // ─────────────────────────────────────────────────────────
   return (

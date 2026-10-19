@@ -141,22 +141,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [liveTick, setLiveTick] = useState(0);
   const isRefreshingRef = useRef(false);
+  const staticLoadedRef = useRef(false);
 
-  // Load Workspace from Database via API
-  const refresh = useCallback(async () => {
+  // Load Workspace from Database via API with smart static caching
+  const refresh = useCallback(async (forceAll = false) => {
     if (isRefreshingRef.current) return;
     isRefreshingRef.current = true;
     try {
-      const [userRes, propRes, optRes, lhRes, annRes, auditRes] = await Promise.allSettled([
+      const needStatic = forceAll || !staticLoadedRef.current;
+      const [userRes, propRes, annRes, auditRes, optRes, lhRes] = await Promise.allSettled([
         api.users.list(),
         api.requests.list(),
-        api.options.get(),
-        api.settings.getLetterhead(),
         api.announcements.list(),
         api.admin.getAuditLog(),
+        needStatic ? api.options.get() : Promise.resolve(null),
+        needStatic ? api.settings.getLetterhead() : Promise.resolve(null),
       ]);
 
-      if (userRes.status === 'fulfilled' && userRes.value.users) {
+      if (needStatic) staticLoadedRef.current = true;
+
+      if (userRes.status === 'fulfilled' && userRes.value?.users) {
         setUsers(userRes.value.users.map((u: any) => ({
           ...u,
           department: (u.role === 'Principal' || u.role === 'Dean') ? null : (u.department_code || u.department || 'HAS'),
@@ -363,12 +367,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refresh();
     });
 
-    // High-efficiency background poll timer (4s for near-instant updates)
+    // Fallback heartbeat poll timer (20s since active SSE handles instant changes)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         refresh();
       }
-    }, 4000);
+    }, 20000);
 
     // Instant refresh when user switches back to this browser tab or window
     const handleFocus = () => {
