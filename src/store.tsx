@@ -5,6 +5,7 @@ import type { AppOptions } from './config';
 import { DEFAULT_OPTIONS } from './config';
 import type { AuditLog, CompletionReport, Notification, Proposal, ProposalComment, Task, User } from './types';
 import { api } from './lib/api';
+import { realtime } from './lib/realtime';
 
 export type CompletionMap = { [proposalId: string]: CompletionReport };
 
@@ -94,7 +95,37 @@ const GUEST_USER: User = {
 };
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<User>(GUEST_USER);
+  // Optimistic zero-delay user state initialization from localStorage
+  const [currentUser, setCurrentUser] = useState<User>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('docworm_cached_user');
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return GUEST_USER;
+  });
+
+  const [authLoading, setAuthLoading] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('docworm_cached_user');
+        if (cached) return false;
+      } catch {}
+    }
+    return true;
+  });
+
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('docworm_cached_user');
+        if (cached) return true;
+      } catch {}
+    }
+    return false;
+  });
+
   const [users, setUsers] = useState<User[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -105,8 +136,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [options, setOptions] = useState<AppOptions>(DEFAULT_OPTIONS);
   const [letterhead, setLetterhead] = useState(DEFAULT_LETTERHEAD);
 
-  const [authLoading, setAuthLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [backendError, setBackendError] = useState('');
   const [syncState, setSyncState] = useState<'live' | 'loading' | 'offline'>('loading');
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
@@ -248,22 +277,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
     async function checkAuth() {
       try {
-        setAuthLoading(true);
+        // Only show full auth loading if we don't have a cached session
+        const hasCache = typeof window !== 'undefined' && localStorage.getItem('docworm_cached_user');
+        if (!hasCache) setAuthLoading(true);
+
         const me = await api.auth.me();
         if (mounted && me.user) {
-          setCurrentUser({
+          const userObj: User = {
             ...me.user,
             department: (me.user.role === 'Principal' || me.user.role === 'Dean') ? null : me.user.department,
-          });
+          };
+          setCurrentUser(userObj);
           setIsAuthenticated(true);
+          try {
+            localStorage.setItem('docworm_cached_user', JSON.stringify(userObj));
+          } catch {}
         } else if (mounted) {
           setIsAuthenticated(false);
           setCurrentUser(GUEST_USER);
+          try {
+            localStorage.removeItem('docworm_cached_user');
+          } catch {}
         }
       } catch (err) {
         if (mounted) {
           setIsAuthenticated(false);
           setCurrentUser(GUEST_USER);
+          try {
+            localStorage.removeItem('docworm_cached_user');
+          } catch {}
         }
       } finally {
         if (mounted) setAuthLoading(false);
@@ -274,6 +316,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const handleAuthExpired = () => {
       setIsAuthenticated(false);
       setCurrentUser(GUEST_USER);
+      try {
+        localStorage.removeItem('docworm_cached_user');
+      } catch {}
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('docworm_auth_expired', handleAuthExpired);
@@ -290,7 +335,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Track known notification IDs to alert only on newly arrived notifications
   const seenNotificationIds = useRef(new Set<string>());
 
-  // Sync workspace when authenticated + Instant Real-Time Auto-Sync (20s periodic background sync)
+  // Sync workspace when authenticated + Instant Real-Time Auto-Sync
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -303,6 +348,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         Notification.requestPermission().catch(() => {});
       }
     }
+
+    // Real-Time event subscriptions for zero-latency multi-user sync
+    const unsubReq = realtime.on('requests_updated', (msg) => {
+      console.log('⚡ Real-time requests update received:', msg);
+      refresh();
+    });
+
+    const unsubAnn = realtime.on('announcements_updated', () => {
+      refresh();
+    });
+
+    const unsubSync = realtime.on('sync_all', () => {
+      refresh();
+    });
 
     // High-efficiency background poll timer (4s for near-instant updates)
     const interval = setInterval(() => {
@@ -326,6 +385,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
 
     return () => {
+      unsubReq();
+      unsubAnn();
+      unsubSync();
       clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
       if (typeof document !== 'undefined') {

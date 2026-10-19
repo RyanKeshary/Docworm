@@ -32,6 +32,8 @@ import {
 } from 'lucide-react';
 import { useData } from '../store';
 import { api } from '../lib/api';
+import { realtime } from '../lib/realtime';
+import { GatePassSkeleton } from '../components/Boneyard';
 import type { EmployeeGatePass, GatePassStatus } from '../types';
 import { Modal, btnPrimary, btnGhost, inputCls } from '../components';
 
@@ -46,8 +48,28 @@ const PURPOSE_PRESETS = [
 
 export function EmployeeGatePassPortal() {
   const { currentUser, options } = useData();
-  const [gatePasses, setGatePasses] = useState<EmployeeGatePass[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Instant zero-latency local cache initialization
+  const [gatePasses, setGatePasses] = useState<EmployeeGatePass[]>(() => {
+    if (typeof window !== 'undefined' && currentUser?.id) {
+      try {
+        const cached = localStorage.getItem(`docworm_gp_cache_${currentUser.id}`);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return [];
+  });
+
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (typeof window !== 'undefined' && currentUser?.id) {
+      try {
+        const cached = localStorage.getItem(`docworm_gp_cache_${currentUser.id}`);
+        if (cached && JSON.parse(cached).length > 0) return false;
+      } catch {}
+    }
+    return true;
+  });
+
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
@@ -79,24 +101,47 @@ export function EmployeeGatePassPortal() {
 
   const fetchPasses = async (isBackground = false) => {
     try {
-      if (!isBackground) setLoading(true);
+      if (!isBackground && gatePasses.length === 0) setLoading(true);
       setError('');
       const res = await api.gatePasses.list();
-      setGatePasses(res.gatePasses || res.leaves || []);
+      const list = res.gatePasses || res.leaves || [];
+      setGatePasses(list);
+      if (typeof window !== 'undefined' && currentUser?.id) {
+        try {
+          localStorage.setItem(`docworm_gp_cache_${currentUser.id}`, JSON.stringify(list));
+        } catch {}
+      }
     } catch (err: any) {
       if (!isBackground) setError(err.message || 'Failed to load employee gate passes.');
     } finally {
-      if (!isBackground) setLoading(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchPasses();
+    fetchPasses(gatePasses.length > 0);
+
+    // Active instant sync via Server-Sent Events & BroadcastChannel
+    const unsub = realtime.on('gate_passes_updated', (msg) => {
+      console.log('⚡ Real-time gate pass update received:', msg);
+      fetchPasses(true);
+    });
+
+    const unsubAll = realtime.on('sync_all', () => {
+      fetchPasses(true);
+    });
+
+    // 6-second heartbeat polling for ultra-reliable fallback
     const interval = setInterval(() => {
       fetchPasses(true);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    }, 6000);
+
+    return () => {
+      unsub();
+      unsubAll();
+      clearInterval(interval);
+    };
+  }, [currentUser?.id]);
 
   // Filtered passes
   const filteredPasses = useMemo(() => {
@@ -146,6 +191,7 @@ export function EmployeeGatePassPortal() {
         time_in: '03:30 PM',
         contact_phone: currentUser.phone || '',
       });
+      realtime.broadcastLocal({ type: 'gate_passes_updated', action: 'create', timestamp: new Date().toISOString() });
       await fetchPasses();
     } catch (err: any) {
       setError(err.message || 'Failed to submit gate pass request.');
@@ -169,6 +215,7 @@ export function EmployeeGatePassPortal() {
       setDecisionModalOpen(false);
       setDecisionRemark('');
       setSelectedPass(null);
+      realtime.broadcastLocal({ type: 'gate_passes_updated', action: 'decide', timestamp: new Date().toISOString() });
       await fetchPasses();
     } catch (err: any) {
       setError(err.message || 'Failed to record gate pass decision.');
@@ -185,6 +232,7 @@ export function EmployeeGatePassPortal() {
       setError('');
       await api.gatePasses.cancel(pass.id);
       setSuccessMsg(`Gate pass ${pass.ref_no} has been cancelled.`);
+      realtime.broadcastLocal({ type: 'gate_passes_updated', action: 'cancel', timestamp: new Date().toISOString() });
       await fetchPasses();
     } catch (err: any) {
       setError(err.message || 'Failed to cancel gate pass.');
@@ -230,6 +278,7 @@ export function EmployeeGatePassPortal() {
       } else {
         setSuccessMsg('Faculty return confirmed! Status updated to "Returned / Inside Campus".');
       }
+      realtime.broadcastLocal({ type: 'gate_passes_updated', action: `movement_${action}`, timestamp: new Date().toISOString() });
       await fetchPasses(true);
     } catch (err: any) {
       setError(err.message || `Failed to mark ${action}.`);
@@ -245,6 +294,7 @@ export function EmployeeGatePassPortal() {
       setError('');
       await api.gatePasses.quickApprove(passId, 'Instant Real-Time Sanction by Principal upon Exit');
       setSuccessMsg(`Gate pass for ${employeeName} sanctioned and approved successfully!`);
+      realtime.broadcastLocal({ type: 'gate_passes_updated', action: 'decide', timestamp: new Date().toISOString() });
       await fetchPasses(true);
     } catch (err: any) {
       setError(err.message || 'Failed to sanction gate pass.');
@@ -324,6 +374,11 @@ export function EmployeeGatePassPortal() {
       </span>
     );
   };
+
+  // Instant layout visibility: if loading with zero cache, show the crafted Boneyard Skeleton
+  if (loading && gatePasses.length === 0) {
+    return <GatePassSkeleton />;
+  }
 
   return (
     <div className="space-y-6">

@@ -23,6 +23,7 @@ import {
   resetFailedIpAttempts,
   applyExponentialBackoff,
 } from '../../../server/security';
+import { registerSSEClient, unregisterSSEClient, broadcastRealtime } from '../../../server/realtime';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'docworm_jwt_secret_institution_slrtce_2026';
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -102,6 +103,55 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ all?
   const { all = [] } = await params;
   const path = '/' + all.join('/');
   const searchParams = req.nextUrl.searchParams;
+
+  // 0. Realtime SSE Stream for Instant Multi-User Synchronization
+  if (path === '/realtime') {
+    const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
+    const encoder = new TextEncoder();
+    const clientId = `sse_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    const send = (data: string) => {
+      try {
+        writer.write(encoder.encode(data));
+      } catch {
+        // disconnected
+      }
+    };
+
+    const close = () => {
+      try {
+        writer.close();
+      } catch {}
+    };
+
+    registerSSEClient(clientId, send, close);
+    send(': connected\n\n');
+
+    // Keepalive ping every 25 seconds
+    const keepalive = setInterval(() => {
+      try {
+        send(': ping\n\n');
+      } catch {
+        clearInterval(keepalive);
+      }
+    }, 25000);
+
+    req.signal.addEventListener('abort', () => {
+      clearInterval(keepalive);
+      unregisterSSEClient(clientId);
+      close();
+    });
+
+    return new Response(stream.readable, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      },
+    });
+  }
 
   // 1. Health
   if (path === '/health' || path === '') {
@@ -1914,6 +1964,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
         `;
 
         await logAudit(user.id, user.name, 'GATE_PASS_REQUESTED', `employee_gate_passes:${inserted[0].id}`, { refNo, purpose: d.purpose });
+        broadcastRealtime({ type: 'gate_passes_updated', action: 'create', id: inserted[0].id, userId: user.id });
         return NextResponse.json({ ok: true, gatePass: inserted[0], leave: inserted[0] }, { status: 201 });
       } catch {
         return jsonError('Failed to submit gate pass request.', 500);
@@ -1998,6 +2049,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
             RETURNING *
           `;
           await logAudit(user.id, user.name, `GATEPASS_HOD_${action.toUpperCase()}`, `employee_gate_passes:${recordId}`, { refNo: pass.ref_no, action, remark });
+          broadcastRealtime({ type: 'gate_passes_updated', action: 'decide', id: recordId, userId: user.id });
           return NextResponse.json({ ok: true, gatePass: updated[0], leave: updated[0] });
         }
 
@@ -2011,6 +2063,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
             RETURNING *
           `;
           await logAudit(user.id, user.name, `GATEPASS_PRINCIPAL_${action.toUpperCase()}`, `employee_gate_passes:${recordId}`, { refNo: pass.ref_no, action, remark });
+          broadcastRealtime({ type: 'gate_passes_updated', action: 'decide', id: recordId, userId: user.id });
           return NextResponse.json({ ok: true, gatePass: updated[0], leave: updated[0] });
         }
 
@@ -2095,6 +2148,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
         `;
 
         await logAudit(user.id, user.name, 'FACULTY_EXITED_CAMPUS', `employee_gate_passes:${passId}`, { refNo: pass.ref_no, employeeName: pass.employee_name });
+        broadcastRealtime({ type: 'gate_passes_updated', action: 'movement_exit', id: passId, userId: user.id });
+        broadcastRealtime({ type: 'announcements_updated' });
         return NextResponse.json({ ok: true, gatePass: updated[0], message: 'Departure recorded. Principal alert dispatched.' });
       }
 
@@ -2117,6 +2172,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
         `;
 
         await logAudit(user.id, user.name, 'FACULTY_RETURNED_CAMPUS', `employee_gate_passes:${passId}`, { refNo: pass.ref_no, employeeName: pass.employee_name });
+        broadcastRealtime({ type: 'gate_passes_updated', action: 'movement_return', id: passId, userId: user.id });
+        broadcastRealtime({ type: 'announcements_updated' });
         return NextResponse.json({ ok: true, gatePass: updated[0], message: 'Return to campus recorded.' });
       }
 
@@ -2463,6 +2520,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ a
         }
         const updated = await sql`UPDATE public.employee_gate_passes SET status = 'Cancelled', updated_at = NOW() WHERE id = ${recordId} RETURNING *`;
         await logAudit(user.id, user.name, 'GATEPASS_CANCELLED', `employee_gate_passes:${recordId}`, { refNo: pass.ref_no });
+        broadcastRealtime({ type: 'gate_passes_updated', action: 'cancel', id: recordId, userId: user.id });
         return NextResponse.json({ ok: true, message: 'Gate pass cancelled.', gatePass: updated[0], leave: updated[0] });
       }
 

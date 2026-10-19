@@ -32,6 +32,7 @@ import {
   resetFailedIpAttempts,
   applyExponentialBackoff,
 } from './security';
+import { registerSSEClient, unregisterSSEClient, broadcastRealtime } from './realtime';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -135,6 +136,44 @@ async function authenticate(req: Request, res: Response, next: NextFunction): Pr
     res.status(401).json({ error: 'Invalid or expired session. Please sign in again.' });
   }
 }
+
+// 0. Realtime SSE Stream for Instant Multi-User Synchronization
+app.get('/api/realtime', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  const clientId = `sse_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const send = (data: string) => {
+    try {
+      res.write(data);
+    } catch {}
+  };
+  const close = () => {
+    try {
+      res.end();
+    } catch {}
+  };
+
+  registerSSEClient(clientId, send, close);
+  send(': connected\n\n');
+
+  const keepalive = setInterval(() => {
+    try {
+      send(': ping\n\n');
+    } catch {
+      clearInterval(keepalive);
+    }
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(keepalive);
+    unregisterSSEClient(clientId);
+  });
+});
 
 // ====================================================================
 // 1. HEALTH & SYSTEM DIAGNOSTICS
@@ -2232,6 +2271,7 @@ app.post('/api/gate-passes', authenticate, async (req, res) => {
     `;
 
     await logAudit(user.id, user.name, 'GATE_PASS_REQUESTED', `employee_gate_passes:${inserted[0].id}`, { refNo, purpose: d.purpose });
+    broadcastRealtime({ type: 'gate_passes_updated', action: 'create', id: inserted[0].id, userId: user.id });
     res.status(201).json({ ok: true, gatePass: inserted[0], leave: inserted[0] });
   } catch (err: any) {
     console.error('Create gate pass error:', err);
@@ -2284,6 +2324,7 @@ app.post('/api/gate-passes/:id/decide', authenticate, async (req, res) => {
       `;
 
       await logAudit(user.id, user.name, `GATEPASS_HOD_${action.toUpperCase()}`, `employee_gate_passes:${passId}`, { refNo: pass.ref_no, action, remark });
+      broadcastRealtime({ type: 'gate_passes_updated', action: 'decide', id: passId, userId: user.id });
       res.json({ ok: true, gatePass: updated[0], leave: updated[0] });
       return;
     }
@@ -2302,6 +2343,7 @@ app.post('/api/gate-passes/:id/decide', authenticate, async (req, res) => {
       `;
 
       await logAudit(user.id, user.name, `GATEPASS_PRINCIPAL_${action.toUpperCase()}`, `employee_gate_passes:${passId}`, { refNo: pass.ref_no, action, remark });
+      broadcastRealtime({ type: 'gate_passes_updated', action: 'decide', id: passId, userId: user.id });
       res.json({ ok: true, gatePass: updated[0], leave: updated[0] });
       return;
     }
@@ -2339,6 +2381,7 @@ app.delete('/api/gate-passes/:id', authenticate, async (req, res) => {
     `;
 
     await logAudit(user.id, user.name, 'GATEPASS_CANCELLED', `employee_gate_passes:${passId}`, { refNo: pass.ref_no });
+    broadcastRealtime({ type: 'gate_passes_updated', action: 'cancel', id: passId, userId: user.id });
     res.json({ ok: true, message: 'Gate pass cancelled.', gatePass: updated[0], leave: updated[0] });
   } catch (err: any) {
     console.error('Gate pass cancel error:', err);
@@ -2390,6 +2433,8 @@ app.post('/api/gate-passes/:id/movement', authenticate, async (req, res) => {
       `;
 
       await logAudit(user.id, user.name, 'FACULTY_EXITED_CAMPUS', `employee_gate_passes:${passId}`, { refNo: pass.ref_no, employeeName: pass.employee_name });
+      broadcastRealtime({ type: 'gate_passes_updated', action: 'movement_exit', id: passId, userId: user.id });
+      broadcastRealtime({ type: 'announcements_updated' });
       res.json({ ok: true, gatePass: updated[0], message: 'Departure recorded. Principal alert dispatched.' });
       return;
     }
@@ -2413,6 +2458,8 @@ app.post('/api/gate-passes/:id/movement', authenticate, async (req, res) => {
       `;
 
       await logAudit(user.id, user.name, 'FACULTY_RETURNED_CAMPUS', `employee_gate_passes:${passId}`, { refNo: pass.ref_no, employeeName: pass.employee_name });
+      broadcastRealtime({ type: 'gate_passes_updated', action: 'movement_return', id: passId, userId: user.id });
+      broadcastRealtime({ type: 'announcements_updated' });
       res.json({ ok: true, gatePass: updated[0], message: 'Return to campus recorded.' });
       return;
     }
