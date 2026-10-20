@@ -10,6 +10,7 @@ import {
 import { useData } from './store';
 import { api } from './lib/api';
 import { ROLE_META, PERMISSIONS } from './lib/roleUtils';
+import { OnboardingGuideModal } from './components/OnboardingGuideModal';
 import { PrincipalDepartureAlert } from './components/PrincipalDepartureAlert';
 
 export const STATUS_STYLE: Record<string, string> = {
@@ -148,6 +149,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [q, setQ] = useState('');
+  const [guideOpen, setGuideOpen] = useState(false);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
   const nav = useNavigate();
@@ -254,6 +256,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </nav>
 
       <div className="p-3 border-t border-primary-border space-y-2 bg-page">
+        <button
+          onClick={() => { setGuideOpen(true); setMobileOpen(false); }}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-card text-xs font-semibold border border-primary-border bg-surface hover:bg-primary-pale text-ink transition-colors"
+          title="Open interactive walkthrough & guide"
+        >
+          <HelpCircle size={14} className="text-primary" />
+          {!collapsed && <span className="truncate">Portal Guide &amp; Roles</span>}
+        </button>
 
         <button
           onClick={async () => {
@@ -265,22 +275,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
         >
           <LogOut size={14} /> {!collapsed && 'Sign Out'}
         </button>
-
-        {!collapsed && (
-          <div className="px-1 py-1">
-            <div className="flex items-center gap-2">
-              <span className={`w-7 h-7 rounded-full ${roleMeta.bg} border ${roleMeta.border} font-bold text-xs flex items-center justify-center shrink-0`}>
-                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-ink truncate">{currentUser.name}</p>
-                <p className={`text-[11px] truncate ${roleMeta.accent}`}>
-                  {currentUser.role}{currentUser.department ? ` • ${currentUser.department}` : (currentUser.role === 'Principal' || currentUser.role === 'Dean' ? ' • All Depts' : '')}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -343,6 +337,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
             {/* Right Zone: Actions, Live Indicator, Notifications, and Profile */}
             <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0 ml-auto">
+
+              {/* How-to Guide */}
+              <button
+                onClick={() => setGuideOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-primary/20 bg-primary-pale text-primary hover:bg-primary-light transition-all shadow-2xs"
+                title={`${currentUser.role} Interactive Guide & Walkthrough`}
+              >
+                <HelpCircle size={14} className="shrink-0" />
+                <span className="hidden sm:inline font-medium">Guide</span>
+              </button>
 
               {/* Notification Bell with Interactive Dropdown Flyout */}
               <div className="relative" ref={notifRef}>
@@ -488,6 +492,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </main>
       </div>
+
+      <OnboardingGuideModal
+        isOpen={guideOpen}
+        onClose={() => setGuideOpen(false)}
+        currentUser={currentUser}
+      />
 
       <PrincipalDepartureAlert />
     </div>
