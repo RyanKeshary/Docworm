@@ -18,7 +18,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'Docworm - Digital Permission and Task System',
+  title: 'SLRTCE - Docworm',
   description: 'Digital Institutional Permission, Approval, and Task System - SLRTCE',
   icons: {
     icon: '/favicon.png',

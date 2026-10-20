@@ -8,6 +8,7 @@ const nextConfig = {
   reactStrictMode: false,
   compress: true,
   poweredByHeader: false,
+  devIndicators: false,
   serverExternalPackages: ['postgres', 'nodemailer', 'web-push', 'exceljs'],
   typescript: {
     ignoreBuildErrors: false,

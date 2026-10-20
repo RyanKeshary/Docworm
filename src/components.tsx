@@ -10,7 +10,6 @@ import {
 import { useData } from './store';
 import { api } from './lib/api';
 import { ROLE_META, PERMISSIONS } from './lib/roleUtils';
-import { OnboardingGuideModal } from './components/OnboardingGuideModal';
 import { PrincipalDepartureAlert } from './components/PrincipalDepartureAlert';
 
 export const STATUS_STYLE: Record<string, string> = {
@@ -149,7 +148,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [q, setQ] = useState('');
-  const [guideOpen, setGuideOpen] = useState(false);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
   const nav = useNavigate();
@@ -176,17 +174,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [notifDropdownOpen]);
-
-  // Auto-show guide strictly once on first-time login
-  useEffect(() => {
-    if (currentUser?.id && currentUser.id !== 'guest') {
-      const key = `docworm_guide_seen_${currentUser.id}`;
-      if (!localStorage.getItem(key)) {
-        setGuideOpen(true);
-        localStorage.setItem(key, 'true');
-      }
-    }
-  }, [currentUser?.id]);
 
   // Role-specific navigation
   const allLinks = [
@@ -267,14 +254,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </nav>
 
       <div className="p-3 border-t border-primary-border space-y-2 bg-page">
-        <button
-          onClick={() => { setGuideOpen(true); setMobileOpen(false); }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-card text-xs font-semibold border border-primary-border bg-surface hover:bg-primary-pale text-ink transition-colors"
-          title="Open interactive walkthrough & guide"
-        >
-          <HelpCircle size={14} className="text-primary" />
-          {!collapsed && <span className="truncate">Portal Guide &amp; Roles</span>}
-        </button>
 
         <button
           onClick={async () => {
@@ -364,16 +343,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
             {/* Right Zone: Actions, Live Indicator, Notifications, and Profile */}
             <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0 ml-auto">
-
-              {/* How-to Guide */}
-              <button
-                onClick={() => setGuideOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-primary/20 bg-primary-pale text-primary hover:bg-primary-light transition-all shadow-2xs"
-                title={`${currentUser.role} Interactive Guide & Walkthrough`}
-              >
-                <HelpCircle size={14} className="shrink-0" />
-                <span className="hidden sm:inline font-medium">Guide</span>
-              </button>
 
               {/* Notification Bell with Interactive Dropdown Flyout */}
               <div className="relative" ref={notifRef}>
@@ -519,17 +488,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </main>
       </div>
-
-      <OnboardingGuideModal
-        isOpen={guideOpen}
-        onClose={() => {
-          if (currentUser?.id) {
-            localStorage.setItem(`docworm_guide_seen_${currentUser.id}`, 'true');
-          }
-          setGuideOpen(false);
-        }}
-        currentUser={currentUser}
-      />
 
       <PrincipalDepartureAlert />
     </div>

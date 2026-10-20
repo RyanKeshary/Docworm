@@ -137,9 +137,21 @@ body {
   }
 }
 
+/* ─── Hide Next.js Development Indicator & Toasts ────────────────────────── */
+[data-nextjs-dev-indicator],
+[data-nextjs-toast],
+nextjs-portal,
+#nextjs-dev-indicator {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 /* ─── Print ──────────────────────────────────────────────────────────────── */
 @media print {
   .print-hidden { display: none !important; }
   .print-full   { margin: 0 !important; padding: 0 !important; box-shadow: none !important; border: none !important; }
 }
+
 
