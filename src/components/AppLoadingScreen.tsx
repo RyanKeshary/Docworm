@@ -7,7 +7,7 @@ export function AppLoadingScreen() {
     <div className="min-h-screen h-screen w-screen bg-[#F4F8FC] flex items-center justify-center font-sans select-none p-4">
       {/* Top micro progress track */}
       <div className="fixed top-0 left-0 right-0 h-1 bg-slate-200/70 z-50 overflow-hidden">
-        <div className="h-full bg-gradient-to-r from-primary via-indigo-500 to-sky-400 animate-pulse w-3/4" />
+        <div className="h-full bg-gradient-to-r from-primary via-blue-600 to-sky-400 animate-pulse w-3/4" />
       </div>
 
       {/* Modern Center Loading Card */}

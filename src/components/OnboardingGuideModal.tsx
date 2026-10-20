@@ -56,8 +56,8 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
     Principal: {
       title: 'Principal Institutional Head Guide',
       badge: '👑 Master Authority',
-      accentBg: 'bg-violet-900',
-      badgeBg: 'bg-violet-800 text-violet-200',
+      accentBg: 'bg-blue-900',
+      badgeBg: 'bg-blue-800 text-blue-100',
     },
     Dean: {
       title: 'Dean Student Welfare & Academic Guide',
@@ -141,7 +141,7 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
               {currentStep === 1 && (
                 <div className="space-y-4 animate-fade-in">
                   <div>
-                    <span className="text-xs font-bold text-violet-700 uppercase tracking-wider block mb-1">
+                    <span className="text-xs font-bold text-blue-900 uppercase tracking-wider block mb-1">
                       Step 1: Institutional Authority & Sanctions
                     </span>
                     <h3 className="text-lg font-bold text-slate-900">Final Sanction Desk & Budget Clearance</h3>
@@ -150,22 +150,22 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
                     </p>
                   </div>
                   <div className="space-y-2.5 text-xs text-slate-700">
-                    <div className="p-3 bg-violet-50/60 border border-violet-200 rounded-xl flex items-start gap-3">
-                      <div className="w-6 h-6 rounded-full bg-violet-700 text-white flex items-center justify-center shrink-0 font-bold text-[11px]">1</div>
+                    <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-blue-900 text-white flex items-center justify-center shrink-0 font-bold text-[11px]">1</div>
                       <div>
                         <span className="font-bold text-slate-900 block">Single-Click Final Sanction</span>
                         <span>Grant official clearance on proposals endorsed by HODs and reviewed by the Dean. Once sanctioned, digital letterhead letters unlock instantly.</span>
                       </div>
                     </div>
-                    <div className="p-3 bg-violet-50/60 border border-violet-200 rounded-xl flex items-start gap-3">
-                      <div className="w-6 h-6 rounded-full bg-violet-700 text-white flex items-center justify-center shrink-0 font-bold text-[11px]">2</div>
+                    <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-blue-900 text-white flex items-center justify-center shrink-0 font-bold text-[11px]">2</div>
                       <div>
                         <span className="font-bold text-slate-900 block">Force Approve & Emergency Override</span>
                         <span>Override lower-tier review bottlenecks in emergency situations or high-priority institutional mandates.</span>
                       </div>
                     </div>
-                    <div className="p-3 bg-violet-50/60 border border-violet-200 rounded-xl flex items-start gap-3">
-                      <div className="w-6 h-6 rounded-full bg-violet-700 text-white flex items-center justify-center shrink-0 font-bold text-[11px]">3</div>
+                    <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full bg-blue-900 text-white flex items-center justify-center shrink-0 font-bold text-[11px]">3</div>
                       <div>
                         <span className="font-bold text-slate-900 block">Budget Sanctioning</span>
                         <span>Authorize requested event finances and track department expenditure against annual institutional allocations.</span>
@@ -178,7 +178,7 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
               {currentStep === 2 && (
                 <div className="space-y-4 animate-fade-in">
                   <div>
-                    <span className="text-xs font-bold text-violet-700 uppercase tracking-wider block mb-1">
+                    <span className="text-xs font-bold text-blue-900 uppercase tracking-wider block mb-1">
                       Step 2: Employee Gate Passes
                     </span>
                     <h3 className="text-lg font-bold text-slate-900">Official Sanction of Employee Gate Passes</h3>
@@ -206,7 +206,7 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
               {currentStep === 3 && (
                 <div className="space-y-4 animate-fade-in">
                   <div>
-                    <span className="text-xs font-bold text-violet-700 uppercase tracking-wider block mb-1">
+                    <span className="text-xs font-bold text-blue-900 uppercase tracking-wider block mb-1">
                       Step 3: Leadership & Staff Governance
                     </span>
                     <h3 className="text-lg font-bold text-slate-900">Appointing Deans, HODs, and Faculty</h3>
@@ -216,14 +216,14 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
                   </div>
                   <div className="space-y-2.5 text-xs text-slate-700">
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2.5">
-                      <Users size={16} className="text-violet-700 shrink-0 mt-0.5" />
+                      <Users size={16} className="text-blue-900 shrink-0 mt-0.5" />
                       <div>
                         <span className="font-bold text-slate-900 block">Appoint Leadership & Staff</span>
                         <span>Navigate to <b>Settings &rarr; Leadership & Staff</b> to add Deans, Department Heads, and Faculty coordinators.</span>
                       </div>
                     </div>
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2.5">
-                      <FileCheck size={16} className="text-violet-700 shrink-0 mt-0.5" />
+                      <FileCheck size={16} className="text-blue-900 shrink-0 mt-0.5" />
                       <div>
                         <span className="font-bold text-slate-900 block">Verify Pending Faculty Registrations</span>
                         <span>New self-registered faculty accounts appear in your verification queue. Approve registrations to activate their login immediately.</span>
@@ -236,7 +236,7 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
               {currentStep === 4 && (
                 <div className="space-y-4 animate-fade-in">
                   <div>
-                    <span className="text-xs font-bold text-violet-700 uppercase tracking-wider block mb-1">
+                    <span className="text-xs font-bold text-blue-900 uppercase tracking-wider block mb-1">
                       Step 4: Institutional Letterhead & Audit
                     </span>
                     <h3 className="text-lg font-bold text-slate-900">College Letterhead, Options & Audit Trail</h3>

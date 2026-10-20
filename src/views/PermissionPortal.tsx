@@ -37,7 +37,7 @@ function StatCard({
   label, value, sub, color = 'blue', onClick, active,
 }: {
   label: string; value: number | string; sub: string;
-  color?: 'blue' | 'amber' | 'emerald' | 'rose' | 'violet';
+  color?: 'blue' | 'amber' | 'emerald' | 'rose' | 'navy';
   onClick?: () => void; active?: boolean;
 }) {
   const colors = {
@@ -45,7 +45,7 @@ function StatCard({
     amber: { text: 'text-amber-700', border: active ? 'border-amber-400 ring-1 ring-amber-400/30' : 'border-primary-border hover:border-amber-300', sub: 'text-amber-600' },
     emerald: { text: 'text-emerald-700', border: active ? 'border-emerald-400 ring-1 ring-emerald-400/30' : 'border-primary-border hover:border-emerald-300', sub: 'text-emerald-600' },
     rose: { text: 'text-rose-700', border: active ? 'border-rose-400 ring-1 ring-rose-400/30' : 'border-primary-border hover:border-rose-300', sub: 'text-rose-600' },
-    violet: { text: 'text-violet-700', border: active ? 'border-violet-400 ring-1 ring-violet-400/30' : 'border-primary-border hover:border-violet-300', sub: 'text-violet-600' },
+    navy: { text: 'text-blue-900', border: active ? 'border-blue-500 ring-1 ring-blue-500/30' : 'border-primary-border hover:border-blue-400', sub: 'text-blue-700' },
   }[color];
 
   return (
@@ -586,17 +586,17 @@ export function PermissionPortal() {
             <>
               <Link
                 to="/settings?tab=approval_policy"
-                className="px-3.5 py-2 text-xs font-bold rounded-lg border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100 transition-colors flex items-center gap-1.5 shadow-xs"
+                className="px-3.5 py-2 text-xs font-bold rounded-lg border border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100 transition-colors flex items-center gap-1.5 shadow-xs"
                 title="Institutional approval policy: Decide whether requests require BOTH Dean & Principal or ONLY Principal"
               >
-                <ShieldCheck size={14} className="text-violet-600" />
+                <ShieldCheck size={14} className="text-blue-700" />
                 Policy: <span className="font-extrabold">{options?.approvalPolicy === 'principal_only' ? 'Principal Only' : 'Both Dean & Principal'}</span>
               </Link>
               <Link
                 to="/settings?tab=leadership"
-                className="px-3.5 py-2 text-xs font-bold rounded-lg border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100 transition-colors flex items-center gap-1.5 shadow-xs"
+                className="px-3.5 py-2 text-xs font-bold rounded-lg border border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100 transition-colors flex items-center gap-1.5 shadow-xs"
               >
-                <Crown size={14} className="text-violet-600" />
+                <Crown size={14} className="text-amber-500 fill-amber-400" />
                 Manage Leadership & Faculty
                 {users.filter((u) => u.status === 'pending_approval').length > 0 && (
                   <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-extrabold ml-1 animate-pulse">
@@ -640,7 +640,7 @@ export function PermissionPortal() {
           label={canApprove ? "Awaiting My Action" : "Rejected / Revise"}
           value={canApprove ? stats.awaitingMe : stats.rejected}
           sub={canApprove ? 'Needs your action' : 'Needs revision'}
-          color={canApprove ? 'violet' : 'rose'}
+          color={canApprove ? 'navy' : 'rose'}
           onClick={() => setStatusFilter(canApprove ? 'Awaiting Me' : 'Rejected')}
           active={statusFilter === (canApprove ? 'Awaiting Me' : 'Rejected')}
         />
@@ -855,10 +855,10 @@ export function PermissionPortal() {
                           setDecisionAction('Approved');
                           setDecisionRemark('Sanctioned and approved by Principal Office. Permitted to proceed.');
                         }}
-                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-violet-700 hover:bg-violet-800 text-white shadow-xs transition-colors flex items-center justify-center gap-1.5"
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-900 hover:bg-blue-950 text-white shadow-xs transition-colors flex items-center justify-center gap-1.5"
                         title="Final sanction: officially approves event and generates signed letter"
                       >
-                        <Crown size={13} />
+                        <Crown size={13} className="text-amber-400" />
                         Sanction & Approve
                       </button>
                     )}
@@ -919,9 +919,9 @@ export function PermissionPortal() {
                                   setDecisionAction('Approved');
                                   setDecisionRemark('Sanctioned and approved by Principal Office. Permitted to proceed.');
                                 }}
-                                className="w-full text-left px-3 py-1.5 hover:bg-violet-50 text-violet-800 font-bold flex items-center gap-2"
+                                className="w-full text-left px-3 py-1.5 hover:bg-blue-50 text-blue-900 font-bold flex items-center gap-2"
                               >
-                                <Crown size={14} className="text-violet-600" />
+                                <Crown size={14} className="text-amber-500 fill-amber-400" />
                                 <span>⚡ Quick Sanction & Approve</span>
                               </button>
                               <button
@@ -1271,7 +1271,7 @@ export function PermissionPortal() {
                       <ChevronRight size={12} className="text-ink-muted" />
                     </>
                   )}
-                  <span className="px-2 py-1 bg-violet-100 text-violet-800 rounded font-semibold">Principal Sanction</span>
+                  <span className="px-2 py-1 bg-blue-900 text-white rounded font-semibold">Principal Sanction</span>
                 </div>
                 {currentUser.role === 'HOD' && (
                   <p className="text-[11px] text-primary/80 mt-1.5 italic">
@@ -1334,7 +1334,7 @@ export function PermissionPortal() {
               {/* Header banner clarifying role authority */}
               <div className={`p-3 rounded-lg border text-xs leading-relaxed ${
                 role === 'Principal'
-                  ? 'bg-violet-50 border-violet-200 text-violet-900'
+                  ? 'bg-blue-50 border-blue-200 text-blue-950'
                   : role === 'Dean'
                   ? 'bg-blue-50 border-blue-200 text-blue-900'
                   : 'bg-emerald-50 border-emerald-200 text-emerald-900'
@@ -1369,7 +1369,7 @@ export function PermissionPortal() {
                         decisionAction === a
                           ? a === 'Approved'
                             ? role === 'Principal'
-                              ? 'bg-violet-700 text-white border-violet-700 shadow-xs'
+                              ? 'bg-blue-900 text-white border-blue-950 shadow-xs'
                               : role === 'Dean'
                               ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                               : 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
@@ -1425,7 +1425,7 @@ export function PermissionPortal() {
                   onClick={handleDecision}
                   className={`px-4 py-2 text-xs sm:text-sm font-bold rounded-card text-white shadow-xs ${
                     decisionAction === 'Approved'
-                      ? role === 'Principal' ? 'bg-violet-700 hover:bg-violet-800' : role === 'Dean' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                      ? role === 'Principal' ? 'bg-blue-900 hover:bg-blue-950' : role === 'Dean' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'
                       : decisionAction === 'Rejected'
                       ? 'bg-rose-600 hover:bg-rose-700'
                       : 'bg-amber-600 hover:bg-amber-700'
@@ -1740,20 +1740,20 @@ function RoleContextCard({
 }) {
   if (role === 'Principal') {
     return (
-      <div className="bg-white border border-violet-200 rounded-card p-4 sm:p-5 shadow-xs">
+      <div className="bg-white border border-blue-200 rounded-card p-4 sm:p-5 shadow-xs">
         <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
-          <div className="w-11 h-11 rounded-xl bg-violet-100 border border-violet-200 flex items-center justify-center text-xl shrink-0">🏛️</div>
+          <div className="w-11 h-11 rounded-xl bg-blue-100 border border-blue-200 flex items-center justify-center text-xl shrink-0">🏛️</div>
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-bold text-violet-950 text-base sm:text-lg">Principal's Sanction Desk (Head of Institution)</h3>
-              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-violet-700 text-white">Exclusive Final Authority</span>
+              <h3 className="font-bold text-blue-950 text-base sm:text-lg">Principal's Sanction Desk (Head of Institution)</h3>
+              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-blue-900 text-white">Exclusive Final Authority</span>
             </div>
-            <p className="text-xs text-violet-800 mt-1 leading-relaxed">
+            <p className="text-xs text-blue-800 mt-1 leading-relaxed">
               Complete institutional oversight across all departments, HODs, and faculty. You hold the <b>exclusive final sanction & approval authority</b> that generates official signed permission letters.
             </p>
             <div className="mt-3.5 flex flex-wrap gap-2 text-xs">
-              <span className="font-semibold text-violet-900 bg-violet-50 border border-violet-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                <Crown size={13} className="text-violet-700" /> {stats.awaitingMe} awaiting final sanction
+              <span className="font-semibold text-blue-900 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                <Crown size={13} className="text-amber-500 fill-amber-400" /> {stats.awaitingMe} awaiting final sanction
               </span>
               <span className="font-semibold text-emerald-900 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
                 <CheckCircle2 size={13} className="text-emerald-700" /> {stats.approved} total approved

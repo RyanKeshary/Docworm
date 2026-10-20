@@ -467,7 +467,7 @@ export function Reports() {
                 <a
                   href="/api/export/excel/staff-directory"
                   download
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 shadow-xs"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-white hover:bg-primary-dark shadow-xs"
                 >
                   <FileSpreadsheet size={14} /> Staff Directory (.xlsx)
                 </a>
@@ -1393,7 +1393,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
               </div>
             </div>
             {isPrincipal && (
-              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-violet-100 text-violet-800 border border-violet-300 shrink-0">
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-900 border border-blue-300 shrink-0">
                 👑 Principal Authority Active
               </span>
             )}
@@ -1689,7 +1689,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                   <div key={u.id} className="flex flex-wrap items-center justify-between p-4 hover:bg-slate-50/70 transition-colors gap-3">
                     <div className="flex items-start gap-3">
                       <span className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
-                        u.role === 'Principal' ? 'bg-violet-100 text-violet-800 border border-violet-300' :
+                        u.role === 'Principal' ? 'bg-blue-900 text-white border border-blue-950' :
                         u.role === 'Dean' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
                         u.role === 'HOD' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
                         'bg-amber-100 text-amber-800 border border-amber-300'
@@ -1881,7 +1881,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                 <h2 className="font-bold text-slate-900 text-base">Institutional Permission Approval Policy</h2>
                 <p className="text-xs text-slate-500">Configure whether permissions require sign-off by both Dean & Principal, or Principal only.</p>
               </div>
-              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-violet-100 text-violet-800 border border-violet-300">
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-900 border border-blue-300">
                 👑 Principal Authority
               </span>
             </div>
@@ -1949,7 +1949,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                     Dual institutional endorsement. The request only transitions to <span className="font-semibold text-emerald-700">Approved</span> when <span className="font-semibold">BOTH</span> the Dean of Student Welfare has recommended/approved AND the Principal has sanctioned it.
                   </p>
                 </div>
-                <div className="mt-4 pt-3 border-t border-gray-100 text-[11px] font-semibold text-violet-700">
+                <div className="mt-4 pt-3 border-t border-gray-100 text-[11px] font-semibold text-blue-800">
                   🏛️ Full Academic & Administrative Consensus
                 </div>
               </label>
@@ -2039,7 +2039,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/
                   Examine database tables, export live JSON snapshots (Jarvis-style), or purge operational data across all places with automatic pre-deletion backups.
                 </p>
               </div>
-              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-violet-100 text-violet-800 border border-violet-300 shrink-0">
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-900 border border-blue-300 shrink-0">
                 👑 Principal Data Controller
               </span>
             </div>

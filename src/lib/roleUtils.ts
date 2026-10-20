@@ -27,10 +27,10 @@ export const ROLE_META: Record<Role, {
 }> = {
   Principal: {
     label: 'Principal',
-    badge: 'bg-violet-100 text-violet-800 border-violet-300',
-    accent: 'text-violet-700',
-    bg: 'bg-violet-50',
-    border: 'border-violet-300',
+    badge: 'bg-blue-900 text-white border-blue-950 font-bold',
+    accent: 'text-blue-900',
+    bg: 'bg-blue-50/90',
+    border: 'border-blue-300',
     icon: '🏛️',
   },
   Dean: {

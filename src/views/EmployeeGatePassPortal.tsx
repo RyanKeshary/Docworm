@@ -736,11 +736,11 @@ export function EmployeeGatePassPortal() {
         </div>
 
         <div className="bg-surface p-4 rounded-card border border-primary-border shadow-2xs hover:-translate-y-0.5 hover:shadow-xs transition-all duration-150 col-span-2 lg:col-span-1">
-          <div className="flex items-center justify-between text-xs text-purple-700 mb-1 font-medium">
+          <div className="flex items-center justify-between text-xs text-sky-800 mb-1 font-medium">
             <span>My Issued Passes</span>
-            <ShieldCheck size={15} className="text-purple-600" />
+            <ShieldCheck size={15} className="text-sky-600" />
           </div>
-          <p className="text-2xl font-bold text-purple-900">
+          <p className="text-2xl font-bold text-sky-950">
             {stats.myPasses} <span className="text-xs font-normal text-ink-muted">Passes</span>
           </p>
           <span className="text-[11px] text-ink-muted">Sanctioned for campus exit</span>
