@@ -193,7 +193,7 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
                     </div>
                     <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
                       <span className="font-bold text-slate-900 block">Printable Pass (Image Format)</span>
-                      <p className="text-slate-600">Generates the official Shree L.R. Tiwari College of Engineering physical gate pass with security verification.</p>
+                      <p className="text-slate-600">Generates the official Shree L R Tiwari College of Engineering physical gate pass with security verification.</p>
                     </div>
                   </div>
                   <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2.5">
@@ -516,7 +516,7 @@ export function OnboardingGuideModal({ isOpen, onClose, currentUser }: Onboardin
                     </span>
                     <h3 className="text-lg font-bold text-slate-900">Gate Pass Requests for Campus Exit</h3>
                     <p className="text-xs text-slate-500 mt-1">
-                      Apply for gate passes directly with official Shree L.R. Tiwari College of Engineering format:
+                      Apply for gate passes directly with official Shree L R Tiwari College of Engineering format:
                     </p>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-3 text-xs">

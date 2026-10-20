@@ -1529,7 +1529,12 @@ app.post('/api/permission-requests', authenticate, async (req, res) => {
     const prinName = prinRows[0]?.name || 'Principal Office';
 
     let steps: any[] = [];
-    if (user.role === 'HOD') {
+    if (user.role === 'Dean') {
+      // Dean submitting a permission routes directly to Principal
+      steps = [
+        { id: `${requestId}-step-prin`, order: 1, role: 'Principal', userId: prinId, userName: prinName },
+      ];
+    } else if (user.role === 'HOD') {
       steps = [
         { id: `${requestId}-step-dean`, order: 1, role: 'Dean', userId: deanId, userName: deanName },
         { id: `${requestId}-step-prin`, order: 2, role: 'Principal', userId: prinId, userName: prinName },
@@ -1600,12 +1605,39 @@ app.post('/api/permission-requests/:id/decide', authenticate, async (req, res) =
     const policy = policyRows.length ? (policyRows[0].value?.policy || 'principal_only') : 'principal_only';
 
     if (user.role === 'Dean') {
-      // Dean reviews and recommends
-      await sql`
-        UPDATE public.permission_request_approval_steps
-        SET action = ${action}, acted_at = NOW(), remark = ${remark}
-        WHERE permission_request_id = ${requestId} AND role = 'Dean'
+      if (prop.faculty_id === user.id) {
+        res.status(403).json({ error: 'Submitters cannot review or approve their own permission request.' });
+        return;
+      }
+      const deanStepRows = await sql`
+        SELECT * FROM public.permission_request_approval_steps
+        WHERE permission_request_id = ${requestId} AND role = 'Dean' AND action = 'Pending'
       `;
+      if (!deanStepRows.length) {
+        res.status(403).json({ error: 'No pending Dean approval step exists for this permission request.' });
+        return;
+      }
+
+      // Dean reviews and recommends
+      const updatedDeanStep = await sql`
+        UPDATE public.permission_request_approval_steps
+        SET action = ${action}, acted_at = NOW(), remark = ${remark}, user_id = ${user.id}, user_name = ${user.name}
+        WHERE permission_request_id = ${requestId} AND role = 'Dean' AND action = 'Pending'
+        RETURNING id
+      `;
+      if (!updatedDeanStep.length) {
+        res.status(409).json({ error: 'Dean approval step is no longer pending.' });
+        return;
+      }
+
+      if (action === 'Approved') {
+        // If preceding HOD step is still pending, mark as cleared by Dean's cross-department oversight
+        await sql`
+          UPDATE public.permission_request_approval_steps
+          SET action = 'Approved', acted_at = NOW(), remark = 'Verified & Endorsed by Dean Office', user_id = ${user.id}, user_name = ${user.name}
+          WHERE permission_request_id = ${requestId} AND role = 'HOD' AND action = 'Pending'
+        `;
+      }
 
       if (action === 'Rejected') {
         await sql`UPDATE public.permission_requests SET status = 'Rejected', updated_at = NOW() WHERE id = ${requestId}`;
@@ -2305,13 +2337,17 @@ app.post('/api/gate-passes/:id/decide', authenticate, async (req, res) => {
     }
     const pass = existing[0];
 
-    if (user.role === 'HOD') {
+    if (user.role === 'HOD' || user.role === 'Dean') {
       if (!can(user, 'gatepass:endorse_hod', pass)) {
-        res.status(403).json({ error: 'Forbidden: You can only recommend gate passes for employees in your department.' });
+        res.status(403).json({ error: 'Forbidden: You do not have permission to recommend this gate pass.' });
         return;
       }
       if (action === 'Approve') {
-        res.status(403).json({ error: 'HOD can only Recommend or Reject. Final sanction is reserved for the Principal.' });
+        res.status(403).json({ error: `${user.role} can only Recommend or Reject. Final sanction is reserved for the Principal.` });
+        return;
+      }
+      if (pass.status === 'Approved' || pass.status === 'Rejected' || pass.status === 'Cancelled') {
+        res.status(400).json({ error: 'Cannot recommend or reject a gate pass that has already been finalized or approved.' });
         return;
       }
 
@@ -2319,11 +2355,15 @@ app.post('/api/gate-passes/:id/decide', authenticate, async (req, res) => {
       const updated = await sql`
         UPDATE public.employee_gate_passes
         SET status = ${newStatus}, hod_id = ${user.id}, hod_name = ${user.name}, hod_remark = ${remark}, hod_acted_at = NOW(), updated_at = NOW()
-        WHERE id = ${passId}
+        WHERE id = ${passId} AND status NOT IN ('Approved', 'Rejected', 'Cancelled')
         RETURNING *
       `;
+      if (!updated.length) {
+        res.status(400).json({ error: 'Gate pass is not in an eligible pending state for endorsement.' });
+        return;
+      }
 
-      await logAudit(user.id, user.name, `GATEPASS_HOD_${action.toUpperCase()}`, `employee_gate_passes:${passId}`, { refNo: pass.ref_no, action, remark });
+      await logAudit(user.id, user.name, `GATEPASS_${user.role.toUpperCase()}_${action.toUpperCase()}`, `employee_gate_passes:${passId}`, { refNo: pass.ref_no, action, remark });
       broadcastRealtime({ type: 'gate_passes_updated', action: 'decide', id: passId, userId: user.id });
       res.json({ ok: true, gatePass: updated[0], leave: updated[0] });
       return;

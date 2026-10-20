@@ -1686,7 +1686,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       ]);
 
       let steps: any[] = [];
-      if (user.role === 'HOD') {
+      if (user.role === 'Dean') {
+        // Dean submitting a permission routes directly to Principal Office for final sanction
+        steps = [
+          { id: `${requestId}-step-prin`, order: 1, role: 'Principal', userId: prinRows[0]?.id || null, userName: prinRows[0]?.name || 'Principal Office' },
+        ];
+      } else if (user.role === 'HOD') {
         // HOD submitting a permission directly goes to the immediate higher authority (Dean)
         steps = [
           { id: `${requestId}-step-dean`, order: 1, role: 'Dean', userId: deanRows[0]?.id || null, userName: deanRows[0]?.name || 'Dean, Student Welfare' },
@@ -1744,12 +1749,36 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       const policy = policyRows.length ? (policyRows[0].value?.policy || 'principal_only') : 'principal_only';
 
       if (user.role === 'Dean') {
-        // Dean reviews and recommends
-        await sql`
-          UPDATE public.permission_request_approval_steps
-          SET action = ${action}, acted_at = NOW(), remark = ${remark}
-          WHERE permission_request_id = ${requestId} AND role = 'Dean'
+        if (prop.faculty_id === user.id) {
+          return jsonError('Submitters cannot review or approve their own permission request.', 403);
+        }
+        const deanStepRows = await sql`
+          SELECT * FROM public.permission_request_approval_steps
+          WHERE permission_request_id = ${requestId} AND role = 'Dean' AND action = 'Pending'
         `;
+        if (!deanStepRows.length) {
+          return jsonError('No pending Dean approval step exists for this permission request.', 403);
+        }
+
+        // Dean reviews and recommends
+        const updatedDeanStep = await sql`
+          UPDATE public.permission_request_approval_steps
+          SET action = ${action}, acted_at = NOW(), remark = ${remark}, user_id = ${user.id}, user_name = ${user.name}
+          WHERE permission_request_id = ${requestId} AND role = 'Dean' AND action = 'Pending'
+          RETURNING id
+        `;
+        if (!updatedDeanStep.length) {
+          return jsonError('Dean approval step is no longer pending.', 409);
+        }
+
+        if (action === 'Approved') {
+          // If preceding HOD step is still pending, mark as cleared by Dean's cross-department oversight
+          await sql`
+            UPDATE public.permission_request_approval_steps
+            SET action = 'Approved', acted_at = NOW(), remark = 'Verified & Endorsed by Dean Office', user_id = ${user.id}, user_name = ${user.name}
+            WHERE permission_request_id = ${requestId} AND role = 'HOD' AND action = 'Pending'
+          `;
+        }
 
         if (action === 'Rejected') {
           await sql`UPDATE public.permission_requests SET status = 'Rejected', updated_at = NOW() WHERE id = ${requestId}`;
@@ -1904,7 +1933,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
         await sql`
           INSERT INTO public.announcement_receipts (announcement_id, user_id, delivered_via)
           VALUES (${ann.id}, ${rId}, 'in_app')
-          ON CONFLICT (announcement_id, user_id) DO NOTHING
+          ON CONFLICT (announcement_id, user_id, delivered_via) DO NOTHING
         `;
       }
 
@@ -1941,8 +1970,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
         },
         { status: 201 }
       );
-    } catch {
-      return jsonError('Failed to broadcast announcement.', 500);
+    } catch (err: any) {
+      console.error('Failed to broadcast announcement:', err);
+      return jsonError('Failed to broadcast announcement: ' + (err?.message || ''), 500);
     }
   }
 
@@ -1954,7 +1984,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       await sql`
         INSERT INTO public.announcement_receipts (announcement_id, user_id, delivered_via, read_at)
         VALUES (${annId}, ${user.id}, 'in_app', NOW())
-        ON CONFLICT (announcement_id, user_id) DO UPDATE SET read_at = NOW()
+        ON CONFLICT (announcement_id, user_id, delivered_via) DO UPDATE SET read_at = NOW()
       `;
       return NextResponse.json({ success: true });
     } catch {
@@ -1975,7 +2005,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
            OR (${user.role} = 'HOD' AND a.audience_dept = 'HODs')
            OR ${user.role} = 'Principal'
            OR ${user.role} = 'Dean'
-        ON CONFLICT (announcement_id, user_id) DO UPDATE SET read_at = NOW()
+        ON CONFLICT (announcement_id, user_id, delivered_via) DO UPDATE SET read_at = NOW()
       `;
       return NextResponse.json({ success: true });
     } catch {
@@ -2143,22 +2173,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
       const existingGp = await sql`SELECT * FROM public.employee_gate_passes WHERE id = ${recordId}`;
       if (existingGp.length) {
         const pass = existingGp[0];
-        if (user.role === 'HOD') {
+        if (user.role === 'HOD' || user.role === 'Dean') {
           if (!can(user, 'gatepass:endorse_hod', pass)) {
-            return jsonError('Forbidden: You can only recommend gate passes for employees in your department.', 403);
+            return jsonError('Forbidden: You do not have permission to recommend this gate pass.', 403);
           }
           if (action === 'Approve') {
-            return jsonError('HOD can only Recommend or Reject. Final sanction is reserved for the Principal.', 403);
+            return jsonError(`${user.role} can only Recommend or Reject. Final sanction is reserved for the Principal.`, 403);
+          }
+          if (pass.status === 'Approved' || pass.status === 'Rejected' || pass.status === 'Cancelled') {
+            return jsonError('Cannot recommend or reject a gate pass that has already been finalized or approved.', 400);
           }
 
           const newStatus = action === 'Recommend' ? 'Recommended' : 'Rejected';
           const updated = await sql`
             UPDATE public.employee_gate_passes
             SET status = ${newStatus}, hod_id = ${user.id}, hod_name = ${user.name}, hod_remark = ${remark}, hod_acted_at = NOW(), updated_at = NOW()
-            WHERE id = ${recordId}
+            WHERE id = ${recordId} AND status NOT IN ('Approved', 'Rejected', 'Cancelled')
             RETURNING *
           `;
-          await logAudit(user.id, user.name, `GATEPASS_HOD_${action.toUpperCase()}`, `employee_gate_passes:${recordId}`, { refNo: pass.ref_no, action, remark });
+          if (!updated.length) {
+            return jsonError('Gate pass is not in an eligible pending state for endorsement.', 400);
+          }
+          await logAudit(user.id, user.name, `GATEPASS_${user.role.toUpperCase()}_${action.toUpperCase()}`, `employee_gate_passes:${recordId}`, { refNo: pass.ref_no, action, remark });
           broadcastRealtime({ type: 'gate_passes_updated', action: 'decide', id: recordId, userId: user.id });
           return NextResponse.json({ ok: true, gatePass: updated[0], leave: updated[0] });
         }

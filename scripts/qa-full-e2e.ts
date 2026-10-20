@@ -124,7 +124,7 @@ async function runQA() {
     body: JSON.stringify({
       name: 'Test Office Admin',
       email: testEmailAdmin,
-      password: 'password123',
+      password: 'SecurePass@2026',
       role: 'Office Admin',
       department: 'Central Administration',
       designation: 'Administrative Executive',
@@ -136,7 +136,7 @@ async function runQA() {
   // Test newly created Office Admin login
   const adminLogin = await req('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email: testEmailAdmin, password: 'password123' }),
+    body: JSON.stringify({ email: testEmailAdmin, password: 'SecurePass@2026' }),
   });
   assert(adminLogin.ok && adminLogin.data?.user?.role === 'Office Admin', 'Newly appointed Office Admin can log in');
   const officeAdminToken = adminLogin.data?.token;
@@ -158,7 +158,7 @@ async function runQA() {
     body: JSON.stringify({
       name: 'Dr. Self Registering',
       email: selfRegEmail,
-      password: 'password123',
+      password: 'SecurePass@2026',
       department: 'IT',
       designation: 'Assistant Professor',
     }),
@@ -169,7 +169,7 @@ async function runQA() {
   // Unapproved faculty login should be blocked
   const pendingLogin = await req('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email: selfRegEmail, password: 'password123' }),
+    body: JSON.stringify({ email: selfRegEmail, password: 'SecurePass@2026' }),
   });
   assert(pendingLogin.status === 403 || pendingLogin.data?.error?.includes('pending'), 'Pending faculty login is blocked prior to institutional approval', pendingLogin);
 
@@ -183,7 +183,7 @@ async function runQA() {
     // After approval, login succeeds
     const approvedLogin = await req('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email: selfRegEmail, password: 'password123' }),
+      body: JSON.stringify({ email: selfRegEmail, password: 'SecurePass@2026' }),
     });
     assert(approvedLogin.ok && approvedLogin.data?.user?.status === 'active', 'Approved faculty can now sign in successfully', approvedLogin);
 

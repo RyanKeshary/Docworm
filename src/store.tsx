@@ -78,8 +78,8 @@ export function nowStr() {
 }
 
 const DEFAULT_LETTERHEAD = {
-  collegeName: 'Shree L.R. Tiwari College of Engineering',
-  address: 'Shree L.R. Tiwari College of Engineering, Mira Road (East), Thane 401107',
+  collegeName: 'Shree L R Tiwari College of Engineering',
+  address: 'Shree L R Tiwari College of Engineering, Mira Road (East), Thane 401107',
   phone: '+91 22 2812 1234',
   email: 'office@slrtce.in',
 };
@@ -150,11 +150,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     isRefreshingRef.current = true;
     try {
       const needStatic = forceAll || !staticLoadedRef.current;
+      const isAdmin = currentUser.role === 'Principal' || currentUser.role === 'Dean';
       const [userRes, propRes, annRes, auditRes, optRes, lhRes] = await Promise.allSettled([
-        api.users.list(),
+        needStatic ? api.users.list() : Promise.resolve(null),
         api.requests.list(),
         api.announcements.list(),
-        api.admin.getAuditLog(),
+        (needStatic && isAdmin) ? api.admin.getAuditLog() : Promise.resolve(null),
         needStatic ? api.options.get() : Promise.resolve(null),
         needStatic ? api.settings.getLetterhead() : Promise.resolve(null),
       ]);
@@ -162,14 +163,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (needStatic) staticLoadedRef.current = true;
 
       if (userRes.status === 'fulfilled' && userRes.value?.users) {
-        setUsers(userRes.value.users.map((u: any) => ({
+        const mappedUsers = userRes.value.users.map((u: any) => ({
           ...u,
           department: (u.role === 'Principal' || u.role === 'Dean') ? null : (u.department_code || u.department || 'HAS'),
-        })));
+        }));
+        setUsers((prev) => {
+          if (
+            prev.length === mappedUsers.length &&
+            prev.every((u, i) => u.id === mappedUsers[i].id && u.status === mappedUsers[i].status && u.role === mappedUsers[i].role)
+          ) {
+            return prev;
+          }
+          return mappedUsers;
+        });
       }
 
       if (propRes.status === 'fulfilled' && propRes.value?.requests) {
-        setProposals(propRes.value.requests.map((r: any) => ({
+        const mappedProposals = propRes.value.requests.map((r: any) => ({
           id: r.id,
           refNo: r.ref_no,
           academicYear: r.academic_year,
@@ -225,7 +235,49 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           approvalChain: r.approvalChain || [],
           createdAt: String(r.created_at || '').slice(0, 16).replace('T', ' '),
           updatedAt: String(r.updated_at || '').slice(0, 16).replace('T', ' '),
-        })));
+        }));
+
+        setProposals((prev) => {
+          if (
+            prev.length === mappedProposals.length &&
+            prev.every((p, i) => {
+              const m = mappedProposals[i];
+              if (p.id !== m.id || p.status !== m.status || p.updatedAt !== m.updatedAt) {
+                return false;
+              }
+              const pChain = p.approvalChain || [];
+              const mChain = m.approvalChain || [];
+              if (pChain.length !== mChain.length) return false;
+              for (let c = 0; c < pChain.length; c++) {
+                if (
+                  pChain[c].id !== mChain[c].id ||
+                  pChain[c].action !== mChain[c].action ||
+                  pChain[c].actedAt !== mChain[c].actedAt ||
+                  pChain[c].remark !== mChain[c].remark
+                ) {
+                  return false;
+                }
+              }
+              const pRes = p.resources || [];
+              const mRes = m.resources || [];
+              if (pRes.length !== mRes.length) return false;
+              for (let r = 0; r < pRes.length; r++) {
+                if (
+                  pRes[r].id !== mRes[r].id ||
+                  pRes[r].status !== mRes[r].status ||
+                  pRes[r].decidedAt !== mRes[r].decidedAt ||
+                  pRes[r].decidedBy !== mRes[r].decidedBy
+                ) {
+                  return false;
+                }
+              }
+              return true;
+            })
+          ) {
+            return prev;
+          }
+          return mappedProposals;
+        });
       }
 
       if (optRes.status === 'fulfilled' && optRes.value?.options) {
@@ -271,7 +323,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         const merged = Array.from(map.values()).sort(
           (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
         );
-        setNotifications(merged);
+        setNotifications((prev) => {
+          if (
+            prev.length === merged.length &&
+            prev.every((n, i) => n.id === merged[i].id && n.read === merged[i].read)
+          ) {
+            return prev;
+          }
+          return merged;
+        });
       }
 
       if (auditRes.status === 'fulfilled' && auditRes.value?.logs) {
@@ -287,7 +347,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setSyncState('live');
       setBackendError('');
       setLastSyncedAt(nowStr());
-      setLiveTick((t) => t + 1);
     } catch (err: any) {
       console.error('Refresh error:', err);
       setBackendError(err.message || 'Failed to sync with server');
@@ -295,7 +354,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     } finally {
       isRefreshingRef.current = false;
     }
-  }, [currentUser.id]);
+  }, [currentUser.id, currentUser.role]);
 
   // Initial Auth Check
   useEffect(() => {
@@ -339,8 +398,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     checkAuth();
 
     const handleAuthExpired = () => {
+      staticLoadedRef.current = false;
       setIsAuthenticated(false);
       setCurrentUser(GUEST_USER);
+      setUsers([]);
+      setAudit([]);
       try {
         localStorage.removeItem('docworm_cached_user');
       } catch {}
@@ -359,6 +421,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   // Track known notification IDs to alert only on newly arrived notifications
   const seenNotificationIds = useRef(new Set<string>());
+
+  // Reload role-scoped static data after authentication identity or role changes
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser?.id || currentUser.id === 'usr-guest') return;
+    staticLoadedRef.current = false;
+    refresh();
+  }, [currentUser.id, currentUser.role, isAuthenticated, refresh]);
 
   // Sync workspace when authenticated + Instant Real-Time Auto-Sync
   useEffect(() => {
@@ -388,12 +457,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refresh();
     });
 
-    // Fallback heartbeat poll timer (20s since active SSE handles instant changes)
+    // Fallback heartbeat poll timer (45s since active SSE handles instant changes)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         refresh();
       }
-    }, 20000);
+    }, 45000);
 
     // Instant refresh when user switches back to this browser tab or window
     const handleFocus = () => {
@@ -514,10 +583,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     try {
       await api.auth.logout();
     } catch {}
+    staticLoadedRef.current = false;
     setIsAuthenticated(false);
     setCurrentUser(GUEST_USER);
     setProposals([]);
     setNotifications([]);
+    setUsers([]);
+    setAudit([]);
   };
 
   // Save / Submit Proposals: Instant Optimistic UI Update + Fast Background Submission
@@ -798,52 +870,87 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [currentUser.id, currentUser.name]
   );
 
-  const value: DataState = {
-    users,
-    proposals,
-    tasks,
-    comments,
-    notifications,
-    audit,
-    completions,
-    options,
-    letterhead,
-    currentUserId: currentUser.id,
-    currentUser,
-    backend: 'api',
-    authLoading,
-    backendError,
-    syncState,
-    lastSyncedAt,
-    liveTick,
-    isAuthenticated,
-    signIn,
-    verify2fa,
-    signUp,
-    signOut,
-    refresh,
-    setCurrentUserId: () => {},
-    getNextRefNumber,
-    uploadFile,
-    saveProposals,
-    saveTasks: setTasks,
-    saveComments: setComments,
-    saveNotifications,
-    saveCompletions: setCompletions,
-    saveOptions,
-    saveUsers: setUsers,
-    saveLetterhead,
-    pushNotification,
-    pushAudit,
-    approveFaculty,
-    rejectFaculty,
-    addLeadership,
-    removeUser,
-    updateCurrentUser,
-    resetDemo: () => {},
-    purgeFakeData,
-    purgeAllDataWithExport,
-  };
+  const value: DataState = useMemo(
+    () => ({
+      users,
+      proposals,
+      tasks,
+      comments,
+      notifications,
+      audit,
+      completions,
+      options,
+      letterhead,
+      currentUserId: currentUser.id,
+      currentUser,
+      backend: 'api',
+      authLoading,
+      backendError,
+      syncState,
+      lastSyncedAt,
+      liveTick: 0,
+      isAuthenticated,
+      signIn,
+      verify2fa,
+      signUp,
+      signOut,
+      refresh,
+      setCurrentUserId: () => {},
+      getNextRefNumber,
+      uploadFile,
+      saveProposals,
+      saveTasks: setTasks,
+      saveComments: setComments,
+      saveNotifications,
+      saveCompletions: setCompletions,
+      saveOptions,
+      saveUsers: setUsers,
+      saveLetterhead,
+      pushNotification,
+      pushAudit,
+      approveFaculty,
+      rejectFaculty,
+      addLeadership,
+      removeUser,
+      updateCurrentUser,
+      resetDemo: () => {},
+      purgeFakeData,
+      purgeAllDataWithExport,
+    }),
+    [
+      users,
+      proposals,
+      tasks,
+      comments,
+      notifications,
+      audit,
+      completions,
+      options,
+      letterhead,
+      currentUser,
+      authLoading,
+      backendError,
+      syncState,
+      lastSyncedAt,
+      isAuthenticated,
+      refresh,
+      getNextRefNumber,
+      uploadFile,
+      saveProposals,
+      saveNotifications,
+      saveOptions,
+      saveLetterhead,
+      pushNotification,
+      pushAudit,
+      approveFaculty,
+      rejectFaculty,
+      addLeadership,
+      removeUser,
+      updateCurrentUser,
+      purgeFakeData,
+      purgeAllDataWithExport,
+    ]
+  );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

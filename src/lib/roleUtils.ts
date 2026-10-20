@@ -134,6 +134,25 @@ export function canActOnProposal(
     return Boolean(isPending);
   }
 
+  // Dean has cross-department oversight authority over pending proposals (can review & recommend)
+  if (userRole === 'Dean') {
+    const isMySubmission = Boolean(
+      (proposal?.submitterId && currentUserId && proposal.submitterId === currentUserId) ||
+      (proposal?.faculty_id && currentUserId && proposal.faculty_id === currentUserId)
+    );
+    if (isMySubmission) return false;
+
+    // Must have a pending Dean step
+    const deanStep = chain.find((s) => s.role === 'Dean');
+    if (!deanStep || deanStep.action !== 'Pending') return false;
+
+    // Requests still awaiting preceding HOD review are not yet eligible for Dean decision
+    const hodStep = chain.find((s) => s.role === 'HOD');
+    if (hodStep && hodStep.action === 'Pending') return false;
+
+    return true;
+  }
+
   const active = activeChainStep(chain);
   if (!active) return false;
 

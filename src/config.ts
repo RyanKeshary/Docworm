@@ -60,9 +60,9 @@ export const PO_LIST: { code: string; name: string }[] = [
 ];
 
 export const COLLEGE = {
-  name: 'Shree L.R. Tiwari College of Engineering',
+  name: 'Shree L R Tiwari College of Engineering',
   short: 'SLRTCE',
-  address: 'Shree L.R. Tiwari College of Engineering, Mira Road (East), Thane 401107',
+  address: 'Shree L R Tiwari College of Engineering, Mira Road (East), Thane 401107',
   phone: '+91 22 2812 1234',
   email: 'office@slrtce.in',
 };

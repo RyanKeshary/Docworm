@@ -199,7 +199,8 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
       return role === 'Principal';
 
     case 'request:endorse_hod':
-      // HOD can endorse requests originating from their own department to forward to Dean
+      // HOD or Dean can endorse/recommend requests
+      if (role === 'Dean') return true;
       if (role !== 'HOD') return false;
       if (!resource) return true;
       const dept = resource.submitter_dept || resource.department_code || resource.department_id || resource.department;
@@ -265,6 +266,7 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
 
     case 'gatepass:endorse_hod':
     case 'leave:endorse_hod': {
+      if (role === 'Dean') return true;
       if (role !== 'HOD') return false;
       if (!resource) return true;
       const leaveDept = resource.department_code || resource.department_id || resource.department;

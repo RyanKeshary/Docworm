@@ -47,6 +47,20 @@ const PURPOSE_PRESETS = [
   'Personal Urgent Work',
 ];
 
+function formatTimeTo24h(val: string): string {
+  if (!val) return '';
+  const match = val.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (!match) return '';
+  let hour = parseInt(match[1], 10);
+  const minute = match[2];
+  const ampm = match[3]?.toUpperCase();
+  if (ampm) {
+    if (ampm === 'PM' && hour < 12) hour += 12;
+    if (ampm === 'AM' && hour === 12) hour = 0;
+  }
+  return `${hour.toString().padStart(2, '0')}:${minute}`;
+}
+
 export function EmployeeGatePassPortal() {
   const { currentUser, options } = useData();
 
@@ -107,7 +121,21 @@ export function EmployeeGatePassPortal() {
       setError('');
       const res = await api.gatePasses.list();
       const list = res.gatePasses || res.leaves || [];
-      setGatePasses(list);
+      setGatePasses((prev) => {
+        if (
+          prev.length === list.length &&
+          prev.every(
+            (p, i) =>
+              p.id === list[i].id &&
+              p.status === list[i].status &&
+              p.updated_at === list[i].updated_at &&
+              p.movement_status === list[i].movement_status
+          )
+        ) {
+          return prev;
+        }
+        return list;
+      });
       if (typeof window !== 'undefined' && currentUser?.id) {
         try {
           localStorage.setItem(`docworm_gp_cache_${currentUser.id}`, JSON.stringify(list));
@@ -133,10 +161,10 @@ export function EmployeeGatePassPortal() {
       fetchPasses(true);
     });
 
-    // 20-second heartbeat polling for ultra-reliable fallback
+    // 45-second heartbeat polling for ultra-reliable fallback
     const interval = setInterval(() => {
       fetchPasses(true);
-    }, 20000);
+    }, 45000);
 
     return () => {
       unsub();
@@ -296,12 +324,13 @@ export function EmployeeGatePassPortal() {
     }
   };
 
-  // Quick 1-Click Approve for Principal
+  // Quick 1-Click Approve for Principal or Dean
   const handleQuickApprove = async (passId: string, employeeName: string) => {
     try {
       setSubmitting(true);
       setError('');
-      await api.gatePasses.quickApprove(passId, 'Instant Real-Time Sanction by Principal upon Exit');
+      const remark = `Instant Real-Time Sanction by ${currentUser.role} upon Exit`;
+      await api.gatePasses.quickApprove(passId, remark);
       setSuccessMsg(`Gate pass for ${employeeName} sanctioned and approved successfully!`);
       realtime.broadcastLocal({ type: 'gate_passes_updated', action: 'decide', timestamp: new Date().toISOString() });
       await fetchPasses(true);
@@ -641,7 +670,7 @@ export function EmployeeGatePassPortal() {
                     </div>
 
                     <div className="pt-2 border-t border-primary-border flex items-center gap-2">
-                      {currentUser.role === 'Principal' && pass.status !== 'Approved' && (
+                      {(currentUser.role === 'Principal' || currentUser.role === 'Dean') && pass.status !== 'Approved' && (
                         <button
                           onClick={() => handleQuickApprove(pass.id, pass.employee_name)}
                           disabled={submitting}
@@ -670,7 +699,7 @@ export function EmployeeGatePassPortal() {
 
       {/* Analytics / Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-        <div className="bg-surface p-4 rounded-card border border-primary-border shadow-xs">
+        <div className="bg-surface p-4 rounded-card border border-primary-border shadow-2xs hover:-translate-y-0.5 hover:shadow-xs transition-all duration-150">
           <div className="flex items-center justify-between text-xs text-ink-muted mb-1 font-medium">
             <span>Total Requests</span>
             <Ticket size={15} className="text-primary" />
@@ -679,7 +708,7 @@ export function EmployeeGatePassPortal() {
           <span className="text-[11px] text-ink-muted">In current portal view</span>
         </div>
 
-        <div className="bg-surface p-4 rounded-card border border-primary-border shadow-xs">
+        <div className="bg-surface p-4 rounded-card border border-primary-border shadow-2xs hover:-translate-y-0.5 hover:shadow-xs transition-all duration-150">
           <div className="flex items-center justify-between text-xs text-amber-700 mb-1 font-medium">
             <span>Pending HOD</span>
             <Clock size={15} className="text-amber-600" />
@@ -688,7 +717,7 @@ export function EmployeeGatePassPortal() {
           <span className="text-[11px] text-ink-muted">Department endorsement</span>
         </div>
 
-        <div className="bg-surface p-4 rounded-card border border-primary-border shadow-xs">
+        <div className="bg-surface p-4 rounded-card border border-primary-border shadow-2xs hover:-translate-y-0.5 hover:shadow-xs transition-all duration-150">
           <div className="flex items-center justify-between text-xs text-blue-700 mb-1 font-medium">
             <span>Pending Principal</span>
             <Send size={15} className="text-blue-600" />
@@ -697,7 +726,7 @@ export function EmployeeGatePassPortal() {
           <span className="text-[11px] text-ink-muted">Awaiting final sanction</span>
         </div>
 
-        <div className="bg-surface p-4 rounded-card border border-primary-border shadow-xs">
+        <div className="bg-surface p-4 rounded-card border border-primary-border shadow-2xs hover:-translate-y-0.5 hover:shadow-xs transition-all duration-150">
           <div className="flex items-center justify-between text-xs text-emerald-700 mb-1 font-medium">
             <span>Approved & Issued</span>
             <CheckCircle2 size={15} className="text-emerald-600" />
@@ -706,7 +735,7 @@ export function EmployeeGatePassPortal() {
           <span className="text-[11px] text-ink-muted">Officially sanctioned</span>
         </div>
 
-        <div className="bg-surface p-4 rounded-card border border-primary-border shadow-xs col-span-2 lg:col-span-1">
+        <div className="bg-surface p-4 rounded-card border border-primary-border shadow-2xs hover:-translate-y-0.5 hover:shadow-xs transition-all duration-150 col-span-2 lg:col-span-1">
           <div className="flex items-center justify-between text-xs text-purple-700 mb-1 font-medium">
             <span>My Issued Passes</span>
             <ShieldCheck size={15} className="text-purple-600" />
@@ -804,9 +833,9 @@ export function EmployeeGatePassPortal() {
                   <th className="py-3 px-4">Ref No & Date</th>
                   <th className="py-3 px-4">Employee</th>
                   <th className="py-3 px-4">Purpose</th>
-                  <th className="py-3 px-4">Timing (Out / In)</th>
+                  <th className="py-3 px-4">Check-out / Check-in Timing</th>
                   <th className="py-3 px-4">Campus Presence</th>
-                  <th className="py-3 px-4">HOD Sign</th>
+                  <th className="py-3 px-4">HOD / Dean Sign</th>
                   <th className="py-3 px-4">Principal Sign</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4 text-right">Actions</th>
@@ -815,12 +844,13 @@ export function EmployeeGatePassPortal() {
               <tbody className="divide-y divide-primary-border/60">
                 {filteredPasses.map((pass) => {
                   const canHodAct =
-                    currentUser.role === 'HOD' &&
+                    (currentUser.role === 'HOD' || currentUser.role === 'Dean') &&
                     pass.status === 'Pending' &&
-                    (pass.department === currentUser.department ||
+                    (currentUser.role === 'Dean' ||
+                      pass.department === currentUser.department ||
                       pass.department_id === currentUser.department_id);
                   const canPrincipalAct =
-                    currentUser.role === 'Principal' && (pass.status === 'Recommended' || pass.status === 'Pending');
+                    (currentUser.role === 'Principal' || currentUser.role === 'Dean') && (pass.status === 'Recommended' || pass.status === 'Pending');
                   const canCancel = pass.employee_id === currentUser.id && pass.status === 'Pending';
 
                   return (
@@ -852,10 +882,20 @@ export function EmployeeGatePassPortal() {
 
                       <td className="py-3 px-4">
                         <div className="text-xs font-semibold text-ink">
-                          Out: <span className="font-mono text-rose-700">{pass.time_out}</span>
+                          Check-out: <span className="font-mono text-rose-700">{pass.time_out}</span>
+                          {pass.actual_exit_at && (
+                            <span className="text-[10px] text-rose-600 block font-normal">
+                              Actual Exit: {new Date(pass.actual_exit_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
                         </div>
-                        <div className="text-xs font-semibold text-ink mt-0.5">
-                          In: <span className="font-mono text-emerald-700">{pass.time_in}</span>
+                        <div className="text-xs font-semibold text-ink mt-1">
+                          Check-in: <span className="font-mono text-emerald-700">{pass.time_in}</span>
+                          {pass.actual_return_at && (
+                            <span className="text-[10px] text-emerald-600 block font-normal">
+                              Actual Entry: {new Date(pass.actual_return_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -925,13 +965,13 @@ export function EmployeeGatePassPortal() {
                           )
                         )}
 
-                        {/* Principal Quick Sanction Action */}
-                        {currentUser.role === 'Principal' && pass.status !== 'Approved' && (
+                        {/* Principal & Dean Quick Sanction Action */}
+                        {(currentUser.role === 'Principal' || currentUser.role === 'Dean') && pass.status !== 'Approved' && (
                           <button
                             onClick={() => handleQuickApprove(pass.id, pass.employee_name)}
                             disabled={submitting}
                             className="px-2.5 py-1 rounded-md text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 transition-colors shadow-2xs inline-flex items-center gap-1"
-                            title="Instant 1-Click Principal Sanction"
+                            title="Instant 1-Click Sanction"
                           >
                             <Zap size={11} className="fill-current text-amber-300" />
                             <span>Quick Sanction</span>
@@ -1076,7 +1116,7 @@ export function EmployeeGatePassPortal() {
                 <div className="shrink-0 w-20 h-20 flex items-center justify-center">
                   <img
                     src="/logo.png"
-                    alt="SLRTCE Seal"
+                    alt="Shree L R Tiwari College of Engineering Seal"
                     className="w-18 h-18 object-contain"
                   />
                 </div>
@@ -1087,7 +1127,7 @@ export function EmployeeGatePassPortal() {
                     Shree Rahul Education Society's (Regd.)
                   </p>
                   <h1 className="text-lg sm:text-2xl font-serif font-black tracking-tight uppercase leading-tight text-black mt-0.5">
-                    SHREE L. R. TIWARI COLLEGE OF ENGINEERING
+                    SHREE L R TIWARI COLLEGE OF ENGINEERING
                   </h1>
                   <p className="text-[11px] sm:text-xs font-semibold text-black mt-0.5">
                     An Autonomous Institute Affiliated to University of Mumbai,
@@ -1155,11 +1195,11 @@ export function EmployeeGatePassPortal() {
                     </td>
                   </tr>
 
-                  {/* Row 4: Time Out & Time In */}
+                  {/* Row 4: Scheduled Check-out & Check-in Timings */}
                   <tr className="border-b-2 border-black">
                     <td className="w-1/2 p-2.5 sm:p-3 border-r-2 border-black align-top">
                       <div className="flex items-center gap-1 text-sm sm:text-base font-bold">
-                        <span className="font-serif shrink-0">Time Out:-</span>
+                        <span className="font-serif shrink-0">Check-out Timing (Time Out):-</span>
                         <span className="font-mono font-semibold pl-1 text-black">
                           {isBlankPrint ? '' : selectedPass?.time_out}
                         </span>
@@ -1167,10 +1207,40 @@ export function EmployeeGatePassPortal() {
                     </td>
                     <td className="w-1/2 p-2.5 sm:p-3 align-top">
                       <div className="flex items-center gap-1 text-sm sm:text-base font-bold">
-                        <span className="font-serif shrink-0">Time In:-</span>
+                        <span className="font-serif shrink-0">Check-in Timing (Time In):-</span>
                         <span className="font-mono font-semibold pl-1 text-black">
                           {isBlankPrint ? '' : selectedPass?.time_in}
                         </span>
+                      </div>
+                    </td>
+                  </tr>
+
+                  {/* Row 5: Actual Security Gate Timings */}
+                  <tr className="border-b-2 border-black bg-slate-50/50">
+                    <td className="w-1/2 p-2.5 sm:p-3 border-r-2 border-black align-top">
+                      <div className="flex flex-col gap-0.5 text-xs sm:text-sm font-bold">
+                        <div className="flex items-center gap-1">
+                          <span className="font-serif shrink-0 text-slate-800">Actual Check-out (Gate Exit):-</span>
+                          <span className="font-mono font-semibold pl-1 text-black">
+                            {!isBlankPrint && selectedPass?.actual_exit_at
+                              ? new Date(selectedPass.actual_exit_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                              : isBlankPrint ? '' : 'Not logged'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-normal">Security Guard stamp / Departure log</span>
+                      </div>
+                    </td>
+                    <td className="w-1/2 p-2.5 sm:p-3 align-top">
+                      <div className="flex flex-col gap-0.5 text-xs sm:text-sm font-bold">
+                        <div className="flex items-center gap-1">
+                          <span className="font-serif shrink-0 text-slate-800">Actual Check-in (Gate Return):-</span>
+                          <span className="font-mono font-semibold pl-1 text-black">
+                            {!isBlankPrint && selectedPass?.actual_return_at
+                              ? new Date(selectedPass.actual_return_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                              : isBlankPrint ? '' : 'Not logged'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-normal">Security Guard stamp / Re-entry log</span>
                       </div>
                     </td>
                   </tr>
@@ -1180,7 +1250,7 @@ export function EmployeeGatePassPortal() {
                     {/* Sign of HOD */}
                     <td className="w-1/2 p-2.5 sm:p-3 border-r-2 border-black align-top h-28 sm:h-32">
                       <div className="flex flex-col justify-between h-full font-bold">
-                        <span className="font-serif text-sm sm:text-base">Sign of HOD:-</span>
+                        <span className="font-serif text-sm sm:text-base">Sign of HOD / Dean:-</span>
 
                         {!isBlankPrint && selectedPass?.hod_acted_at ? (
                           <div className="border border-dashed border-emerald-700 bg-emerald-50/50 p-1.5 rounded text-center my-auto">
@@ -1354,32 +1424,92 @@ export function EmployeeGatePassPortal() {
               </div>
             </div>
 
-            {/* Row 4: Timing (Start Timing & End Timing) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-slate-50 rounded-xl border border-slate-200">
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Start Timing (Time Out / Departure) *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. 01:30 PM"
-                  value={form.time_out}
-                  onChange={(e) => setForm({ ...form, time_out: e.target.value })}
-                  className={inputCls}
-                />
-                <span className="text-[11px] text-slate-500 mt-0.5 block">Recorded time leaving campus</span>
+            {/* Row 4: Timing (Check-out & Check-in Timing) */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="gatepass-departure-time-picker" className="text-xs font-semibold text-slate-700 block mb-1">Check-out Timing (Departure / Out) *</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="gatepass-departure-time-picker"
+                      aria-label="Departure time"
+                      type="time"
+                      value={formatTimeTo24h(form.time_out)}
+                      className={`${inputCls} font-mono w-28 shrink-0`}
+                      onChange={(e) => {
+                        if (!e.target.value) return;
+                        const [h, m] = e.target.value.split(':');
+                        const hour = parseInt(h, 10);
+                        const ampm = hour >= 12 ? 'PM' : 'AM';
+                        const formattedHour = (hour % 12 || 12).toString().padStart(2, '0');
+                        setForm({ ...form, time_out: `${formattedHour}:${m} ${ampm}` });
+                      }}
+                    />
+                    <input
+                      id="gatepass-departure-details-text"
+                      aria-label="Departure details"
+                      type="text"
+                      required
+                      placeholder="e.g. 12:30 PM"
+                      value={form.time_out}
+                      onChange={(e) => setForm({ ...form, time_out: e.target.value })}
+                      className={`${inputCls} font-semibold font-mono`}
+                    />
+                  </div>
+                  <span className="text-[11px] text-slate-500 mt-1 block">Scheduled departure / exit timing</span>
+                </div>
+
+                <div>
+                  <label htmlFor="gatepass-return-time-picker" className="text-xs font-semibold text-slate-700 block mb-1">Check-in Timing (Expected Return / In) *</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="gatepass-return-time-picker"
+                      aria-label="Return time"
+                      type="time"
+                      value={formatTimeTo24h(form.time_in)}
+                      className={`${inputCls} font-mono w-28 shrink-0`}
+                      onChange={(e) => {
+                        if (!e.target.value) return;
+                        const [h, m] = e.target.value.split(':');
+                        const hour = parseInt(h, 10);
+                        const ampm = hour >= 12 ? 'PM' : 'AM';
+                        const formattedHour = (hour % 12 || 12).toString().padStart(2, '0');
+                        setForm({ ...form, time_in: `${formattedHour}:${m} ${ampm}` });
+                      }}
+                    />
+                    <input
+                      id="gatepass-return-details-text"
+                      aria-label="Return details"
+                      type="text"
+                      required
+                      placeholder="e.g. 03:30 PM"
+                      value={form.time_in}
+                      onChange={(e) => setForm({ ...form, time_in: e.target.value })}
+                      className={`${inputCls} font-semibold font-mono`}
+                    />
+                  </div>
+                  <span className="text-[11px] text-slate-500 mt-1 block">Expected campus return timing</span>
+                </div>
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">End Timing (Expected Return) *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. 04:30 PM"
-                  value={form.time_in}
-                  onChange={(e) => setForm({ ...form, time_in: e.target.value })}
-                  className={inputCls}
-                />
-                <span className="text-[11px] text-slate-500 mt-0.5 block">Expected return timing (same day)</span>
+              {/* Quick Timing Presets */}
+              <div className="flex flex-wrap gap-1.5 items-center pt-1 border-t border-slate-200">
+                <span className="text-[11px] text-slate-500 font-medium">Quick Timing Presets:</span>
+                {[
+                  { label: '1 Hr (12:30 PM - 01:30 PM)', out: '12:30 PM', in: '01:30 PM' },
+                  { label: '2 Hrs (01:00 PM - 03:00 PM)', out: '01:00 PM', in: '03:00 PM' },
+                  { label: 'Afternoon (02:00 PM - 05:00 PM)', out: '02:00 PM', in: '05:00 PM' },
+                  { label: 'Remaining Duty', out: '01:30 PM', in: '05:30 PM' },
+                ].map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => setForm({ ...form, time_out: p.out, time_in: p.in })}
+                    className="text-[11px] px-2 py-0.5 rounded-md border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 transition-colors"
+                  >
+                    {p.label}
+                  </button>
+                ))}
               </div>
             </div>
 

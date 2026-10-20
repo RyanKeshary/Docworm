@@ -130,7 +130,7 @@ assert(can(facultyIt, 'user:edit_other', hodIt) === false, 'Faculty CANNOT edit 
 console.log('\n--- 7. Permission Request Submission ---');
 assert(can(facultyIt, 'request:create') === true, 'Faculty CAN submit permission requests');
 assert(can(hodIt, 'request:create') === true, 'HOD CAN submit own permission requests');
-assert(can(dean, 'request:create') === false, 'Dean CANNOT submit event requests (recommending authority)');
+assert(can(dean, 'request:create') === true, 'Dean CAN submit event requests (routes to Principal for sanction)');
 
 // 8. Broadcast / Announcements
 console.log('\n--- 8. Announcements & Broadcasts ---');

@@ -7,7 +7,7 @@ import {
   Eye, RotateCcw, ChevronRight, Star, Layers, BookOpen, RefreshCw,
   Crown, Download, Upload, ChevronDown,
 } from 'lucide-react';
-import { useData, nowStr } from '../store';
+import { useData, nowStr, uid } from '../store';
 import { Badge, btnGhost, btnPrimary, inputCls } from '../components';
 import { PermissionPortalSkeleton } from '../components/Boneyard';
 import type { Proposal, Attachment, Role } from '../types';
@@ -51,7 +51,7 @@ function StatCard({
   return (
     <div
       onClick={onClick}
-      className={`p-4 rounded-card border transition-all bg-white ${colors.border} ${onClick ? 'cursor-pointer' : ''}`}
+      className={`p-4 rounded-card border transition-all duration-150 bg-white ${colors.border} shadow-2xs hover:shadow-xs ${onClick ? 'cursor-pointer hover:-translate-y-0.5 active:scale-[0.985]' : 'hover:-translate-y-0.5'}`}
     >
       <div className={`text-xs font-semibold ${colors.text}`}>{label}</div>
       <div className={`mt-1.5 text-2xl font-bold ${colors.text}`}>{value}</div>
@@ -251,11 +251,14 @@ export function PermissionPortal() {
       return;
     }
 
-    // Strictly mandatory upload
-    if (!uploadedFile) {
-      setUploadError('Uploading an official permission request document/brochure is mandatory.');
-      return;
-    }
+    // Prepare attachment: use uploaded file or generate institutional digital brief
+    const finalAttachment: Attachment = uploadedFile || {
+      id: uid(),
+      name: `Permission_Note_${formData.eventName.replace(/[^a-zA-Z0-9]/g, '_')}.txt`,
+      size: '1.2 KB',
+      kind: 'text/plain',
+      storagePath: `data:text/plain;charset=utf-8,${encodeURIComponent(`Official Permission Request Note\nEvent: ${formData.eventName}\nDepartment: ${formData.department}\nDate: ${formData.startDate}\nPurpose: ${formData.purpose || 'Official institutional conduct'}\nSubmitted by: ${currentUser.name} (${currentUser.role})`)}`,
+    };
 
     const currentYear = new Date().getFullYear();
     const acYear = `${currentYear}-${String(currentYear + 1).slice(2)}`;
@@ -309,7 +312,7 @@ export function PermissionPortal() {
         ? `Estimated budget of Rs. ${formData.budgetAmount} requested for event conduct.`
         : '',
       poMappings: [],
-      attachments: uploadedFile ? [uploadedFile] : [],
+      attachments: [finalAttachment],
       submitterId: currentUser.id,
       submitterName: currentUser.name,
       submitterDept: formData.department,
@@ -335,7 +338,7 @@ export function PermissionPortal() {
     pushAudit({
       actorId: currentUser.id,
       actorName: currentUser.name,
-      action: `Submitted permission request ${refNo} for "${formData.eventName}" with mandatory document "${uploadedFile.name}"`,
+      action: `Submitted permission request ${refNo} for "${formData.eventName}" with mandatory document "${finalAttachment.name}"`,
       entity: 'Proposal',
       entityId: newProposal.id,
     });
@@ -357,14 +360,16 @@ export function PermissionPortal() {
 
     const active = activeChainStep(decidingProposal.approvalChain);
     const principalStep = decidingProposal.approvalChain.find((s) => s.role === 'Principal');
+    const deanStep = decidingProposal.approvalChain.find((s) => s.role === 'Dean' && s.action === 'Pending');
     // Principal has ultimate executive sanction power on any active pending request
-    const targetStep = role === 'Principal' ? (principalStep || active) : active;
+    // Dean targets their pending Dean step
+    const targetStep = role === 'Principal' ? (principalStep || active) : role === 'Dean' ? (deanStep || active) : active;
     if (!targetStep) return;
 
     const actionMeta = getRoleActionMeta(role);
 
     const updatedChain = decidingProposal.approvalChain.map((step) => {
-      if (step.id === targetStep.id || (role === 'Principal' && step.role === 'Principal')) {
+      if (step.id === targetStep.id || (role === 'Principal' && step.role === 'Principal') || (role === 'Dean' && step.role === 'Dean')) {
         return {
           ...step,
           action: decisionAction,
@@ -513,12 +518,32 @@ export function PermissionPortal() {
     { key: 'Pending', label: 'In Review' },
     { key: 'Approved', label: 'Approved' },
     { key: 'Rejected', label: 'Rejected' },
-    ...(!canViewAll ? [{ key: 'Mine' as typeof statusFilter, label: 'My Submissions' }] : []),
+    ...(canCreate ? [{ key: 'Mine' as typeof statusFilter, label: 'My Submissions' }] : []),
   ];
 
   if (syncState === 'loading' && proposals.length === 0) {
     return <PermissionPortalSkeleton />;
   }
+
+  const handleOpenNewRequest = () => {
+    setFormData({
+      eventName: '',
+      department: currentUser.department || (currentUser.role === 'Dean' ? 'Dean Office' : 'IT'),
+      organizingBody: currentUser.department ? `Department of ${currentUser.department}` : (currentUser.role === 'Dean' ? 'Office of the Dean (Student Welfare)' : 'Institutional Committee'),
+      startDate: new Date(Date.now() + 864e5 * 3).toISOString().slice(0, 10),
+      endDate: new Date(Date.now() + 864e5 * 3).toISOString().slice(0, 10),
+      startTime: '10:00',
+      endTime: '16:00',
+      venue: 'Seminar Hall 1',
+      participants: 100,
+      purpose: '',
+      budgetAmount: '',
+      budgetFunding: 'College Budget Head',
+    });
+    setUploadedFile(null);
+    setUploadError(null);
+    setIsNewModalOpen(true);
+  };
 
   // ─────────────────────────────────────────────────────────
   return (
@@ -584,23 +609,7 @@ export function PermissionPortal() {
 
           {canCreate && (
             <button
-              onClick={() => {
-                setFormData({
-                  eventName: '',
-                  department: currentUser.department || 'IT',
-                  organizingBody: `Department of ${currentUser.department || 'IT'}`,
-                  startDate: new Date(Date.now() + 864e5 * 3).toISOString().slice(0, 10),
-                  endDate: new Date(Date.now() + 864e5 * 3).toISOString().slice(0, 10),
-                  startTime: '10:00',
-                  endTime: '16:00',
-                  venue: 'Seminar Hall 1',
-                  participants: 100,
-                  purpose: '',
-                  budgetAmount: '',
-                  budgetFunding: 'College Budget Head',
-                });
-                setIsNewModalOpen(true);
-              }}
+              onClick={handleOpenNewRequest}
               className="px-3.5 py-2 text-xs font-bold rounded-lg bg-primary hover:bg-primary-dark text-white shadow-xs transition-colors flex items-center gap-1.5"
             >
               <Plus size={15} />
@@ -611,7 +620,13 @@ export function PermissionPortal() {
       </div>
 
       {/* ── ROLE-SPECIFIC CONTEXT CARD ──────────────────────── */}
-      <RoleContextCard role={role} stats={stats} proposals={proposals} currentUser={currentUser} />
+      <RoleContextCard
+        role={role}
+        stats={stats}
+        proposals={proposals}
+        currentUser={currentUser}
+        onAddNew={handleOpenNewRequest}
+      />
 
       {/* ── STATS ROW ───────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -654,7 +669,7 @@ export function PermissionPortal() {
           {/* Action buttons */}
           <div className="flex items-center gap-2">
             {canCreate && (
-              <button onClick={() => setIsNewModalOpen(true)} className={`${btnPrimary} shrink-0`}>
+              <button onClick={handleOpenNewRequest} className={`${btnPrimary} shrink-0`}>
                 <Plus size={16} /> New Permission Request
               </button>
             )}
@@ -710,7 +725,7 @@ export function PermissionPortal() {
             </button>
           )}
           {canCreate && proposals.length === 0 && (
-            <button onClick={() => setIsNewModalOpen(true)} className={`${btnPrimary} mt-4 mx-auto`}>
+            <button onClick={handleOpenNewRequest} className={`${btnPrimary} mt-4 mx-auto`}>
               <Plus size={15} /> Create Request
             </button>
           )}
@@ -1105,7 +1120,7 @@ export function PermissionPortal() {
                     required
                   >
                     {[
-                      'IT', 'CMPN', 'EXTC', 'ECS', 'MECH', 'CIVIL', 'HAS',
+                      'Dean Office', 'Student Welfare', 'IT', 'CMPN', 'EXTC', 'ECS', 'MECH', 'CIVIL', 'HAS',
                       'Cultural Committee', 'Student Council', 'Sports Committee',
                       'E-Cell', 'NSS', 'Training & Placement', 'DLLE', 'Technical Committee',
                     ].map((d) => (
@@ -1244,19 +1259,28 @@ export function PermissionPortal() {
               <div className="p-3 bg-primary-pale rounded-lg border border-primary-border">
                 <p className="text-[11px] font-bold text-primary uppercase tracking-wider mb-2">Approval Chain (after submission)</p>
                 <div className="flex items-center gap-2 flex-wrap text-xs">
-                  {currentUser.role !== 'HOD' && (
+                  {currentUser.role !== 'HOD' && currentUser.role !== 'Dean' && (
                     <>
                       <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded font-semibold">HOD Review</span>
                       <ChevronRight size={12} className="text-ink-muted" />
                     </>
                   )}
-                  <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded font-semibold">Dean Review</span>
-                  <ChevronRight size={12} className="text-ink-muted" />
+                  {currentUser.role !== 'Dean' && (
+                    <>
+                      <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded font-semibold">Dean Review</span>
+                      <ChevronRight size={12} className="text-ink-muted" />
+                    </>
+                  )}
                   <span className="px-2 py-1 bg-violet-100 text-violet-800 rounded font-semibold">Principal Sanction</span>
                 </div>
                 {currentUser.role === 'HOD' && (
                   <p className="text-[11px] text-primary/80 mt-1.5 italic">
                     ℹ️ As Department Head, your submission routes directly to Dean for review before Principal sanction.
+                  </p>
+                )}
+                {currentUser.role === 'Dean' && (
+                  <p className="text-[11px] text-primary/80 mt-1.5 italic">
+                    ℹ️ As Dean, your permission request routes directly to the Principal Office for final sanction.
                   </p>
                 )}
               </div>
@@ -1706,12 +1730,13 @@ function RoleSwitcherBar({
 // Role-specific context cards
 // ─────────────────────────────────────────────────────────────
 function RoleContextCard({
-  role, stats, proposals, currentUser,
+  role, stats, proposals, currentUser, onAddNew,
 }: {
   role: string;
   stats: { total: number; pending: number; approved: number; rejected: number; awaitingMe: number };
   proposals: Proposal[];
   currentUser: { id: string; name: string; department?: string | null; designation: string };
+  onAddNew?: () => void;
 }) {
   if (role === 'Principal') {
     return (
@@ -1756,16 +1781,22 @@ function RoleContextCard({
             <p className="text-xs text-blue-800 mt-1 leading-relaxed">
               Cross-department student welfare & academic oversight. You see <b>all HODs, faculties, and proposals across the entire institution</b>. You review and recommend proposals to the Principal (final sanction stays with Principal).
             </p>
-            <div className="mt-3.5 flex flex-wrap gap-2 text-xs">
+            <div className="mt-3.5 flex flex-wrap items-center gap-2 text-xs">
               <span className="font-semibold text-blue-900 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
                 <Send size={13} className="text-blue-700" /> {stats.awaitingMe} proposals awaiting Dean review
               </span>
               <span className="font-semibold text-slate-800 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
                 <Building2 size={13} className="text-slate-600" /> Overseeing all college departments ({proposals.length} total requests)
               </span>
-              <span className="font-medium text-amber-900 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg">
-                ⚠️ Final sanction rests exclusively with Principal
-              </span>
+              {onAddNew && (
+                <button
+                  type="button"
+                  onClick={onAddNew}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold flex items-center gap-1.5 shadow-xs transition-colors ml-auto"
+                >
+                  <Plus size={14} /> Add Permission Request
+                </button>
+              )}
             </div>
           </div>
         </div>

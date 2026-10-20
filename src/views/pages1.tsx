@@ -237,18 +237,18 @@ export function Login() {
             <div className="flex items-center gap-3">
               <img
                 src="/logo.png"
-                alt="Docworm Logo"
-                className="w-10 h-10 object-contain rounded-xl bg-white/10 p-1 border border-white/20 shadow-xs"
+                alt="Shree L R Tiwari College of Engineering Logo"
+                className="w-12 h-12 object-contain rounded-xl bg-white p-1 border border-white/20 shadow-xs"
               />
               <div>
-                <span className="font-bold text-xl tracking-tight block leading-tight text-white">Docworm</span>
-                <span className="text-[11px] text-blue-200 font-semibold tracking-wider uppercase">Institutional Portal</span>
+                <span className="font-bold text-lg tracking-tight block leading-tight text-white">Shree L R Tiwari</span>
+                <span className="text-[11px] text-blue-200 font-semibold tracking-wider uppercase">College of Engineering</span>
               </div>
             </div>
 
             <div>
               <h1 className="text-xl sm:text-2xl font-bold leading-snug tracking-tight text-white">
-                {letterhead.collegeName || 'Shree L.R. Tiwari College of Engineering'}
+                {letterhead.collegeName || 'Shree L R Tiwari College of Engineering'}
               </h1>
             </div>
           </div>

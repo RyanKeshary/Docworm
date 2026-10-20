@@ -15,7 +15,7 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const BASE_URL = 'http://localhost:3001';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
 async function login(email: string, password = 'password@67'): Promise<string> {
   const res = await fetch(`${BASE_URL}/api/auth/login`, {
@@ -35,8 +35,8 @@ async function runTest() {
   console.log('🧪 Testing Full Faculty Leave End-to-End Workflow...');
 
   // 1. Faculty Login
-  console.log('1. Logging in as Faculty (prof.sharma@slrtce.in)...');
-  const facultyToken = await login('prof.sharma@slrtce.in');
+  console.log('1. Logging in as Faculty (rupali.pashte@slrtce.in)...');
+  const facultyToken = await login('rupali.pashte@slrtce.in');
   console.log('  ✅ Faculty authenticated.');
 
   // 2. Faculty submits Leave Application
@@ -63,9 +63,23 @@ async function runTest() {
 
   if (!leaveRes.ok) throw new Error(`Leave submission failed: ${await leaveRes.text()}`);
   const leaveData = await leaveRes.json();
-  const leaveId = leaveData.leave.id;
-  const refNo = leaveData.leave.ref_no;
+  const leaveId = leaveData.leave?.id;
+  const refNo = leaveData.leave?.ref_no;
+  if (!leaveId) throw new Error(`Leave creation failed to return leave ID: ${JSON.stringify(leaveData)}`);
   console.log(`  ✅ Leave application created: ${refNo} (Status: ${leaveData.leave.status})`);
+
+  // Validate that DATABASE_URL targets the same database environment as BASE_URL before proceeding
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL environment variable is required to run and clean up the leave workflow test.');
+  }
+  const preCheckSql = postgres(process.env.DATABASE_URL);
+  const foundLeave = await preCheckSql`SELECT id FROM public.faculty_leaves WHERE id = ${leaveId}`;
+  await preCheckSql.end();
+  if (foundLeave.length === 0) {
+    throw new Error(
+      `DATABASE_URL does not match the database environment of BASE_URL (${BASE_URL}). Newly created leave ${leaveId} was not found in DATABASE_URL.`
+    );
+  }
 
   // 3. HOD Login & Recommendation
   console.log('3. Logging in as HOD (hod.it@slrtce.in)...');
@@ -111,12 +125,14 @@ async function runTest() {
   const principalDecisionData = await principalDecisionRes.json();
   console.log(`  ✅ Leave final status: ${principalDecisionData.leave.status} (Principal Sanction: "${principalDecisionData.leave.principal_remark}")`);
 
-  // 7. Clean up the test leave row to keep database completely clear of dummy data
-  const sql = postgres(process.env.DATABASE_URL!);
-  await sql`TRUNCATE TABLE public.faculty_leaves CASCADE`;
-  await sql`TRUNCATE TABLE public.audit_log CASCADE`;
+  // 7. Clean up the test leave row & verify record was deleted
+  const sql = postgres(process.env.DATABASE_URL);
+  const deleted = await sql`DELETE FROM public.faculty_leaves WHERE id = ${leaveId} RETURNING id`;
   await sql.end();
-  console.log('7. 🧹 Database cleaned (all dummy test data wiped clean).');
+  if (deleted.length === 0) {
+    throw new Error(`Failed to clean up test leave ${leaveId}: record was not found or already deleted in DATABASE_URL.`);
+  }
+  console.log('7. 🧹 Database cleaned (test leave removed).');
 
   console.log('🎉 ALL LEAVE WORKFLOW TESTS PASSED SUCCESSFULLY!');
 }

@@ -70,11 +70,11 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-5" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="fixed inset-0 bg-ink/60 backdrop-blur-xs" onClick={onClose} />
-      <div className={`relative bg-surface rounded-card border border-primary-border shadow-2xl w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} my-auto max-h-[min(90vh,780px)] flex flex-col overflow-hidden animate-fade-in z-10`}>
+      <div className="fixed inset-0 bg-slate-900/40 transition-opacity" onClick={onClose} />
+      <div className={`relative bg-surface rounded-2xl border border-primary-border shadow-2xl w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} my-auto max-h-[min(90vh,780px)] flex flex-col overflow-hidden animate-modal-pop z-10`}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-primary-border shrink-0 bg-surface">
           <h2 className="font-semibold text-ink text-base">{title}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-primary-pale text-ink-muted transition-colors" aria-label="Close dialog"><X size={18} /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-primary-pale text-ink-muted transition-colors active:scale-95" aria-label="Close dialog"><X size={18} /></button>
         </div>
         <div className="p-5 overflow-y-auto flex-1">{children}</div>
       </div>
@@ -85,7 +85,7 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
 export function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="absolute inset-0 bg-ink/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-slate-900/40 transition-opacity" onClick={onClose} />
       <div className="absolute right-0 top-0 h-full w-full max-w-md bg-surface border-l border-primary-border shadow-2xl flex flex-col overflow-hidden animate-slide-in">
         <div className="flex items-center justify-between px-5 py-4 border-b border-primary-border bg-surface">
           <h2 className="font-semibold text-ink text-base">{title}</h2>
@@ -108,9 +108,9 @@ export function Field({ label, children, hint, error }: { label: string; childre
   );
 }
 
-export const inputCls = 'w-full rounded-card border border-primary-border bg-surface px-3.5 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all';
-export const btnPrimary = 'inline-flex items-center gap-2 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark shadow-sm hover:shadow-md active:scale-[0.98] transition-all disabled:opacity-50';
-export const btnGhost = 'inline-flex items-center gap-2 rounded-card border border-primary-border bg-surface px-4 py-2 text-sm font-medium text-ink hover:bg-primary-pale hover:border-primary/30 shadow-sm transition-all disabled:opacity-50';
+export const inputCls = 'w-full rounded-card border border-primary-border bg-surface px-3.5 py-2 text-sm text-ink placeholder:text-ink-muted/60 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all duration-150';
+export const btnPrimary = 'inline-flex items-center gap-2 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark shadow-xs hover:shadow-sm active:scale-[0.98] transition-all duration-150 disabled:opacity-50';
+export const btnGhost = 'inline-flex items-center gap-2 rounded-card border border-primary-border bg-surface px-4 py-2 text-sm font-medium text-ink hover:bg-primary-pale hover:border-primary/40 active:scale-[0.98] shadow-xs transition-all duration-150 disabled:opacity-50';
 
 export function ExportMenu({ onExport }: { onExport: (fmt: 'CSV' | 'XLSX' | 'PDF' | 'Print') => void }) {
   const [open, setOpen] = useState(false);
@@ -218,11 +218,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {/* App logo */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-primary-border">
         <Link to="/" className="flex items-center gap-2.5">
-          <img src="/logo.png" alt="Docworm" className="w-9 h-9 rounded-xl object-contain shadow-xs" />
+          <img src="/logo.png" alt="Shree L R Tiwari College of Engineering" className="w-9 h-9 rounded-xl object-contain shadow-xs bg-white p-0.5" />
           {!collapsed && (
             <div>
-              <span className="font-bold text-lg text-ink tracking-tight block">Docworm</span>
-              <span className="text-[10px] text-ink-muted font-medium uppercase tracking-wider block -mt-1">Institutional Portal</span>
+              <span className="font-bold text-sm text-ink tracking-tight block leading-tight">Shree L R Tiwari</span>
+              <span className="text-[10px] text-ink-muted font-medium uppercase tracking-wider block">College of Engineering</span>
             </div>
           )}
         </Link>
@@ -321,7 +321,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       <div className="flex-1 h-full min-w-0 flex flex-col overflow-hidden">
         {/* Fixed header pinned strictly to top with clean height */}
-        <header className="h-16 shrink-0 z-30 bg-surface/95 backdrop-blur-md border-b border-primary-border/80 print-hidden shadow-xs flex items-center">
+        <header className="h-16 shrink-0 z-30 bg-white/98 border-b border-primary-border/80 print-hidden shadow-2xs flex items-center">
           <div className="flex items-center justify-between gap-4 px-4 sm:px-6 py-2.5 w-full">
             {/* Left Zone: Sidebar toggles & Institutional Identity */}
             <div className="flex items-center gap-2.5 shrink-0">
@@ -342,7 +342,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </button>
               {collapsed && (
                 <div className="hidden sm:flex items-center gap-2 pl-1 border-l border-primary-border/60 ml-1">
-                  <span className="text-xs font-bold text-ink">Docworm</span>
+                  <span className="text-xs font-bold text-ink">SLRTCE</span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary-pale text-primary font-semibold uppercase">{currentUser.role}</span>
                 </div>
               )}
@@ -498,29 +498,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </div>
                 )}
               </div>
-
-              <div className="h-6 w-px bg-slate-200 hidden sm:block" />
-
-              {/* User Profile Chip */}
-              <div className="hidden md:flex items-center gap-2 pl-1 py-0.5">
-                <span className={`w-8 h-8 rounded-full ${roleMeta.bg} border ${roleMeta.border} font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs`}>
-                  {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
-                </span>
-                <div className="text-left hidden lg:block leading-tight">
-                  <p className="text-xs font-bold text-slate-800 truncate max-w-[120px]">{currentUser.name}</p>
-                  <p className={`text-[10px] font-medium truncate ${roleMeta.accent}`}>{currentUser.role}</p>
-                </div>
-              </div>
-
-              {/* Sign Out */}
-              <button
-                onClick={() => { signOut(); nav('/login'); }}
-                className="p-2 rounded-xl hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors border border-transparent hover:border-rose-200"
-                title="Sign Out"
-                aria-label="Log out"
-              >
-                <LogOut size={16} />
-              </button>
             </div>
           </div>
         </header>
