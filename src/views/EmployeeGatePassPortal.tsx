@@ -30,6 +30,9 @@ import {
   LogOut as ExitIcon,
   LogIn as ReturnIcon,
   UploadCloud,
+  ArrowRightLeft,
+  Crown,
+  Eye,
 } from 'lucide-react';
 import { useData } from '../store';
 import { api } from '../lib/api';
@@ -350,36 +353,41 @@ export function EmployeeGatePassPortal() {
     switch (status) {
       case 'Pending':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-            <Clock size={12} /> Pending HOD
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200/90 shadow-2xs whitespace-nowrap">
+            <Clock size={12} className="text-amber-600 shrink-0" />
+            <span>Pending HOD</span>
           </span>
         );
       case 'Recommended':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-            <Send size={12} /> Pending Principal
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200/90 shadow-2xs whitespace-nowrap">
+            <Send size={12} className="text-blue-600 shrink-0" />
+            <span>Pending Principal</span>
           </span>
         );
       case 'Approved':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <CheckCircle2 size={12} /> Approved & Issued
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/90 shadow-2xs whitespace-nowrap">
+            <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
+            <span>Approved &amp; Issued</span>
           </span>
         );
       case 'Rejected':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-            <XCircle size={12} /> Rejected
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-800 border border-rose-200/90 shadow-2xs whitespace-nowrap">
+            <XCircle size={12} className="text-rose-600 shrink-0" />
+            <span>Rejected</span>
           </span>
         );
       case 'Cancelled':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-            <RotateCcw size={12} /> Cancelled
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200/90 shadow-2xs whitespace-nowrap">
+            <RotateCcw size={12} className="text-slate-500 shrink-0" />
+            <span>Cancelled</span>
           </span>
         );
       default:
-        return <span className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700">{status}</span>;
+        return <span className="px-2.5 py-1 rounded text-xs bg-slate-100 text-slate-700 whitespace-nowrap">{status}</span>;
     }
   };
 
@@ -387,28 +395,38 @@ export function EmployeeGatePassPortal() {
     if (status === 'outside') {
       const exitFormatted = exitTime ? new Date(exitTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : null;
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs">
-          <span className="relative flex h-2 w-2">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-950 border border-amber-300 shadow-2xs whitespace-nowrap">
+          <span className="relative flex h-2 w-2 shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
           </span>
-          Outside Premises {exitFormatted ? `(${exitFormatted})` : ''}
+          <span>Outside Premises</span>
+          {exitFormatted && (
+            <span className="font-mono text-[10px] bg-amber-200/90 px-1.5 py-0.2 rounded font-semibold text-amber-950">
+              ({exitFormatted})
+            </span>
+          )}
         </span>
       );
     }
     if (status === 'returned') {
       const returnFormatted = returnTime ? new Date(returnTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : null;
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
-          <CheckCircle2 size={13} className="text-emerald-700" />
-          Successfully Entered {returnFormatted ? `(${returnFormatted})` : ''}
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-950 border border-emerald-300 shadow-2xs whitespace-nowrap">
+          <CheckCircle2 size={13} className="text-emerald-700 shrink-0" />
+          <span>Successfully Entered</span>
+          {returnFormatted && (
+            <span className="font-mono text-[10px] bg-emerald-200/90 px-1.5 py-0.2 rounded font-semibold text-emerald-950">
+              ({returnFormatted})
+            </span>
+          )}
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-        Inside Campus
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-900 border border-blue-200/90 whitespace-nowrap">
+        <span className="h-1.5 w-1.5 rounded-full bg-blue-600 shrink-0"></span>
+        <span>Inside Campus</span>
       </span>
     );
   };
@@ -807,7 +825,34 @@ export function EmployeeGatePassPortal() {
       </div>
 
       {/* Main Gate Pass Table */}
-      <div className="bg-surface rounded-card border border-primary-border shadow-xs overflow-hidden">
+      <div className="bg-surface rounded-2xl border border-primary-border shadow-xs overflow-hidden transition-all">
+        {/* Table Toolbar Header */}
+        <div className="px-5 py-4 border-b border-primary-border bg-gradient-to-r from-slate-50/90 via-blue-50/30 to-slate-50/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="p-1.5 rounded-lg bg-blue-100/80 text-blue-800 border border-blue-200/80">
+              <Ticket size={16} />
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-ink">Institutional Gate Pass Register</h3>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
+                  {filteredPasses.length} {filteredPasses.length === 1 ? 'Record' : 'Records'}
+                </span>
+              </div>
+              <p className="text-[11px] text-ink-muted">
+                Official exit permissions, real-time gate movements &amp; executive sanctions
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50/80 border border-blue-200/70 text-blue-900 text-[11px] font-medium shadow-2xs">
+              <ArrowRightLeft size={12} className="text-blue-600 shrink-0" />
+              <span>Scroll horizontally for full register &bull; Responsive layout</span>
+            </span>
+          </div>
+        </div>
+
         {loading ? (
           <div className="p-12 text-center text-sm text-ink-muted flex flex-col items-center justify-center gap-2">
             <Clock size={24} className="animate-spin text-primary" />
@@ -826,19 +871,19 @@ export function EmployeeGatePassPortal() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm border-collapse">
+          <div className="relative overflow-x-auto scrollbar-thin scrollbar-thumb-blue-200 hover:scrollbar-thumb-blue-300 scrollbar-track-slate-50/40">
+            <table className="w-full min-w-[1260px] text-left text-sm border-collapse">
               <thead>
-                <tr className="border-b border-primary-border bg-slate-50/70 text-[11px] font-bold uppercase tracking-wider text-ink-muted">
-                  <th className="py-3 px-4">Ref No & Date</th>
-                  <th className="py-3 px-4">Employee</th>
-                  <th className="py-3 px-4">Purpose</th>
-                  <th className="py-3 px-4">Check-out / Check-in Timing</th>
-                  <th className="py-3 px-4">Campus Presence</th>
-                  <th className="py-3 px-4">HOD / Dean Sign</th>
-                  <th className="py-3 px-4">Principal Sign</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                <tr className="border-b border-primary-border bg-slate-50/95 backdrop-blur-md text-[11px] font-bold uppercase tracking-wider text-slate-500 sticky top-0 z-10">
+                  <th className="py-3.5 px-4 w-[150px] min-w-[150px] whitespace-nowrap">Ref No &amp; Date</th>
+                  <th className="py-3.5 px-4 w-[210px] min-w-[210px] whitespace-nowrap">Employee</th>
+                  <th className="py-3.5 px-4 w-[210px] min-w-[210px] whitespace-nowrap">Purpose</th>
+                  <th className="py-3.5 px-4 w-[230px] min-w-[230px] whitespace-nowrap">Check-out / Check-in Timing</th>
+                  <th className="py-3.5 px-4 w-[190px] min-w-[190px] whitespace-nowrap">Campus Presence</th>
+                  <th className="py-3.5 px-4 w-[150px] min-w-[150px] whitespace-nowrap">HOD / Dean Sign</th>
+                  <th className="py-3.5 px-4 w-[150px] min-w-[150px] whitespace-nowrap">Principal Sign</th>
+                  <th className="py-3.5 px-4 w-[150px] min-w-[150px] whitespace-nowrap">Status</th>
+                  <th className="py-3.5 px-4 w-[180px] min-w-[180px] text-right whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-primary-border/60">
@@ -853,93 +898,134 @@ export function EmployeeGatePassPortal() {
                     (currentUser.role === 'Principal' || currentUser.role === 'Dean') && (pass.status === 'Recommended' || pass.status === 'Pending');
                   const canCancel = pass.employee_id === currentUser.id && pass.status === 'Pending';
 
+                  const initials = (pass.employee_name || '')
+                    .replace(/^(Mr\.|Mrs\.|Dr\.|Prof\.)\s*/i, '')
+                    .slice(0, 2)
+                    .toUpperCase() || 'EM';
+
                   return (
-                    <tr key={pass.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="py-3 px-4">
-                        <span className="font-mono text-xs font-semibold text-primary block">{pass.ref_no}</span>
-                        <span className="text-[11px] text-ink-muted block mt-0.5">
-                          {new Date(pass.date).toLocaleDateString('en-IN', {
-                            day: '2-digit',
-                            month: 'short',
-                            year: 'numeric',
-                          })}
-                        </span>
-                      </td>
-
-                      <td className="py-3 px-4">
-                        <div className="font-medium text-ink">{pass.employee_name}</div>
-                        <div className="flex items-center gap-1.5 text-[11px] text-ink-muted mt-0.5">
-                          <span className="inline-block px-1.5 py-0.2 rounded bg-slate-100 font-semibold">
-                            {pass.department}
+                    <tr key={pass.id} className="hover:bg-blue-50/40 transition-colors duration-150 group">
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <div className="space-y-1">
+                          <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50/90 border border-blue-200/80 px-2.5 py-0.5 rounded-md inline-block shadow-2xs hover:bg-blue-100 transition-colors">
+                            {pass.ref_no}
                           </span>
-                          {pass.contact_phone && <span>• {pass.contact_phone}</span>}
+                          <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
+                            <Calendar size={11} className="text-slate-400 shrink-0" />
+                            {new Date(pass.date).toLocaleDateString('en-IN', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                            })}
+                          </span>
                         </div>
                       </td>
 
-                      <td className="py-3 px-4 text-xs max-w-xs truncate" title={pass.purpose}>
-                        <span className="text-ink font-medium">{pass.purpose}</span>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-700 to-sky-700 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                            {initials}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-ink text-xs sm:text-sm group-hover:text-primary transition-colors">
+                              {pass.employee_name}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[11px] text-ink-muted mt-0.5">
+                              <span className="inline-block px-1.5 py-0.2 rounded bg-blue-50 text-blue-900 border border-blue-100 font-bold text-[10px] tracking-wide">
+                                {pass.department}
+                              </span>
+                              {pass.contact_phone && (
+                                <span className="flex items-center gap-1 text-slate-500 font-mono text-[10px]">
+                                  <Phone size={9} className="text-slate-400" />
+                                  {pass.contact_phone}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </td>
 
-                      <td className="py-3 px-4">
-                        <div className="text-xs font-semibold text-ink">
-                          Check-out: <span className="font-mono text-rose-700">{pass.time_out}</span>
-                          {pass.actual_exit_at && (
-                            <span className="text-[10px] text-rose-600 block font-normal">
-                              Actual Exit: {new Date(pass.actual_exit_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                      <td className="py-3.5 px-4">
+                        <div className="max-w-[210px]" title={pass.purpose}>
+                          <span className="text-xs font-medium text-ink line-clamp-2 block leading-relaxed">
+                            {pass.purpose}
+                          </span>
+                        </div>
+                      </td>
+
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <div className="space-y-1.5 w-[210px]">
+                          <div className="flex items-center justify-between gap-1.5 text-xs bg-rose-50/80 border border-rose-200/70 rounded-md px-2.5 py-1">
+                            <span className="inline-flex items-center gap-1 font-semibold text-rose-800 text-[11px]">
+                              <ExitIcon size={12} className="text-rose-600 shrink-0" />
+                              <span>Out:</span>
+                              <span className="font-mono text-xs font-bold text-rose-700">{pass.time_out}</span>
                             </span>
-                          )}
-                        </div>
-                        <div className="text-xs font-semibold text-ink mt-1">
-                          Check-in: <span className="font-mono text-emerald-700">{pass.time_in}</span>
-                          {pass.actual_return_at && (
-                            <span className="text-[10px] text-emerald-600 block font-normal">
-                              Actual Entry: {new Date(pass.actual_return_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                            {pass.actual_exit_at && (
+                              <span className="text-[10px] font-semibold text-rose-900 bg-rose-100/90 px-1.5 py-0.2 rounded border border-rose-300/80">
+                                Exit: {new Date(pass.actual_exit_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between gap-1.5 text-xs bg-emerald-50/80 border border-emerald-200/70 rounded-md px-2.5 py-1">
+                            <span className="inline-flex items-center gap-1 font-semibold text-emerald-800 text-[11px]">
+                              <ReturnIcon size={12} className="text-emerald-600 shrink-0" />
+                              <span>In:</span>
+                              <span className="font-mono text-xs font-bold text-emerald-700">{pass.time_in}</span>
                             </span>
-                          )}
+                            {pass.actual_return_at && (
+                              <span className="text-[10px] font-semibold text-emerald-900 bg-emerald-100/90 px-1.5 py-0.2 rounded border border-emerald-300/80">
+                                Entry: {new Date(pass.actual_return_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
 
-                      <td className="py-3 px-4">
+                      <td className="py-3.5 px-4 whitespace-nowrap">
                         {getMovementBadge(pass.movement_status, pass.actual_exit_at, pass.actual_return_at)}
                       </td>
 
-                      <td className="py-3 px-4 text-xs">
+                      <td className="py-3.5 px-4 whitespace-nowrap text-xs">
                         {pass.hod_acted_at ? (
-                          <div className="text-emerald-700 font-medium">
-                            <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[11px]">
-                              ✓ {pass.hod_name || 'HOD'}
-                            </span>
+                          <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold text-xs shadow-2xs">
+                            <Check size={12} className="text-emerald-600 stroke-[2.5]" />
+                            <span>{pass.hod_name || 'HOD'}</span>
                           </div>
                         ) : (
-                          <span className="text-ink-muted italic text-[11px]">Awaiting HOD</span>
+                          <span className="inline-flex items-center gap-1 text-slate-400 italic text-[11px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60">
+                            <Clock size={10} /> Awaiting HOD
+                          </span>
                         )}
                       </td>
 
-                      <td className="py-3 px-4 text-xs">
+                      <td className="py-3.5 px-4 whitespace-nowrap text-xs">
                         {pass.principal_acted_at && pass.status === 'Approved' ? (
-                          <div className="text-blue-700 font-medium">
-                            <span className="inline-block px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200 text-[11px]">
-                              ★ Sanctioned
-                            </span>
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-900 text-white border border-blue-950 font-semibold text-xs shadow-2xs">
+                            <Crown size={12} className="text-amber-400 fill-amber-400 shrink-0" />
+                            <span>Sanctioned</span>
                           </div>
                         ) : (
-                          <span className="text-ink-muted italic text-[11px]">Awaiting Sanction</span>
+                          <span className="inline-flex items-center gap-1 text-slate-400 italic text-[11px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60">
+                            <Clock size={10} /> Awaiting Sanction
+                          </span>
                         )}
                       </td>
 
-                      <td className="py-3 px-4">{getStatusBadge(pass.status)}</td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">{getStatusBadge(pass.status)}</td>
 
-                      <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
+                      <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
                         <button
                           onClick={() => {
                             setSelectedPass(pass);
                             setIsBlankPrint(false);
                             setPassModalOpen(true);
                           }}
-                          className="px-2.5 py-1 rounded-md text-xs font-medium border border-primary-border hover:bg-primary-pale text-ink transition-colors"
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-primary-border bg-surface hover:bg-blue-50/70 hover:border-blue-300 text-ink transition-all shadow-2xs inline-flex items-center gap-1 active:scale-[0.98]"
                           title="View & Print Official Gate Pass"
                         >
-                          View Pass
+                          <Eye size={12} className="text-blue-600" />
+                          <span>View Pass</span>
                         </button>
 
                         {/* Movement Action (Mark Exit / Mark Return) */}
@@ -947,20 +1033,22 @@ export function EmployeeGatePassPortal() {
                           <button
                             onClick={() => handleMovement(pass.id, 'return')}
                             disabled={submitting}
-                            className="px-2.5 py-1 rounded-md text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-2xs"
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-2xs hover:shadow-xs inline-flex items-center gap-1 active:scale-[0.98]"
                             title="Confirm return to campus"
                           >
-                            Mark Return
+                            <ReturnIcon size={12} />
+                            <span>Mark Return</span>
                           </button>
                         ) : (
                           (pass.employee_id === currentUser.id || currentUser.role === 'Principal' || currentUser.role === 'HOD') && (
                             <button
                               onClick={() => handleMovement(pass.id, 'exit')}
                               disabled={submitting}
-                              className="px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-500 text-slate-950 hover:bg-amber-600 transition-colors shadow-2xs"
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 text-slate-950 hover:bg-amber-600 transition-all shadow-2xs hover:shadow-xs inline-flex items-center gap-1 active:scale-[0.98]"
                               title="Mark exit from premises & alert Principal"
                             >
-                              Mark Exit
+                              <ExitIcon size={12} />
+                              <span>Mark Exit</span>
                             </button>
                           )
                         )}
@@ -970,7 +1058,7 @@ export function EmployeeGatePassPortal() {
                           <button
                             onClick={() => handleQuickApprove(pass.id, pass.employee_name)}
                             disabled={submitting}
-                            className="px-2.5 py-1 rounded-md text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 transition-colors shadow-2xs inline-flex items-center gap-1"
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 transition-all shadow-2xs inline-flex items-center gap-1 active:scale-[0.98]"
                             title="Instant 1-Click Sanction"
                           >
                             <Zap size={11} className="fill-current text-amber-300" />
@@ -987,7 +1075,7 @@ export function EmployeeGatePassPortal() {
                                 setDecisionAction('Recommend');
                                 setDecisionModalOpen(true);
                               }}
-                              className="px-2.5 py-1 rounded-md text-xs font-semibold bg-primary text-white hover:bg-primary-dark transition-colors shadow-xs"
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-white hover:bg-primary-dark transition-all shadow-xs"
                             >
                               Recommend
                             </button>
@@ -997,7 +1085,7 @@ export function EmployeeGatePassPortal() {
                                 setDecisionAction('Reject');
                                 setDecisionModalOpen(true);
                               }}
-                              className="px-2.5 py-1 rounded-md text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors"
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-all"
                             >
                               Reject
                             </button>
@@ -1013,7 +1101,7 @@ export function EmployeeGatePassPortal() {
                                 setDecisionAction('Approve');
                                 setDecisionModalOpen(true);
                               }}
-                              className="px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-xs"
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-xs"
                             >
                               Approve
                             </button>
@@ -1023,7 +1111,7 @@ export function EmployeeGatePassPortal() {
                                 setDecisionAction('Reject');
                                 setDecisionModalOpen(true);
                               }}
-                              className="px-2.5 py-1 rounded-md text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors"
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-all"
                             >
                               Reject
                             </button>
@@ -1034,7 +1122,7 @@ export function EmployeeGatePassPortal() {
                         {canCancel && (
                           <button
                             onClick={() => handleCancel(pass)}
-                            className="px-2 py-1 rounded-md text-xs text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                            className="px-2.5 py-1.5 rounded-lg text-xs text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
                             title="Cancel Request"
                           >
                             Cancel
