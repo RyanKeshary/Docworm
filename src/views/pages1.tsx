@@ -254,8 +254,8 @@ export function Login() {
             </div>
           </div>
 
-          {/* 3D Pixelated Cat working diligently on computer */}
-          <div className="pt-6 sm:pt-8 my-auto">
+          {/* 3D Pixelated Cat working diligently on computer (hidden on mobile, visible on tablet and desktop) */}
+          <div className="hidden sm:block pt-6 sm:pt-8 my-auto">
             <PixelCatWorkspace />
           </div>
         </div>
