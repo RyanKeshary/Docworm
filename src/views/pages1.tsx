@@ -12,6 +12,7 @@ import { Badge, Drawer, EmptyState, ExportMenu, btnGhost, btnPrimary, inputCls }
 import { computedTaskStatus, detectClashes, exportCSV, exportPDF, exportXLSX, flattenProposal } from '../utils';
 import { api } from '../lib/api';
 import { PasswordStrengthMeter } from '../components/PasswordStrengthMeter';
+import { PixelCatWorkspace } from '../components/PixelCatWorkspace';
 
 type AuthMode = 'signin' | 'signup' | 'forgot' | 'reset' | 'force_change' | 'verify_2fa';
 
@@ -251,6 +252,11 @@ export function Login() {
                 {letterhead.collegeName || 'Shree L R Tiwari College of Engineering'}
               </h1>
             </div>
+          </div>
+
+          {/* 3D Pixelated Cat working diligently on computer */}
+          <div className="pt-6 sm:pt-8 my-auto">
+            <PixelCatWorkspace />
           </div>
         </div>
 
