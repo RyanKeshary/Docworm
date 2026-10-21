@@ -222,16 +222,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
         )}
       </div>
 
-      {/* Role badge */}
-      {!collapsed && (
-        <div className={`mx-3 mt-3 mb-1 px-3 py-2 rounded-lg border ${roleMeta.border} ${roleMeta.bg} flex items-center gap-2`}>
-          <span className="text-base">{roleMeta.icon}</span>
-          <div>
-            <p className={`text-[11px] font-bold uppercase tracking-wider ${roleMeta.accent}`}>{role}</p>
-            <p className="text-[10px] text-ink-muted truncate max-w-[140px]">{currentUser.name}</p>
-          </div>
-        </div>
-      )}
 
       {/* Nav links */}
       <nav className="flex-1 overflow-y-auto p-3 space-y-0.5" aria-label="Primary">
@@ -275,6 +265,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
         >
           <LogOut size={14} /> {!collapsed && 'Sign Out'}
         </button>
+
+        {!collapsed && (
+          <div className="px-1 py-1">
+            <div className="flex items-center gap-2">
+              <span className={`w-7 h-7 rounded-full ${roleMeta.bg} border ${roleMeta.border} font-bold text-xs flex items-center justify-center shrink-0`}>
+                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-ink truncate">{currentUser.name}</p>
+                <p className={`text-[11px] truncate ${roleMeta.accent}`}>
+                  {currentUser.role}{currentUser.department ? ` • ${currentUser.department}` : (currentUser.role === 'Principal' || currentUser.role === 'Dean' ? ' • All Depts' : '')}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
