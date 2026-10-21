@@ -255,17 +255,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {!collapsed && <span className="truncate">Portal Guide &amp; Roles</span>}
         </button>
 
-        <button
-          onClick={async () => {
-            await signOut();
-            nav('/login');
-          }}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-card text-xs font-semibold border border-rose-200 text-rose-700 bg-rose-50/70 hover:bg-rose-100 transition-colors"
-          title="Sign out of Docworm"
-        >
-          <LogOut size={14} /> {!collapsed && 'Sign Out'}
-        </button>
-
         {!collapsed && (
           <div className="px-1 py-1">
             <div className="flex items-center gap-2">
@@ -281,6 +270,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         )}
+
+        <button
+          onClick={async () => {
+            await signOut();
+            nav('/login');
+          }}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-card text-xs font-semibold border border-rose-200 text-rose-700 bg-rose-50/70 hover:bg-rose-100 transition-colors"
+          title="Sign out of Docworm"
+        >
+          <LogOut size={14} /> {!collapsed && 'Sign Out'}
+        </button>
       </div>
     </div>
   );
@@ -343,16 +343,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
             {/* Right Zone: Actions, Live Indicator, Notifications, and Profile */}
             <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0 ml-auto">
-
-              {/* How-to Guide */}
-              <button
-                onClick={() => setGuideOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-primary/20 bg-primary-pale text-primary hover:bg-primary-light transition-all shadow-2xs"
-                title={`${currentUser.role} Interactive Guide & Walkthrough`}
-              >
-                <HelpCircle size={14} className="shrink-0" />
-                <span className="hidden sm:inline font-medium">Guide</span>
-              </button>
 
               {/* Notification Bell with Interactive Dropdown Flyout */}
               <div className="relative" ref={notifRef}>
