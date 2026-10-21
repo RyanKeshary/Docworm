@@ -5,7 +5,7 @@ import {
   Search, Printer, ShieldCheck, Building2,
   Calendar, MapPin, Users, X, Send, Check, AlertCircle,
   Eye, RotateCcw, ChevronRight, Star, Layers, BookOpen, RefreshCw,
-  Crown, Download, Upload, ChevronDown,
+  Crown, Download, Upload, ChevronDown, Trash2,
 } from 'lucide-react';
 import { useData, nowStr, uid } from '../store';
 import { Badge, btnGhost, btnPrimary, inputCls } from '../components';
@@ -604,6 +604,27 @@ export function PermissionPortal() {
                   </span>
                 )}
               </Link>
+
+              <button
+                onClick={async () => {
+                  const confirmWipe = window.prompt(
+                    '⚠️ CAUTION: You are about to permanently delete ALL permission requests across the institution.\n\nType DELETE to confirm:'
+                  );
+                  if (confirmWipe !== 'DELETE') return;
+                  try {
+                    await api.requests.deleteAll();
+                    await refresh();
+                    alert('All permission requests have been deleted.');
+                  } catch (err: any) {
+                    alert(err.message || 'Failed to delete all requests');
+                  }
+                }}
+                className="px-3.5 py-2 text-xs font-bold rounded-lg border border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 transition-colors flex items-center gap-1.5 shadow-xs"
+                title="Principal Executive Action: Delete all institutional permission requests"
+              >
+                <Trash2 size={14} className="text-rose-600" />
+                Delete All Requests
+              </button>
             </>
           )}
 
@@ -1041,6 +1062,27 @@ export function PermissionPortal() {
                               </a>
                             )}
                           </div>
+
+                          {role === 'Principal' && (
+                            <div className="py-1 border-t border-gray-100">
+                              <button
+                                onClick={async () => {
+                                  setOpenActionMenuId(null);
+                                  if (!window.confirm(`Permanently delete permission request "${p.eventName}" (${p.refNo})? This action cannot be undone.`)) return;
+                                  try {
+                                    await api.requests.delete(p.id);
+                                    await refresh();
+                                  } catch (err: any) {
+                                    alert(err.message || 'Failed to delete request');
+                                  }
+                                }}
+                                className="w-full text-left px-3 py-1.5 hover:bg-rose-50 text-rose-700 font-semibold flex items-center gap-2"
+                              >
+                                <Trash2 size={14} className="text-rose-600" />
+                                <span>Delete Request</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1672,6 +1714,23 @@ export function PermissionPortal() {
                 >
                   <Printer size={14} /> Open Letter
                 </button>
+                {role === 'Principal' && (
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm(`Permanently delete permission request "${selectedProposal.eventName}" (${selectedProposal.refNo})? This action cannot be undone.`)) return;
+                      try {
+                        await api.requests.delete(selectedProposal.id);
+                        setSelectedProposal(null);
+                        await refresh();
+                      } catch (err: any) {
+                        alert(err.message || 'Failed to delete request');
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  >
+                    <Trash2 size={14} className="text-rose-600" /> Delete
+                  </button>
+                )}
               </div>
             </div>
           </div>

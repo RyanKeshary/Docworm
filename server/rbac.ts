@@ -63,6 +63,8 @@ export type Action =
   | 'gatepass:endorse_hod'
   | 'gatepass:decide_principal'
   | 'gatepass:cancel_own'
+  | 'gatepass:delete'
+  | 'request:delete'
 
 
   // Reports & Exports
@@ -281,6 +283,10 @@ export function can(user: AuthUser | null | undefined, action: Action, resource?
     case 'leave:cancel_own':
       if (!resource) return role === 'Faculty' || role === 'HOD' || role === 'Dean';
       return (resource.employee_id || resource.faculty_id) === user.id && (resource.status === 'Pending' || resource.status === 'Draft');
+
+    case 'gatepass:delete':
+    case 'request:delete':
+      return role === 'Principal';
 
 
     // ----------------------------------------------------

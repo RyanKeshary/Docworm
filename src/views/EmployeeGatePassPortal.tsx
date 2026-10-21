@@ -33,6 +33,11 @@ import {
   ArrowRightLeft,
   Crown,
   Eye,
+  Trash2,
+  BarChart3,
+  Users,
+  TrendingUp,
+  Building2,
 } from 'lucide-react';
 import { useData } from '../store';
 import { api } from '../lib/api';
@@ -100,12 +105,18 @@ export function EmployeeGatePassPortal() {
   const [applyModalOpen, setApplyModalOpen] = useState(false);
   const [passModalOpen, setPassModalOpen] = useState(false);
   const [decisionModalOpen, setDecisionModalOpen] = useState(false);
+  const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [selectedPass, setSelectedPass] = useState<EmployeeGatePass | null>(null);
+  const [selectedUserKey, setSelectedUserKey] = useState<string | null>(null);
   const [decisionAction, setDecisionAction] = useState<'Recommend' | 'Approve' | 'Reject'>('Recommend');
   const [decisionRemark, setDecisionRemark] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [isBlankPrint, setIsBlankPrint] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState('');
+
+  // Principal Summary Report Filters
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userDeptFilter, setUserDeptFilter] = useState('All');
 
   // Application Form State
   const todayStr = new Date().toISOString().split('T')[0];
@@ -206,6 +217,160 @@ export function EmployeeGatePassPortal() {
 
     return { total, pendingHOD, pendingPrincipal, approved, rejected, myPasses, currentlyOutside, returnedToday };
   }, [gatePasses, currentUser.id]);
+
+  // User-wise summary data computed for Principal
+  const userSummaries = useMemo(() => {
+    if (currentUser.role !== 'Principal') return [];
+
+    const map = new Map<string, {
+      userId: string;
+      name: string;
+      department: string;
+      total: number;
+      approved: number;
+      pending: number;
+      rejected: number;
+      cancelled: number;
+      currentlyOutside: boolean;
+      lastDate: string;
+      lastPurpose: string;
+      passes: EmployeeGatePass[];
+    }>();
+
+    for (const pass of gatePasses) {
+      const key = pass.employee_id || pass.employee_name || 'unknown';
+      let entry = map.get(key);
+      if (!entry) {
+        entry = {
+          userId: pass.employee_id,
+          name: pass.employee_name || 'Staff Member',
+          department: pass.department || 'General',
+          total: 0,
+          approved: 0,
+          pending: 0,
+          rejected: 0,
+          cancelled: 0,
+          currentlyOutside: false,
+          lastDate: pass.date,
+          lastPurpose: pass.purpose || '',
+          passes: [],
+        };
+        map.set(key, entry);
+      }
+      entry.total += 1;
+      if (pass.status === 'Approved') entry.approved += 1;
+      else if (pass.status === 'Pending' || pass.status === 'Recommended') entry.pending += 1;
+      else if (pass.status === 'Rejected') entry.rejected += 1;
+      else if (pass.status === 'Cancelled') entry.cancelled += 1;
+
+      if (pass.movement_status === 'outside') {
+        entry.currentlyOutside = true;
+      }
+      if (new Date(pass.date) >= new Date(entry.lastDate)) {
+        entry.lastDate = pass.date;
+        entry.lastPurpose = pass.purpose || '';
+      }
+      entry.passes.push(pass);
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [gatePasses, currentUser.role]);
+
+  // Active selected employee summary for drilldown audit
+  const activeUserSummary = useMemo(() => {
+    if (!selectedUserKey) return null;
+    return userSummaries.find((u) => (u.userId || u.name) === selectedUserKey) || null;
+  }, [selectedUserKey, userSummaries]);
+
+  // Filtered user summaries based on search and department
+  const filteredUserSummaries = useMemo(() => {
+    return userSummaries.filter((u) => {
+      if (userDeptFilter !== 'All' && u.department !== userDeptFilter) return false;
+      if (userSearchQuery.trim()) {
+        const q = userSearchQuery.toLowerCase();
+        return u.name.toLowerCase().includes(q) || u.department.toLowerCase().includes(q);
+      }
+      return true;
+    });
+  }, [userSummaries, userDeptFilter, userSearchQuery]);
+
+  // Department-wise usage breakdown
+  const departmentUsage = useMemo(() => {
+    const map = new Map<string, { total: number; approved: number; outside: number }>();
+    for (const p of gatePasses) {
+      const dept = p.department || 'General';
+      const cur = map.get(dept) || { total: 0, approved: 0, outside: 0 };
+      cur.total += 1;
+      if (p.status === 'Approved') cur.approved += 1;
+      if (p.movement_status === 'outside') cur.outside += 1;
+      map.set(dept, cur);
+    }
+    return Array.from(map.entries())
+      .map(([dept, data]) => ({ dept, ...data }))
+      .sort((a, b) => b.total - a.total);
+  }, [gatePasses]);
+
+  // Export User Summary CSV
+  const handleExportUserSummaryCSV = () => {
+    if (userSummaries.length === 0) return;
+    const headers = ['Employee Name', 'Department', 'Total Passes', 'Approved & Issued', 'Pending', 'Rejected', 'Cancelled', 'Currently Outside', 'Last Gate Pass Date'];
+    const rows = userSummaries.map((u) => [
+      `"${u.name.replace(/"/g, '""')}"`,
+      `"${u.department.replace(/"/g, '""')}"`,
+      u.total,
+      u.approved,
+      u.pending,
+      u.rejected,
+      u.cancelled,
+      u.currentlyOutside ? 'Yes (Outside Campus)' : 'No',
+      `"${u.lastDate}"`,
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `SLRTCE_Gate_Pass_User_Summary_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Permanently Delete Specific Gate Pass (Principal Only)
+  const handleDeletePass = async (pass: EmployeeGatePass) => {
+    if (!window.confirm(`Permanently delete gate pass ${pass.ref_no} for ${pass.employee_name}?\n\nThis will completely erase this record from the database.`)) return;
+    try {
+      setSubmitting(true);
+      setError('');
+      await api.gatePasses.deletePermanent(pass.id);
+      setSuccessMsg(`Gate pass ${pass.ref_no} permanently deleted.`);
+      realtime.broadcastLocal({ type: 'gate_passes_updated', action: 'delete', timestamp: new Date().toISOString() });
+      await fetchPasses();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete gate pass.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Permanently Delete All Gate Passes (Principal Only)
+  const handleDeleteAllPasses = async () => {
+    const confirmWipe = window.prompt(
+      '⚠️ CRITICAL: You are about to permanently delete ALL employee gate passes across the entire institution.\n\nType DELETE to confirm:'
+    );
+    if (confirmWipe !== 'DELETE') return;
+    try {
+      setSubmitting(true);
+      setError('');
+      await api.gatePasses.deleteAll();
+      setSuccessMsg('All employee gate passes have been permanently deleted.');
+      realtime.broadcastLocal({ type: 'gate_passes_updated', action: 'delete_all', timestamp: new Date().toISOString() });
+      await fetchPasses();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete all gate passes.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   // Handle Application Submit
   const handleApply = async (e: React.FormEvent) => {
@@ -453,6 +618,28 @@ export function EmployeeGatePassPortal() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {currentUser.role === 'Principal' && (
+            <>
+              <button
+                onClick={() => setSummaryModalOpen(true)}
+                className="px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+                title="Principal Confidential: View overall usage analytics and user-wise gate pass summaries"
+              >
+                <Crown size={15} className="text-amber-600 fill-amber-500" />
+                <span>Executive Summary Report</span>
+              </button>
+
+              <button
+                onClick={handleDeleteAllPasses}
+                className="px-3 py-1.5 rounded-lg border border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+                title="Principal Authority: Permanently delete all gate passes"
+              >
+                <Trash2 size={15} className="text-rose-600" />
+                <span>Delete All Passes</span>
+              </button>
+            </>
+          )}
+
           <button
             onClick={() => {
               setIsBlankPrint(true);
@@ -1128,6 +1315,18 @@ export function EmployeeGatePassPortal() {
                             Cancel
                           </button>
                         )}
+
+                        {/* Principal Permanent Delete */}
+                        {currentUser.role === 'Principal' && (
+                          <button
+                            onClick={() => handleDeletePass(pass)}
+                            disabled={submitting}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors inline-flex items-center"
+                            title="Permanently Delete Gate Pass (Principal Only)"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -1727,6 +1926,375 @@ export function EmployeeGatePassPortal() {
               </button>
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* ==================================================================== */}
+      {/* PRINCIPAL EXECUTIVE SUMMARY REPORT MODAL                             */}
+      {/* ==================================================================== */}
+      {summaryModalOpen && currentUser.role === 'Principal' && (
+        <Modal
+          title="Gate Pass Executive Summary & Staff Usage Report"
+          onClose={() => setSummaryModalOpen(false)}
+          wide
+        >
+          <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-1">
+            {/* Header / Export Bar */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-xl bg-gradient-to-r from-slate-900 to-indigo-950 text-white shadow-md">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-400 text-slate-950 uppercase tracking-wider">
+                    Confidential • Principal Audit
+                  </span>
+                  <span className="text-xs text-slate-300">
+                    Generated: {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </span>
+                </div>
+                <h3 className="text-base font-bold text-white mt-1">Campus Movement & Employee Usage Overview</h3>
+                <p className="text-xs text-slate-300">Real-time gate pass distribution and individual staff compliance audit.</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleExportUserSummaryCSV}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all"
+                  title="Export complete user breakdown to CSV"
+                >
+                  <Download size={13} /> Export CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-900 hover:bg-slate-100 transition-all shadow-sm"
+                  title="Print this executive summary"
+                >
+                  <Printer size={13} /> Print Report
+                </button>
+              </div>
+            </div>
+
+            {/* Key Metrics Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="p-3.5 rounded-xl border border-primary-border bg-surface shadow-xs">
+                <div className="flex items-center justify-between text-ink-muted text-xs font-medium">
+                  <span>Total Passes</span>
+                  <Ticket size={14} className="text-primary" />
+                </div>
+                <div className="text-2xl font-bold text-ink mt-1.5">{stats.total}</div>
+                <div className="text-[11px] text-ink-muted mt-0.5">All-time applications</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/50 shadow-xs">
+                <div className="flex items-center justify-between text-emerald-700 text-xs font-medium">
+                  <span>Approved</span>
+                  <CheckCircle2 size={14} className="text-emerald-600" />
+                </div>
+                <div className="text-2xl font-bold text-emerald-800 mt-1.5">{stats.approved}</div>
+                <div className="text-[11px] text-emerald-600 mt-0.5">
+                  {stats.total > 0 ? Math.round((stats.approved / stats.total) * 100) : 0}% approval rate
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/50 shadow-xs">
+                <div className="flex items-center justify-between text-amber-700 text-xs font-medium">
+                  <span>Pending Action</span>
+                  <Clock size={14} className="text-amber-600" />
+                </div>
+                <div className="text-2xl font-bold text-amber-800 mt-1.5">{stats.pendingHOD + stats.pendingPrincipal}</div>
+                <div className="text-[11px] text-amber-600 mt-0.5">
+                  {stats.pendingPrincipal} awaiting Principal
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-sky-200 bg-sky-50/50 shadow-xs">
+                <div className="flex items-center justify-between text-sky-700 text-xs font-medium">
+                  <span>Outside Now</span>
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
+                  </span>
+                </div>
+                <div className="text-2xl font-bold text-sky-800 mt-1.5">{stats.currentlyOutside}</div>
+                <div className="text-[11px] text-sky-600 mt-0.5">Active campus exits</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-indigo-200 bg-indigo-50/50 shadow-xs">
+                <div className="flex items-center justify-between text-indigo-700 text-xs font-medium">
+                  <span>Returned</span>
+                  <RotateCcw size={14} className="text-indigo-600" />
+                </div>
+                <div className="text-2xl font-bold text-indigo-800 mt-1.5">{stats.returnedToday}</div>
+                <div className="text-[11px] text-indigo-600 mt-0.5">Completed entries</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/50 shadow-xs">
+                <div className="flex items-center justify-between text-rose-700 text-xs font-medium">
+                  <span>Rejected</span>
+                  <XCircle size={14} className="text-rose-600" />
+                </div>
+                <div className="text-2xl font-bold text-rose-800 mt-1.5">{stats.rejected}</div>
+                <div className="text-[11px] text-rose-600 mt-0.5">
+                  {stats.total > 0 ? Math.round((stats.rejected / stats.total) * 100) : 0}% rejected
+                </div>
+              </div>
+            </div>
+
+            {/* Department Usage Breakdown */}
+            <div className="p-4 rounded-xl border border-primary-border bg-surface">
+              <div className="flex items-center gap-2 mb-3">
+                <Building2 size={16} className="text-primary" />
+                <h4 className="text-sm font-bold text-ink">Department-wise Gate Pass Distribution</h4>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {departmentUsage.map((d) => {
+                  const pct = stats.total > 0 ? Math.round((d.total / stats.total) * 100) : 0;
+                  return (
+                    <div key={d.dept} className="p-3 rounded-lg border border-slate-200/80 bg-slate-50/50 flex flex-col justify-between">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800 truncate" title={d.dept}>{d.dept}</span>
+                        <span className="text-xs font-bold text-primary bg-primary-pale px-2 py-0.5 rounded-md">
+                          {d.total} passes ({pct}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-200 rounded-full h-1.5 mt-2 overflow-hidden">
+                        <div className="bg-primary h-1.5 rounded-full" style={{ width: `${Math.min(pct, 100)}%` }}></div>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2">
+                        <span>Approved: <strong className="text-emerald-700">{d.approved}</strong></span>
+                        {d.outside > 0 ? (
+                          <span className="text-sky-700 font-semibold">{d.outside} outside</span>
+                        ) : (
+                          <span>0 outside</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Individual User Summary Section */}
+            <div className="p-4 rounded-xl border border-primary-border bg-surface">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Users size={16} className="text-primary" />
+                    <h4 className="text-sm font-bold text-ink">Individual Staff Member Summaries</h4>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">
+                      {filteredUserSummaries.length} staff records
+                    </span>
+                  </div>
+                  <p className="text-xs text-ink-muted mt-0.5">Click "Audit Passes" on any staff member to view full movement logs.</p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {/* Search */}
+                  <div className="relative w-48">
+                    <Search size={13} className="absolute left-2.5 top-2.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search staff..."
+                      value={userSearchQuery}
+                      onChange={(e) => setUserSearchQuery(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-primary-border bg-surface text-ink outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  {/* Dept filter */}
+                  <select
+                    value={userDeptFilter}
+                    onChange={(e) => setUserDeptFilter(e.target.value)}
+                    className="px-2.5 py-1.5 text-xs rounded-lg border border-primary-border bg-surface text-ink outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="All">All Departments</option>
+                    {Array.from(new Set(userSummaries.map((u) => u.department))).map((dept) => (
+                      <option key={dept} value={dept}>{dept}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {filteredUserSummaries.length === 0 ? (
+                <div className="text-center py-8 text-xs text-ink-muted border border-dashed border-slate-200 rounded-lg">
+                  No staff gate pass records match the selected filter.
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase font-semibold text-[10px]">
+                      <tr>
+                        <th className="px-3 py-2.5">Staff Member</th>
+                        <th className="px-3 py-2.5">Department</th>
+                        <th className="px-3 py-2.5 text-center">Total Passes</th>
+                        <th className="px-3 py-2.5 text-center">Approved</th>
+                        <th className="px-3 py-2.5 text-center">Pending</th>
+                        <th className="px-3 py-2.5 text-center">Rejected</th>
+                        <th className="px-3 py-2.5">Current Status</th>
+                        <th className="px-3 py-2.5">Last Gate Pass</th>
+                        <th className="px-3 py-2.5 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredUserSummaries.map((u) => (
+                        <tr key={u.userId || u.name} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="px-3 py-2.5 font-semibold text-ink">
+                            {u.name}
+                          </td>
+                          <td className="px-3 py-2.5 text-slate-600">
+                            {u.department}
+                          </td>
+                          <td className="px-3 py-2.5 text-center font-bold text-ink">
+                            {u.total}
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              {u.approved}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            {u.pending > 0 ? (
+                              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                {u.pending}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">0</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            {u.rejected > 0 ? (
+                              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                                {u.rejected}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">0</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            {u.currentlyOutside ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-100 text-sky-800 border border-sky-300">
+                                <span className="h-1.5 w-1.5 rounded-full bg-sky-500 animate-pulse" /> Outside Campus
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
+                                In Campus
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-slate-500 text-[11px]">
+                            {u.lastDate ? new Date(u.lastDate).toLocaleDateString() : '—'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedUserKey(u.userId || u.name)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-primary-pale text-primary hover:bg-primary hover:text-white transition-colors"
+                            >
+                              <Eye size={12} /> Audit Passes ({u.total})
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ==================================================================== */}
+      {/* PRINCIPAL DRILLDOWN MODAL: INDIVIDUAL USER'S PASSES                  */}
+      {/* ==================================================================== */}
+      {activeUserSummary && currentUser.role === 'Principal' && (
+        <Modal
+          title={`Staff Pass Audit — ${activeUserSummary.name} (${activeUserSummary.department})`}
+          onClose={() => setSelectedUserKey(null)}
+          wide
+        >
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+            <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-200">
+              <div>
+                <h4 className="text-sm font-bold text-slate-900">{activeUserSummary.name}</h4>
+                <p className="text-xs text-slate-500">Department: {activeUserSummary.department} • Total Recorded Passes: {activeUserSummary.passes.length}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedUserKey(null)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-200"
+              >
+                Back to Summary
+              </button>
+            </div>
+
+            <div className="border border-slate-200 rounded-lg overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase font-semibold text-[10px]">
+                  <tr>
+                    <th className="px-3 py-2">Ref No</th>
+                    <th className="px-3 py-2">Date</th>
+                    <th className="px-3 py-2">Timing</th>
+                    <th className="px-3 py-2">Purpose</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Movement</th>
+                    <th className="px-3 py-2 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {activeUserSummary.passes.map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-50/60">
+                      <td className="px-3 py-2 font-mono font-semibold text-slate-800">{p.ref_no}</td>
+                      <td className="px-3 py-2 text-slate-600">{p.date}</td>
+                      <td className="px-3 py-2 text-slate-600">{p.time_out} – {p.time_in}</td>
+                      <td className="px-3 py-2 text-slate-700 max-w-xs truncate" title={p.purpose}>{p.purpose}</td>
+                      <td className="px-3 py-2">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                          p.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                          p.status === 'Rejected' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                          'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}>
+                          {p.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        {p.movement_status === 'outside' ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-sky-100 text-sky-800 border border-sky-300">
+                            Outside ({p.actual_exit_at ? new Date(p.actual_exit_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Logged'})
+                          </span>
+                        ) : p.movement_status === 'returned' ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">
+                            Returned ({p.actual_return_at ? new Date(p.actual_return_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Completed'})
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-[10px]">Inside</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right space-x-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedPass(p);
+                            setIsBlankPrint(false);
+                            setPassModalOpen(true);
+                          }}
+                          className="px-2 py-1 rounded text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700"
+                        >
+                          View Pass
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePass(p)}
+                          className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                          title="Permanently Delete"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </Modal>
       )}
     </div>

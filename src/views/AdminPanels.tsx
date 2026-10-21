@@ -628,6 +628,17 @@ export function AcademicOptionsPanel() {
     }
   };
 
+  const handleDeleteCat = async (cat: { id: string; name: string }) => {
+    if (!window.confirm(`Are you sure you want to permanently delete event category "${cat.name}"?`)) return;
+    try {
+      await api.categories.delete(cat.id || cat.name);
+      setFeedback(`Event category "${cat.name}" deleted successfully.`);
+      loadAll();
+    } catch (err: any) {
+      setFeedback(`Failed to delete category: ${err.message}`);
+    }
+  };
+
   const filteredOptions = Array.isArray(options) ? options.filter((o) => o && o.type === selectedType) : [];
 
   return (
@@ -801,7 +812,16 @@ export function AcademicOptionsPanel() {
             {categories.map((c) => (
               <div key={c.id || c.name} className="p-3 flex items-center justify-between hover:bg-slate-50 text-xs">
                 <span className="text-slate-800 font-medium">{c.name}</span>
-                <span className="text-[11px] text-slate-400 font-mono">ID: {c.id}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-slate-400 font-mono">ID: {c.id}</span>
+                  <button
+                    onClick={() => handleDeleteCat(c)}
+                    className="text-rose-600 hover:text-rose-800 p-1 hover:bg-rose-50 rounded transition-colors"
+                    title={`Delete Category ${c.name}`}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -816,13 +836,13 @@ export function AcademicOptionsPanel() {
 // ==========================================
 export function SmtpSettingsPanel() {
   const [smtp, setSmtp] = useState({
-    host: '',
-    port: '587',
-    secure: false,
-    auth_user: '',
+    host: 'smtp.gmail.com',
+    port: '465',
+    secure: true,
+    auth_user: 'principalsmtp@gmail.com',
     auth_pass: '',
-    from_name: 'Docworm Approvals',
-    from_email: 'approvals@slrtce.in',
+    from_name: 'Docworm Principal Office',
+    from_email: 'principalsmtp@gmail.com',
   });
   const [testRecipient, setTestRecipient] = useState('');
   const [saving, setSaving] = useState(false);
@@ -836,15 +856,16 @@ export function SmtpSettingsPanel() {
   const loadSmtp = async () => {
     try {
       const res = await api.settings.getEmail();
-      if (res.settings) {
+      const s = res.settings || res.email;
+      if (s) {
         setSmtp({
-          host: res.settings.host || '',
-          port: String(res.settings.port || '587'),
-          secure: Boolean(res.settings.secure),
-          auth_user: res.settings.auth_user || '',
-          auth_pass: res.settings.auth_pass || '',
-          from_name: res.settings.from_name || 'Docworm Approvals',
-          from_email: res.settings.from_email || 'approvals@slrtce.in',
+          host: s.host || 'smtp.gmail.com',
+          port: String(s.port || '465'),
+          secure: Boolean(s.secure ?? (s.port === 465)),
+          auth_user: s.auth_user || s.user || 'principalsmtp@gmail.com',
+          auth_pass: s.auth_pass || s.pass || '',
+          from_name: s.from_name || 'Docworm Principal Office',
+          from_email: s.from_email || s.from || 'principalsmtp@gmail.com',
         });
       }
     } catch {

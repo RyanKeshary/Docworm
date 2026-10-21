@@ -732,13 +732,19 @@ export function NotificationsCenter() {
       {/* 1. PRINCIPAL BROADCAST COMPOSER */}
       {isPrincipal && (
         <div className="bg-white border border-gray-200 rounded-card p-5 sm:p-6 shadow-xs space-y-4">
-          <div className="flex items-center gap-2 pb-3 border-b border-gray-100">
-            <span className="w-8 h-8 rounded-lg bg-primary-pale text-primary flex items-center justify-center">
-              <Send size={16} />
-            </span>
-            <div>
-              <h2 className="font-bold text-slate-900 text-base">New Institutional Broadcast (Principal Only)</h2>
-              <p className="text-xs text-slate-500">Delivered immediately via Email, Web Push, and In-App Notifications.</p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-gray-100 gap-2">
+            <div className="flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-primary-pale text-primary flex items-center justify-center">
+                <Send size={16} />
+              </span>
+              <div>
+                <h2 className="font-bold text-slate-900 text-base">New Institutional Notice & Broadcast (Principal Access)</h2>
+                <p className="text-xs text-slate-500">Delivered immediately via Email, Web Push, and In-App Notifications.</p>
+              </div>
+            </div>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-800 border border-blue-200 self-start sm:self-auto">
+              <Mail size={12} className="text-blue-600" />
+              <span>Configured SMTP Relay</span>
             </div>
           </div>
 
@@ -756,12 +762,12 @@ export function NotificationsCenter() {
           <form onSubmit={handleSendBroadcast} className="space-y-4">
             <div className="grid sm:grid-cols-3 gap-3">
               <div className="sm:col-span-2">
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Announcement Title *</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Notice Title *</label>
                 <input
                   required
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Urgent Faculty Meeting Regarding NAAC Documentation"
+                  placeholder="e.g. Urgent Faculty Meeting Regarding NAAC Accreditation Documentation"
                   className={inputCls}
                 />
               </div>
@@ -773,7 +779,7 @@ export function NotificationsCenter() {
                   onChange={(e) => setPriority(e.target.value as any)}
                   className={inputCls}
                 >
-                  <option value="normal">Normal</option>
+                  <option value="normal">Normal Priority</option>
                   <option value="high">High Priority</option>
                   <option value="urgent">Urgent / Immediate</option>
                 </select>
@@ -802,9 +808,19 @@ export function NotificationsCenter() {
                 rows={4}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
-                placeholder="Write the full institutional message or directive here..."
+                placeholder="Write the full institutional directive or announcement here..."
                 className={inputCls}
               />
+            </div>
+
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Mail size={14} className="text-primary shrink-0" />
+                <span>Notice will be routed to recipient inboxes via configured SMTP relay with institutional letterhead.</span>
+              </div>
+              <span className="text-[11px] font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded shrink-0">
+                SMTP Configured
+              </span>
             </div>
 
             <div className="flex justify-end pt-2">
@@ -815,11 +831,11 @@ export function NotificationsCenter() {
               >
                 {sendingBroadcast ? (
                   <span className="flex items-center gap-1.5">
-                    <RefreshCw size={14} className="animate-spin" /> Dispatching Broadcast...
+                    <RefreshCw size={14} className="animate-spin" /> Dispatching Notice & Sending Emails...
                   </span>
                 ) : (
                   <span className="flex items-center gap-1.5">
-                    <Send size={14} /> Send Broadcast to Faculty
+                    <Send size={14} /> Publish & Dispatch Notice via Email
                   </span>
                 )}
               </button>

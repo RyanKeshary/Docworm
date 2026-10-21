@@ -219,6 +219,18 @@ assert(can(hodIt, 'user:approve_registration', facultyIt) === true, 'HOD CAN app
 assert(can(hodIt, 'user:approve_registration', facultyExtc) === false, 'HOD CANNOT approve other department faculty registration');
 assert(can(facultyIt, 'user:approve_registration', facultyIt) === false, 'Faculty CANNOT approve registrations (403)');
 
+// 13. Institutional Gate Pass & Request Deletion Authority (Principal Exclusive)
+console.log('\n--- 13. Gate Pass & Permission Request Deletion Authority ---');
+assert(can(principal, 'gatepass:delete') === true, 'Principal CAN permanently delete gate passes');
+assert(can(dean, 'gatepass:delete') === false, 'Dean CANNOT delete gate passes (403)');
+assert(can(hodIt, 'gatepass:delete') === false, 'HOD CANNOT delete gate passes (403)');
+assert(can(facultyIt, 'gatepass:delete') === false, 'Faculty CANNOT delete gate passes (403)');
+
+assert(can(principal, 'request:delete') === true, 'Principal CAN delete permission requests');
+assert(can(dean, 'request:delete') === false, 'Dean CANNOT delete permission requests (403)');
+assert(can(hodIt, 'request:delete') === false, 'HOD CANNOT delete permission requests (403)');
+assert(can(facultyIt, 'request:delete') === false, 'Faculty CANNOT delete permission requests (403)');
+
 console.log(`\n=================================================`);
 console.log(`Test Results: ${passed} Passed, ${failed} Failed`);
 console.log(`=================================================`);

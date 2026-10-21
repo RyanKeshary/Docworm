@@ -145,6 +145,10 @@ export const api = {
       apiFetch('/api/permission-requests', { method: 'POST', body: JSON.stringify(data) }),
     decide: (id: string, payload: { action: string; remark?: string }) =>
       apiFetch(`/api/permission-requests/${id}/decide`, { method: 'POST', body: JSON.stringify(payload) }),
+    delete: (id: string) =>
+      apiFetch(`/api/permission-requests/${id}`, { method: 'DELETE' }),
+    deleteAll: () =>
+      apiFetch('/api/permission-requests/all', { method: 'DELETE' }),
   },
 
   gatePasses: {
@@ -159,6 +163,10 @@ export const api = {
       apiFetch(`/api/gate-passes/${id}/decide`, { method: 'POST', body: JSON.stringify({ action: 'Approve', remark }) }),
     cancel: (id: string) =>
       apiFetch(`/api/gate-passes/${id}`, { method: 'DELETE' }),
+    deletePermanent: (id: string) =>
+      apiFetch(`/api/gate-passes/${id}?permanent=true`, { method: 'DELETE' }),
+    deleteAll: () =>
+      apiFetch('/api/gate-passes/all', { method: 'DELETE' }),
   },
 
   leaves: {
@@ -205,6 +213,8 @@ export const api = {
     list: () => apiFetch('/api/event-categories'),
     create: (data: { name: string }) =>
       apiFetch('/api/event-categories', { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id: string | number) =>
+      apiFetch(`/api/event-categories/${id}`, { method: 'DELETE' }),
   },
 
   settings: {

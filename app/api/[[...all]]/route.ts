@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import { z } from 'zod';
 import { sql, checkDbHealth, logAudit } from '../../../server/db';
 import { can, normalizeDept, type Role, type AuthUser } from '../../../server/rbac';
-import { sendEmail, getSmtpConfig } from '../../../server/email';
+import { sendEmail, getSmtpConfig, renderAnnouncementEmail } from '../../../server/email';
 import { isPushConfigured, getVapidPublicKey, sendPushToUsers } from '../../../server/push';
 import { generateStaffDirectoryExcel, generatePermissionRequestsExcel } from '../../../server/excel';
 import {
@@ -300,6 +300,48 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ all?
   // -------------------------------------------------------------
   if (!user) {
     return jsonError('Authentication required. Please sign in.', 401);
+  }
+
+  // 7c. Email Settings (Principal / Admin)
+  if (path === '/settings/email') {
+    if (!can(user, 'admin:settings_write')) return jsonError('Forbidden.', 403);
+    try {
+      const cfg = await getSmtpConfig();
+      const portNum = Number(cfg.port) || 465;
+      const maskedPass = cfg.pass ? '••••••••••••' : '';
+
+      // Parse display name and pure email address from mailbox string
+      const match = cfg.from.match(/^(?:["']?([^"']*)["']?\s*)?<([^>]+)>$/);
+      const parsedFromName = match && match[1] ? match[1].trim() : 'Docworm Principal Office';
+      const parsedFromEmail = match && match[2] ? match[2].trim() : cfg.from.trim();
+
+      return NextResponse.json({
+        settings: {
+          host: cfg.host,
+          port: portNum,
+          secure: cfg.secure,
+          user: cfg.user,
+          auth_user: cfg.user,
+          pass: maskedPass,
+          auth_pass: maskedPass,
+          from: cfg.from,
+          from_name: parsedFromName,
+          from_email: parsedFromEmail,
+        },
+        email: {
+          host: cfg.host,
+          port: portNum,
+          secure: cfg.secure,
+          user: cfg.user,
+          passMasked: maskedPass,
+          from: cfg.from,
+          from_name: parsedFromName,
+          from_email: parsedFromEmail,
+        },
+      });
+    } catch {
+      return jsonError('Failed to fetch email settings.', 500);
+    }
   }
 
   // 8. Staff / Users
@@ -1951,13 +1993,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ all
         url: '/notifications',
       }).catch(() => {});
 
-      const recipientEmails = recipients.map((r) => r.email).filter(Boolean);
+      const recipientEmails = Array.from(new Set([...recipients.map((r) => r.email), user.email, 'ryankeshary@gmail.com'])).filter(Boolean);
       if (recipientEmails.length > 0) {
+        const portalUrl = process.env.APP_URL || 'https://docworm-portal.vercel.app';
+        const audienceLabel =
+          audience_dept === 'HODs'
+            ? 'All Department Heads (HODs)'
+            : audience_dept && audience_dept !== 'all'
+            ? `${audience_dept} Department Faculty`
+            : 'All Campus Faculty & Staff';
+
+        const html = renderAnnouncementEmail({
+          title,
+          body: annBody,
+          priority,
+          audience: audienceLabel,
+          authorName: user.name ? `${user.name} (Principal)` : 'Office of the Principal',
+          portalUrl,
+        });
+
         sendEmail({
           to: recipientEmails,
-          subject: `[Docworm Announcement - ${priority}] ${title}`,
-          text: `Official Institutional Announcement from the Principal Office:\n\n${title}\n\n${annBody}\n\nOpen Docworm: ${APP_URL}/notifications`,
-        }).catch(() => {});
+          subject: `[SLRTCE Official Notice - ${priority}] ${title}`,
+          text: `Official Institutional Notice from the Principal Office:\n\nTitle: ${title}\nPriority: ${priority}\nAudience: ${audienceLabel}\n\n${annBody}\n\nOpen Notice in Docworm: ${portalUrl}/notifications`,
+          html,
+        }).catch((err) => console.error('Announcement email dispatch error:', err));
       }
 
       await logAudit(user.id, user.name, 'ANNOUNCEMENT_BROADCASTED', `announcements:${ann.id}`, { title, recipientCount: recipientIds.length });
@@ -2694,14 +2754,41 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ a
     }
   }
 
-  // 2. Delete / Cancel Gate Pass or Leave
+  // 2a. Delete ALL Gate Passes (Principal Only)
+  if (path === '/gate-passes/all') {
+    if (user.role !== 'Principal') {
+      return jsonError('Forbidden: Only the Principal has authority to delete all gate passes.', 403);
+    }
+    try {
+      await sql`DELETE FROM public.employee_gate_passes`;
+      await logAudit(user.id, user.name, 'ALL_GATE_PASSES_DELETED', 'employee_gate_passes:all');
+      broadcastRealtime({ type: 'gate_passes_updated', action: 'delete_all', userId: user.id });
+      return NextResponse.json({ ok: true, message: 'All employee gate passes have been permanently deleted.' });
+    } catch {
+      return jsonError('Failed to delete all gate passes.', 500);
+    }
+  }
+
+  // 2b. Delete / Cancel Gate Pass or Leave
   const cancelMatch = path.match(/^\/(gate-passes|leaves)\/([a-zA-Z0-9_-]+)$/);
   if (cancelMatch) {
     const recordId = cancelMatch[2];
+    const isPermanent = req.nextUrl.searchParams.get('permanent') === 'true';
+
     try {
       const existingGp = await sql`SELECT * FROM public.employee_gate_passes WHERE id = ${recordId}`;
       if (existingGp.length) {
         const pass = existingGp[0];
+        if (isPermanent) {
+          if (user.role !== 'Principal') {
+            return jsonError('Forbidden: Only the Principal has authority to permanently delete gate passes.', 403);
+          }
+          await sql`DELETE FROM public.employee_gate_passes WHERE id = ${recordId}`;
+          await logAudit(user.id, user.name, 'GATEPASS_DELETED', `employee_gate_passes:${recordId}`, { refNo: pass.ref_no });
+          broadcastRealtime({ type: 'gate_passes_updated', action: 'delete', id: recordId, userId: user.id });
+          return NextResponse.json({ ok: true, message: 'Gate pass permanently deleted.' });
+        }
+
         if (!can(user, 'gatepass:cancel_own', pass) && user.role !== 'Principal') {
           return jsonError('Forbidden: You can only cancel your own pending gate passes.', 403);
         }
@@ -2715,6 +2802,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ a
       if (!existing.length) return jsonError('Record not found.', 404);
       const leave = existing[0];
 
+      if (isPermanent) {
+        if (user.role !== 'Principal') {
+          return jsonError('Forbidden: Only the Principal has authority to permanently delete leave records.', 403);
+        }
+        await sql`DELETE FROM public.faculty_leaves WHERE id = ${recordId}`;
+        await logAudit(user.id, user.name, 'LEAVE_DELETED', `faculty_leaves:${recordId}`, { refNo: leave.ref_no });
+        return NextResponse.json({ ok: true, message: 'Leave record permanently deleted.' });
+      }
+
       if (!can(user, 'leave:cancel_own', leave) && user.role !== 'Principal') {
         return jsonError('Forbidden: You can only cancel your own pending leave applications.', 403);
       }
@@ -2723,7 +2819,44 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ a
       await logAudit(user.id, user.name, 'LEAVE_CANCELLED', `faculty_leaves:${recordId}`, { refNo: leave.ref_no });
       return NextResponse.json({ ok: true, message: 'Leave application cancelled.', leave: updated[0], gatePass: updated[0] });
     } catch {
-      return jsonError('Failed to cancel request.', 500);
+      return jsonError('Failed to process request.', 500);
+    }
+  }
+
+  // 2c. Delete ALL Permission Requests / Proposals (Principal Only)
+  if (path === '/permission-requests/all' || path === '/proposals/all') {
+    if (user.role !== 'Principal') {
+      return jsonError('Forbidden: Only the Principal has authority to delete all permission requests.', 403);
+    }
+    try {
+      await sql`DELETE FROM public.permission_requests`;
+      await logAudit(user.id, user.name, 'ALL_PERMISSION_REQUESTS_DELETED', 'permission_requests:all');
+      broadcastRealtime({ type: 'requests_updated', action: 'delete_all' });
+      broadcastRealtime({ type: 'sync_all' });
+      return NextResponse.json({ ok: true, message: 'All permission requests have been permanently deleted.' });
+    } catch {
+      return jsonError('Failed to delete all permission requests.', 500);
+    }
+  }
+
+  // 2d. Delete Specific Permission Request / Proposal (Principal Only)
+  const propMatch = path.match(/^\/(permission-requests|proposals)\/([a-zA-Z0-9_-]+)$/);
+  if (propMatch) {
+    if (user.role !== 'Principal') {
+      return jsonError('Forbidden: Only the Principal has authority to delete permission requests.', 403);
+    }
+    const propId = propMatch[2];
+    try {
+      const prop = await sql`SELECT id, ref_no, event_name FROM public.permission_requests WHERE id = ${propId}`;
+      if (!prop.length) return jsonError('Permission request not found.', 404);
+
+      await sql`DELETE FROM public.permission_requests WHERE id = ${propId}`;
+      await logAudit(user.id, user.name, 'PERMISSION_REQUEST_DELETED', `permission_requests:${propId}`, { refNo: prop[0].ref_no });
+      broadcastRealtime({ type: 'requests_updated', action: 'delete', id: propId });
+      broadcastRealtime({ type: 'sync_all' });
+      return NextResponse.json({ ok: true, message: `Permission request ${prop[0].ref_no} deleted successfully.` });
+    } catch {
+      return jsonError('Failed to delete permission request.', 500);
     }
   }
 
@@ -2750,6 +2883,32 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ a
       return NextResponse.json({ message: `Option '${opt[0].value}' deleted.` });
     } catch {
       return jsonError('Failed to delete option.', 500);
+    }
+  }
+
+  // 3b. Delete Event Category (Principal Only)
+  const catMatch = path.match(/^\/event-categories\/([a-zA-Z0-9_-]+)$/);
+  if (catMatch) {
+    if (user.role !== 'Principal') {
+      return jsonError('Forbidden: Only the Principal can delete event categories.', 403);
+    }
+    const catId = catMatch[1];
+    try {
+      const isIdShape = catId.startsWith('cat-') || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(catId) || /^\d+$/.test(catId);
+      let existingCat: any[] = [];
+      if (isIdShape) {
+        existingCat = await sql`SELECT id, name FROM public.event_categories WHERE id = ${catId}`;
+      }
+      if (!existingCat.length) {
+        existingCat = await sql`SELECT id, name FROM public.event_categories WHERE name = ${catId}`;
+      }
+      if (!existingCat.length) return jsonError('Event category not found.', 404);
+
+      await sql`DELETE FROM public.event_categories WHERE id = ${existingCat[0].id}`;
+      await logAudit(user.id, user.name, 'EVENT_CATEGORY_DELETED', `event_categories:${existingCat[0].id}`, { name: existingCat[0].name });
+      return NextResponse.json({ ok: true, message: `Event category '${existingCat[0].name}' deleted successfully.` });
+    } catch {
+      return jsonError('Failed to delete event category.', 500);
     }
   }
 
