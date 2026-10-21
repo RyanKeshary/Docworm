@@ -7,12 +7,12 @@ import React, { useState } from 'react';
  * A 3D/three-quarter profile cute animated cat working diligently on a computer,
  * inspired by the cozy study cat aesthetic.
  *
- * Interactive Feature:
- * - When clicked, the cat becomes ANGRY with airplane ears, furious fangs/hiss,
- *   furrowed anime brows, pulsing anger vein (💢), rapid-fire rage typing,
- *   and an angry speech bubble shouting "PSSPSPSPSPSPS!! 😾💢"!
- * - Automatically calms down after 3 seconds.
- * - Responsive: hidden on mobile (<640px), visible on tablet and desktop.
+ * Behavior:
+ * - Normal: Code flows dynamically on the computer screen; cat's paws type diligently;
+ *   coffee steams; tail gently sways.
+ * - When clicked: Cat STOPS working completely! Paws lift off the keyboard, screen halts/pauses,
+ *   ears flatten into angry airplane mode, anger vein pulses, and she hisses "PSSPSPSPSPSPS!! 😾💢"!
+ * - Responsive: Hidden on mobile (<640px), visible on tablet and desktop.
  */
 export function PixelCatWorkspace() {
   const [clickCount, setClickCount] = useState(0);
@@ -22,9 +22,9 @@ export function PixelCatWorkspace() {
   const angryQuotes = [
     'PSSPSPSPSPSPS!! 😾💢',
     'HISS! PSSPSPSPSPSPS!! 😾',
-    'PSSPSPSPSPS! DON\'T TOUCH ME! 😾💢',
-    'PSSPSPSPSPS! I\'M COMPILING! 😾⚡',
-    'PSSPSPSPSPS!! DO NOT POKE THE DEV! 😾💥',
+    'PSSPSPSPSPS! STOP POKING ME! 😾💢',
+    'PSSPSPSPSPS! WORK HALTED! 😾🛑',
+    'PSSPSPSPSPS!! DO NOT DISTURB! 😾💥',
   ];
 
   const handleClick = () => {
@@ -46,7 +46,7 @@ export function PixelCatWorkspace() {
       {/* Interactive Speech Bubble (Shaking Angry Bubble when clicked) */}
       {bubbleText && (
         <div
-          className={`absolute -top-8 right-4 z-30 px-3.5 py-1.5 rounded-full shadow-2xl border whitespace-nowrap flex items-center gap-1.5 pointer-events-none transition-all ${
+          className={`absolute -top-7 right-4 z-30 px-3.5 py-1.5 rounded-full shadow-2xl border whitespace-nowrap flex items-center gap-1.5 pointer-events-none transition-all ${
             isAngry
               ? 'bg-rose-50 text-rose-700 border-rose-400 font-extrabold text-[12px] tracking-wide animate-[pulse_0.4s_ease-in-out_infinite]'
               : 'bg-white text-slate-900 border-blue-200 font-bold text-[11px]'
@@ -67,20 +67,18 @@ export function PixelCatWorkspace() {
       {/* SVG Canvas for Cozy Cat Studio */}
       <div
         onClick={handleClick}
-        className={`cursor-pointer group relative p-1.5 rounded-2xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] ${
-          isAngry ? 'ring-2 ring-rose-500/40 rounded-2xl' : ''
-        }`}
-        title={isAngry ? 'She is hissing! Give her space!' : 'Click the cat (she might get angry!)'}
+        className="cursor-pointer group relative p-1 rounded-2xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+        title={isAngry ? 'She stopped working! Give her space!' : 'Click the cat (she might stop working and hiss!)'}
       >
         <svg
-          viewBox="0 0 350 200"
+          viewBox="0 0 350 190"
           className="w-full h-auto drop-shadow-lg overflow-visible"
           style={{ imageRendering: 'auto' }}
         >
           <defs>
             {/* Monitor screen glow */}
             <radialGradient id="monitorGlow" cx="50%" cy="50%" r="60%">
-              <stop offset="0%" stopColor={isAngry ? '#F43F5E' : '#38BDF8'} stopOpacity={isAngry ? '0.5' : '0.4'} />
+              <stop offset="0%" stopColor={isAngry ? '#F43F5E' : '#38BDF8'} stopOpacity={isAngry ? '0.45' : '0.4'} />
               <stop offset="100%" stopColor={isAngry ? '#BE123C' : '#0284C7'} stopOpacity="0" />
             </radialGradient>
 
@@ -103,9 +101,9 @@ export function PixelCatWorkspace() {
               <stop offset="100%" stopColor="#1E293B" />
             </linearGradient>
 
-            {/* Code screen clipping */}
-            <clipPath id="screenContentClip">
-              <rect x="74" y="66" width="46" height="56" rx="3" />
+            {/* Local Monitor Screen clip path (local to monitor group) */}
+            <clipPath id="monitorInnerClip">
+              <rect x="6" y="10" width="48" height="60" rx="3" />
             </clipPath>
 
             <style>{`
@@ -153,9 +151,9 @@ export function PixelCatWorkspace() {
                 50%  { opacity: 0.7; transform: translateY(-5px) scale(1); }
                 100% { opacity: 0; transform: translateY(-12px) scale(1.2); }
               }
-              @keyframes codeScrollFast {
+              @keyframes monitorCodeScroll {
                 0%   { transform: translateY(0px); }
-                100% { transform: translateY(-16px); }
+                100% { transform: translateY(-24px); }
               }
               @keyframes sparkFly {
                 0%   { opacity: 0; transform: translate(0, 0) scale(0.5); }
@@ -173,12 +171,16 @@ export function PixelCatWorkspace() {
               }
 
               .cat-left-paw {
-                animation: pawTapLeft ${isAngry ? '0.07s' : '0.2s'} ease-in-out infinite;
+                animation: ${isAngry ? 'none' : 'pawTapLeft 0.2s ease-in-out infinite'};
+                transform: ${isAngry ? 'translateY(-6px) rotate(-8deg)' : 'none'};
                 transform-origin: 184px 134px;
+                transition: transform 0.2s ease-out;
               }
               .cat-right-paw {
-                animation: pawTapRight ${isAngry ? '0.07s' : '0.2s'} ease-in-out infinite;
+                animation: ${isAngry ? 'none' : 'pawTapRight 0.2s ease-in-out infinite'};
+                transform: ${isAngry ? 'translateY(-6px) rotate(8deg)' : 'none'};
                 transform-origin: 202px 132px;
+                transition: transform 0.2s ease-out;
               }
               .cat-eyes {
                 animation: eyeBlink 3.6s infinite;
@@ -198,11 +200,11 @@ export function PixelCatWorkspace() {
               .steam-particle {
                 animation: steamDrift 2.2s ease-out infinite;
               }
-              .code-lines {
-                animation: codeScrollFast ${isAngry ? '0.6s' : '1.6s'} linear infinite;
+              .screen-code-flow {
+                animation: ${isAngry ? 'none' : 'monitorCodeScroll 1.8s linear infinite'};
               }
               .typing-spark {
-                animation: sparkFly ${isAngry ? '0.14s' : '0.4s'} ease-out infinite;
+                animation: sparkFly 0.4s ease-out infinite;
               }
               .anim-vein {
                 animation: pulseVein 0.5s ease-in-out infinite;
@@ -212,18 +214,16 @@ export function PixelCatWorkspace() {
           </defs>
 
           {/* 1. Floor Shadow */}
-          <ellipse cx="175" cy="188" rx="150" ry="10" fill="#08101E" opacity="0.4" />
+          <ellipse cx="175" cy="182" rx="150" ry="8" fill="#08101E" opacity="0.4" />
 
           {/* 2. Office Chair (Behind the cat, on the right) */}
           <g id="chair">
-            {/* Chair Backrest */}
             <path
               d="M 270 70 C 270 56, 310 56, 310 70 L 314 150 C 314 160, 276 160, 276 150 Z"
               fill="url(#chairGrad)"
               stroke="#0F172A"
               strokeWidth="2"
             />
-            {/* Chair Inner Cushion Highlight */}
             <path
               d="M 276 74 C 276 64, 304 64, 304 74 L 308 142 C 308 148, 280 148, 280 142 Z"
               fill="#334155"
@@ -231,7 +231,7 @@ export function PixelCatWorkspace() {
             />
           </g>
 
-          {/* 3. Cat Tail (Extending from behind chair - angry lash or gentle sway) */}
+          {/* 3. Cat Tail (Extending from behind chair) */}
           <g id="tail" className="cat-tail">
             <path
               d="M 288 148 C 308 152, 324 138, 318 116 C 316 108, 306 108, 308 116 C 312 130, 298 140, 284 138 Z"
@@ -249,15 +249,11 @@ export function PixelCatWorkspace() {
 
           {/* 4. Desk Surface & Legs */}
           <g id="desk">
-            {/* Back lip of desk */}
             <rect x="22" y="146" width="306" height="5" fill="#451A03" rx="1" />
-            {/* Main Desk Surface */}
             <rect x="20" y="150" width="310" height="12" fill="url(#deskGrad)" stroke="#451A03" strokeWidth="1.5" rx="2" />
-            {/* Front Desk Edge bevel highlight */}
             <line x1="22" y1="151" x2="328" y2="151" stroke="#FDE68A" strokeWidth="1" opacity="0.4" />
-            {/* Desk Legs */}
-            <rect x="36" y="162" width="12" height="24" fill="#361502" rx="1" />
-            <rect x="302" y="162" width="12" height="24" fill="#361502" rx="1" />
+            <rect x="36" y="162" width="12" height="18" fill="#361502" rx="1" />
+            <rect x="302" y="162" width="12" height="18" fill="#361502" rx="1" />
           </g>
 
           {/* 5. Desk Accessories - Left: Books Organizer */}
@@ -280,72 +276,93 @@ export function PixelCatWorkspace() {
             <ellipse cx="11" cy="2" rx="3" ry="4" fill="#4ADE80" />
           </g>
 
-          {/* 7. Computer Monitor (Left Side, Angled towards Cat) */}
+          {/* 7. COMPUTER MONITOR & SCREEN CODE FLOW (Properly mapped inside the screen display!) */}
           <g id="monitor" transform="translate(68, 54)">
+            {/* Stand */}
             <ellipse cx="44" cy="95" rx="18" ry="4" fill="#0F172A" />
             <path d="M 44 95 Q 48 80 44 68" fill="none" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
 
+            {/* Monitor Outer Frame (x: 2..58, y: 6..74) */}
             <rect x="2" y="6" width="56" height="68" rx="5" fill="#0F172A" stroke={isAngry ? '#E11D48' : '#334155'} strokeWidth="2" />
+
+            {/* Monitor Screen Display (x: 6..54, y: 10..70) */}
             <rect x="6" y="10" width="48" height="60" rx="3" fill="url(#screenBg)" />
             <rect x="6" y="10" width="48" height="60" rx="3" fill="url(#monitorGlow)" />
 
-            {/* Scrolling Code Lines on Screen */}
-            <g clipPath="url(#screenContentClip)">
-              <g className="code-lines">
-                <line x1="78" y1="74" x2="108" y2="74" stroke={isAngry ? '#F43F5E' : '#4ADE80'} strokeWidth="2.5" strokeLinecap="round" />
-                <line x1="112" y1="74" x2="116" y2="74" stroke="#38BDF8" strokeWidth="2.5" strokeLinecap="round" />
+            {/* Code Flowing Strictly Inside the Computer Screen */}
+            <g clipPath="url(#monitorInnerClip)">
+              <g className="screen-code-flow">
+                {/* Code lines repeated for continuous seamless scrolling */}
+                <line x1="10" y1="16" x2="36" y2="16" stroke={isAngry ? '#EF4444' : '#4ADE80'} strokeWidth="2.2" strokeLinecap="round" />
+                <line x1="39" y1="16" x2="48" y2="16" stroke={isAngry ? '#DC2626' : '#38BDF8'} strokeWidth="2.2" strokeLinecap="round" />
 
-                <line x1="78" y1="80" x2="96" y2="80" stroke="#F43F5E" strokeWidth="2" strokeLinecap="round" />
-                <line x1="100" y1="80" x2="114" y2="80" stroke="#FBBF24" strokeWidth="2" strokeLinecap="round" />
+                <line x1="10" y1="22" x2="24" y2="22" stroke={isAngry ? '#DC2626' : '#F43F5E'} strokeWidth="1.8" strokeLinecap="round" />
+                <line x1="27" y1="22" x2="44" y2="22" stroke={isAngry ? '#EF4444' : '#FBBF24'} strokeWidth="1.8" strokeLinecap="round" />
 
-                <line x1="78" y1="86" x2="114" y2="86" stroke={isAngry ? '#FB7185' : '#38BDF8'} strokeWidth="2" strokeLinecap="round" />
-                <line x1="78" y1="92" x2="104" y2="92" stroke={isAngry ? '#E11D48' : '#4ADE80'} strokeWidth="2" strokeLinecap="round" />
+                <line x1="10" y1="28" x2="42" y2="28" stroke={isAngry ? '#EF4444' : '#38BDF8'} strokeWidth="1.8" strokeLinecap="round" />
 
-                <line x1="78" y1="98" x2="92" y2="98" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round" />
-                <line x1="96" y1="98" x2="112" y2="98" stroke="#38BDF8" strokeWidth="2" strokeLinecap="round" />
+                <line x1="10" y1="34" x2="32" y2="34" stroke={isAngry ? '#DC2626' : '#4ADE80'} strokeWidth="1.8" strokeLinecap="round" />
 
-                <line x1="78" y1="104" x2="110" y2="104" stroke={isAngry ? '#FDA4AF' : '#4ADE80'} strokeWidth="2" strokeLinecap="round" />
-                <line x1="78" y1="110" x2="102" y2="110" stroke="#FBBF24" strokeWidth="2" strokeLinecap="round" />
+                <line x1="10" y1="40" x2="22" y2="40" stroke={isAngry ? '#EF4444' : '#A78BFA'} strokeWidth="1.8" strokeLinecap="round" />
+                <line x1="26" y1="40" x2="46" y2="40" stroke={isAngry ? '#EF4444' : '#38BDF8'} strokeWidth="1.8" strokeLinecap="round" />
 
-                <line x1="78" y1="116" x2="114" y2="116" stroke="#38BDF8" strokeWidth="2" strokeLinecap="round" />
+                <line x1="10" y1="46" x2="38" y2="46" stroke={isAngry ? '#DC2626' : '#4ADE80'} strokeWidth="1.8" strokeLinecap="round" />
+
+                <line x1="10" y1="52" x2="28" y2="52" stroke={isAngry ? '#EF4444' : '#FBBF24'} strokeWidth="1.8" strokeLinecap="round" />
+
+                <line x1="10" y1="58" x2="45" y2="58" stroke={isAngry ? '#DC2626' : '#38BDF8'} strokeWidth="1.8" strokeLinecap="round" />
+
+                {/* Additional lines for seamless loop */}
+                <line x1="10" y1="64" x2="34" y2="64" stroke={isAngry ? '#EF4444' : '#4ADE80'} strokeWidth="2.2" strokeLinecap="round" />
+                <line x1="38" y1="64" x2="46" y2="64" stroke={isAngry ? '#DC2626' : '#38BDF8'} strokeWidth="2.2" strokeLinecap="round" />
+
+                <line x1="10" y1="70" x2="26" y2="70" stroke={isAngry ? '#DC2626' : '#F43F5E'} strokeWidth="1.8" strokeLinecap="round" />
+                <line x1="30" y1="70" x2="44" y2="70" stroke={isAngry ? '#EF4444' : '#FBBF24'} strokeWidth="1.8" strokeLinecap="round" />
+
+                <line x1="10" y1="76" x2="40" y2="76" stroke={isAngry ? '#EF4444' : '#38BDF8'} strokeWidth="1.8" strokeLinecap="round" />
+                <line x1="10" y1="82" x2="30" y2="82" stroke={isAngry ? '#DC2626' : '#4ADE80'} strokeWidth="1.8" strokeLinecap="round" />
               </g>
+
+              {/* When Angry/Stopped: Screen shows PAUSED indicator */}
+              {isAngry && (
+                <g>
+                  <rect x="8" y="32" width="44" height="15" rx="3" fill="#7F1D1D" stroke="#EF4444" strokeWidth="1" />
+                  <text x="30" y="42.5" fill="#FEE2E2" fontSize="6.5" fontWeight="900" textAnchor="middle" letterSpacing="0.5">
+                    STOPPED 🛑
+                  </text>
+                </g>
+              )}
             </g>
 
             <circle cx="30" cy="71" r="1.5" fill={isAngry ? '#F43F5E' : '#38BDF8'} />
           </g>
 
-          {/* 8. Mechanical Keyboard (Center-Left, directly in front of Cat's paws) */}
+          {/* 8. Mechanical Keyboard (Center-Left, directly under Cat's paws) */}
           <g id="keyboard" transform="translate(144, 142)">
             <polygon points="0,4 52,4 56,12 -4,12" fill="#1E293B" stroke="#0F172A" strokeWidth="1" />
             <rect x="0" y="5" width="8" height="3" fill="#64748B" rx="0.5" />
             <rect x="10" y="5" width="8" height="3" fill="#64748B" rx="0.5" />
-            <rect x="20" y="5" width="8" height="3" fill={isAngry ? '#F43F5E' : '#38BDF8'} rx="0.5" />
+            <rect x="20" y="5" width="8" height="3" fill={isAngry ? '#64748B' : '#38BDF8'} rx="0.5" />
             <rect x="30" y="5" width="8" height="3" fill="#64748B" rx="0.5" />
             <rect x="40" y="5" width="8" height="3" fill="#64748B" rx="0.5" />
 
             <rect x="-1" y="9" width="9" height="3" fill="#94A3B8" rx="0.5" />
-            <rect x="10" y="9" width="9" height="3" fill={isAngry ? '#F43F5E' : '#38BDF8'} rx="0.5" />
+            <rect x="10" y="9" width="9" height="3" fill={isAngry ? '#94A3B8' : '#38BDF8'} rx="0.5" />
             <rect x="21" y="9" width="16" height="3" fill="#CBD5E1" rx="0.5" />
             <rect x="39" y="9" width="9" height="3" fill="#94A3B8" rx="0.5" />
           </g>
 
-          {/* 9. Keystroke Impact Sparks / Rage particles popping off keyboard */}
-          <g transform="translate(156, 138)" className="typing-spark">
-            <rect x="0" y="0" width="2.5" height="2.5" fill={isAngry ? '#EF4444' : '#FDE047'} rx="0.5" />
-          </g>
-          <g transform="translate(178, 136)" className="typing-spark">
-            <rect x="0" y="0" width="2.5" height="2.5" fill={isAngry ? '#F97316' : '#38BDF8'} rx="0.5" />
-          </g>
-          <g transform="translate(168, 134)" className="typing-spark">
-            <circle cx="0" cy="0" r="1.5" fill={isAngry ? '#DC2626' : '#4ADE80'} />
-          </g>
-          {isAngry && (
+          {/* 9. Keystroke Impact Sparks - ACTIVE ONLY WHEN WORKING (STOPS WHEN ANGRY!) */}
+          {!isAngry && (
             <>
-              <g transform="translate(162, 130)" className="typing-spark">
-                <text x="0" y="0" fill="#EF4444" fontSize="11" fontWeight="bold">💢</text>
+              <g transform="translate(156, 138)" className="typing-spark">
+                <rect x="0" y="0" width="2.5" height="2.5" fill="#FDE047" rx="0.5" />
               </g>
-              <g transform="translate(174, 128)" className="typing-spark">
-                <text x="0" y="0" fill="#F97316" fontSize="10" fontWeight="bold">💥</text>
+              <g transform="translate(178, 136)" className="typing-spark">
+                <rect x="0" y="0" width="2.5" height="2.5" fill="#38BDF8" rx="0.5" />
+              </g>
+              <g transform="translate(168, 134)" className="typing-spark">
+                <circle cx="0" cy="0" r="1.5" fill="#4ADE80" />
               </g>
             </>
           )}
@@ -368,7 +385,6 @@ export function PixelCatWorkspace() {
 
             {/* Left Ear - NORMAL or ANGRY AIRPLANE EAR ✈️ */}
             {isAngry ? (
-              // Airplane Ear (flattened down angrily to the side)
               <g transform="rotate(-32 196 68)">
                 <polygon points="196,72 176,58 206,58" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="2" />
                 <polygon points="194,70 180,61 202,61" fill="#FDA4AF" />
@@ -382,7 +398,6 @@ export function PixelCatWorkspace() {
 
             {/* Right Ear - NORMAL or ANGRY AIRPLANE EAR ✈️ */}
             {isAngry ? (
-              // Airplane Ear (flattened back angrily)
               <g transform="rotate(28 236 64)">
                 <polygon points="230,68 252,54 246,74" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="2" />
                 <polygon points="234,66 248,58 244,71" fill="#FDA4AF" />
@@ -419,22 +434,17 @@ export function PixelCatWorkspace() {
 
             {/* Eyes & Eyebrows - CALM or ANGRY */}
             {isAngry ? (
-              // Angry Slit Eyes & Furrowed Eyebrows (\ /)
               <g id="angry-eyes">
-                {/* Furrowed Angled Angry Brows */}
                 <line x1="196" y1="77" x2="210" y2="82" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" />
                 <line x1="234" y1="77" x2="220" y2="82" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" />
 
-                {/* Left Angry Slit Eye */}
                 <ellipse cx="204" cy="88" rx="4" ry="2" fill="#DC2626" />
                 <line x1="200" y1="88" x2="208" y2="88" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" />
 
-                {/* Right Angry Slit Eye */}
                 <ellipse cx="226" cy="88" rx="4" ry="2" fill="#DC2626" />
                 <line x1="222" y1="88" x2="230" y2="88" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" />
               </g>
             ) : (
-              // Cute Calm Blinking Anime Eyes
               <g id="eyes" className="cat-eyes">
                 <ellipse cx="204" cy="88" rx="4" ry="5" fill="#0F172A" />
                 <circle cx="203" cy="86" r="1.5" fill="#FFFFFF" />
@@ -449,12 +459,10 @@ export function PixelCatWorkspace() {
             {/* Pink Nose */}
             <polygon points="214,94 212,92 216,92" fill="#F43F5E" />
 
-            {/* Mouth - CALM (:3) or HISSING FANGS (PSSPSPSPS!) */}
+            {/* Mouth - CALM (:3) or HISSING FANGS */}
             {isAngry ? (
               <g id="hissing-mouth">
-                {/* Open angry hissing mouth */}
                 <path d="M 210,95 Q 214,101 218,95 Z" fill="#991B1B" stroke="#0F172A" strokeWidth="1" />
-                {/* Tiny White Hissing Fangs */}
                 <polygon points="211,95 212.5,97.5 214,95" fill="#FFFFFF" />
                 <polygon points="214.5,95 216,97.5 217.5,95" fill="#FFFFFF" />
               </g>
@@ -472,14 +480,14 @@ export function PixelCatWorkspace() {
             <ellipse cx="196" cy="94" rx="4" ry="2.5" fill={isAngry ? '#F43F5E' : '#FDA4AF'} opacity="0.75" />
             <ellipse cx="232" cy="94" rx="4" ry="2.5" fill={isAngry ? '#F43F5E' : '#FDA4AF'} opacity="0.75" />
 
-            {/* Whiskers (Angled down aggressively when hissing) */}
+            {/* Whiskers */}
             <line x1="184" y1={isAngry ? '94' : '92'} x2="194" y2="94" stroke="#94A3B8" strokeWidth="1.2" strokeLinecap="round" />
             <line x1="183" y1={isAngry ? '101' : '97'} x2="194" y2="97" stroke="#94A3B8" strokeWidth="1.2" strokeLinecap="round" />
             <line x1="234" y1="94" x2="245" y2={isAngry ? '94' : '92'} stroke="#94A3B8" strokeWidth="1.2" strokeLinecap="round" />
             <line x1="234" y1="97" x2="246" y2={isAngry ? '101' : '97'} stroke="#94A3B8" strokeWidth="1.2" strokeLinecap="round" />
           </g>
 
-          {/* 11. VISIBLE HAND / PAW TYPING MOVEMENTS (SUPER FAST RAGE TYPING WHEN ANGRY) */}
+          {/* 11. PAWS & TYPING MOVEMENTS (STOPS WORKING COMPLETELY WHEN CLICKED/ANGRY!) */}
           <g id="paws-typing">
             {/* Right Paw */}
             <g className="cat-right-paw">
@@ -552,44 +560,6 @@ export function PixelCatWorkspace() {
             <path d="M 28 3 L 33 3 L 31 10 L 29 8 L 27 10 Z" fill="#FBBF24" />
           </g>
         </svg>
-
-        {/* Status Pill Indicator */}
-        <div
-          className={`flex items-center justify-between px-3 py-1.5 rounded-xl border text-[11px] font-medium shadow-inner mt-1 transition-colors duration-300 ${
-            isAngry
-              ? 'bg-rose-950/60 border-rose-500/50 text-rose-200'
-              : 'bg-white/10 backdrop-blur-md border-white/15 text-white/90'
-          }`}
-        >
-          <div className="flex items-center gap-1.5">
-            <span className="relative flex h-2 w-2">
-              <span
-                className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                  isAngry ? 'bg-rose-400' : 'bg-emerald-400'
-                }`}
-              />
-              <span
-                className={`relative inline-flex rounded-full h-2 w-2 ${
-                  isAngry ? 'bg-rose-500' : 'bg-emerald-500'
-                }`}
-              />
-            </span>
-            <span
-              className={`tracking-wide font-semibold truncate ${
-                isAngry ? 'text-rose-200 animate-pulse' : 'text-blue-100'
-              }`}
-            >
-              {isAngry ? 'Status: ANGRY CAT 😾 (HISS!)' : 'Docworm Core • Online'}
-            </span>
-          </div>
-          <span
-            className={`text-[10px] whitespace-nowrap ml-2 transition-colors ${
-              isAngry ? 'text-rose-300 font-bold' : 'text-blue-200/80 group-hover:text-amber-300'
-            }`}
-          >
-            {isAngry ? 'Psspspspsps! 💢' : 'Click to poke 🐾'}
-          </span>
-        </div>
       </div>
     </div>
   );
